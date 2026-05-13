@@ -1,7 +1,13 @@
 import Foundation
 import Combine
 
-final class CommandRunner: ObservableObject {
+// Marked @unchecked Sendable so the `readabilityHandler` / `terminationHandler`
+// closures (which are @Sendable and run on background threads) can capture
+// `self` without strict-concurrency warnings. All mutations to the @Published
+// properties are routed back to the main thread via DispatchQueue.main.async
+// or MainActor.run, so the class is thread-safe in practice; the compiler
+// just can't prove it.
+final class CommandRunner: ObservableObject, @unchecked Sendable {
     @Published var output: String = ""
     @Published var isRunning: Bool = false
     @Published var lastExitCode: Int32? = nil
