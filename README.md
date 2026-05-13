@@ -65,6 +65,41 @@ To iterate while developing without producing the DMG:
 swift run
 ```
 
+### Signed + notarized releases (optional)
+
+Default behavior is fine for personal use — end users right-click → Open the
+first time to bypass Gatekeeper. To skip that step entirely (paid Apple
+Developer ID required), set two environment variables:
+
+```sh
+APPLE_DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE="my-notary-profile" \
+./scripts/build_release.sh
+```
+
+One-time setup for `NOTARY_PROFILE`:
+
+```sh
+xcrun notarytool store-credentials "my-notary-profile" \
+    --apple-id "you@example.com" \
+    --team-id "TEAMID" \
+    --password "your-app-specific-password"
+```
+
+If only `APPLE_DEVELOPER_ID` is set (no `NOTARY_PROFILE`), the app is signed
+but not notarized — Gatekeeper will still warn. Set both for a clean
+double-click experience.
+
+### Running tests
+
+```sh
+swift test
+```
+
+Covers `AppSettings`, `ProjectService`, `ZipExtractor`, and the
+`TerminalLauncher` escaping helpers. Tests are macOS-only (the package
+platform is `.macOS(.v14)`).
+
 ## Project layout
 
 ```
