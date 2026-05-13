@@ -7,7 +7,7 @@
     <key>CFBundleDisplayName</key>
     <string>BMad Manager</string>
     <key>CFBundleExecutable</key>
-    <string>bmad-manager</string>
+    <string>BmadManager</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
