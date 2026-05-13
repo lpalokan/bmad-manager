@@ -1,6 +1,7 @@
 import XCTest
 @testable import BmadManager
 
+@MainActor
 final class ProjectCreatorTests: XCTestCase {
     private var projectsRoot: URL!
     private let creator = ProjectCreator(projectService: ProjectService())

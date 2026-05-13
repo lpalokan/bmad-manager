@@ -1,6 +1,7 @@
 import XCTest
 @testable import BmadManager
 
+@MainActor
 final class CommandRunnerTests: XCTestCase {
     func testRunCapturesStdoutAndExitCode() async {
         let runner = CommandRunner()
