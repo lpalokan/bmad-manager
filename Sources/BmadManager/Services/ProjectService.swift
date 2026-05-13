@@ -16,20 +16,25 @@ enum ProjectError: LocalizedError {
 }
 
 struct ProjectService {
-    func listProjects(in rootPath: String) -> [ProjectItem] {
+    func listProjects(
+        in rootPath: String,
+        sortedBy sortOrder: ProjectSortOrder = .nameAscending
+    ) -> [ProjectItem] {
         let expanded = (rootPath as NSString).expandingTildeInPath
         let url = URL(fileURLWithPath: expanded, isDirectory: true)
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: url,
-            includingPropertiesForKeys: [.isDirectoryKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .creationDateKey],
             options: [.skipsHiddenFiles]
         ) else {
             return []
         }
-        return entries
-            .filter { ((try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) }
-            .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
-            .map { ProjectItem(url: $0) }
+        let items: [ProjectItem] = entries.compactMap { url in
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .creationDateKey])
+            guard (values?.isDirectory ?? false) else { return nil }
+            return ProjectItem(url: url, createdAt: values?.creationDate)
+        }
+        return items.sorted(by: sortOrder.areInIncreasingOrder)
     }
 
     func createProjectFolder(name: String, in rootPath: String) throws -> URL {

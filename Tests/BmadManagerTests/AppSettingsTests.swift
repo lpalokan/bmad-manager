@@ -13,6 +13,25 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(defaults.moduleZipPath, "")
         XCTAssertEqual(defaults.claudeCommand, "claude")
         XCTAssertEqual(defaults.opencodeCommand, "opencode")
+        XCTAssertEqual(defaults.projectSortOrder, .nameAscending)
+    }
+
+    func testDecodesLegacySettingsWithoutSortOrder() throws {
+        // Settings files written before #12 don't carry projectSortOrder.
+        // The custom decoder should fall back to .nameAscending so users
+        // who upgrade don't fail to load their persisted settings.
+        let legacy = """
+        {
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "/tmp/m.zip",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertEqual(decoded.projectsRoot, "/tmp/legacy")
+        XCTAssertEqual(decoded.projectSortOrder, .nameAscending)
     }
 
     func testDefaultsUseHeadlessBmadInstall() {
@@ -48,7 +67,8 @@ final class AppSettingsTests: XCTestCase {
             moduleZipPath: "/tmp/module.zip",
             initCommand: "echo {PROJECT_PATH} && cp {MODULE_PATH}/* .",
             claudeCommand: "claude --verbose",
-            opencodeCommand: "opencode --debug"
+            opencodeCommand: "opencode --debug",
+            projectSortOrder: .dateNewestFirst
         )
         let encoded = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
