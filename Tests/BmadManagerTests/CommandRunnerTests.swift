@@ -6,15 +6,6 @@ final class CommandRunnerTests: XCTestCase {
         let runner = CommandRunner()
         let exitCode = await runner.run(command: "echo hello", cwd: URL(fileURLWithPath: "/tmp"))
 
-        // The readability handler hops to the main queue via DispatchQueue.main.async,
-        // so the @Published output may not be fully drained the instant `run` returns.
-        // Spin the runloop briefly until the chunk lands, with a generous cap.
-        let deadline = Date().addingTimeInterval(2)
-        while !runner.output.contains("hello") && Date() < deadline {
-            await Task.yield()
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-        }
-
         XCTAssertEqual(exitCode, 0)
         XCTAssertTrue(runner.output.contains("hello"),
                       "expected output to contain 'hello', got '\(runner.output)'")
@@ -29,5 +20,62 @@ final class CommandRunnerTests: XCTestCase {
         XCTAssertEqual(exitCode, 3)
         XCTAssertEqual(runner.lastExitCode, 3)
         XCTAssertFalse(runner.isRunning)
+    }
+}
+
+final class ShellProcessTests: XCTestCase {
+    func testEchoHello() async {
+        let (stream, exitTask) = ShellProcess.run(command: "echo hello", cwd: URL(fileURLWithPath: "/tmp"))
+
+        var chunks: [String] = []
+        for await chunk in stream {
+            chunks.append(chunk)
+        }
+        let output = chunks.joined()
+        let exitCode = await exitTask.value
+
+        XCTAssertEqual(exitCode, 0)
+        XCTAssertTrue(output.contains("hello"),
+                      "expected output to contain 'hello', got '\(output)'")
+    }
+
+    func testExitCodeThree() async {
+        let (stream, exitTask) = ShellProcess.run(command: "exit 3", cwd: URL(fileURLWithPath: "/tmp"))
+
+        var chunks: [String] = []
+        for await chunk in stream {
+            chunks.append(chunk)
+        }
+        let exitCode = await exitTask.value
+
+        XCTAssertEqual(exitCode, 3)
+    }
+
+    func testStdinIsNullDevice() async {
+        let (stream, exitTask) = ShellProcess.run(command: "cat", cwd: URL(fileURLWithPath: "/tmp"))
+
+        var chunks: [String] = []
+        for await chunk in stream {
+            chunks.append(chunk)
+        }
+        let exitCode = await exitTask.value
+
+        // cat with /dev/null stdin should exit immediately with 0
+        XCTAssertEqual(exitCode, 0)
+    }
+
+    func testCwdIsHonoured() async {
+        let (stream, exitTask) = ShellProcess.run(command: "pwd", cwd: URL(fileURLWithPath: "/tmp"))
+
+        var chunks: [String] = []
+        for await chunk in stream {
+            chunks.append(chunk)
+        }
+        let output = chunks.joined()
+        let exitCode = await exitTask.value
+
+        XCTAssertEqual(exitCode, 0)
+        XCTAssertTrue(output.contains("/tmp"),
+                      "expected pwd to contain /tmp, got '\(output)'")
     }
 }
