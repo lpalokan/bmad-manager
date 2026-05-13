@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var projectToDelete: ProjectItem? = nil
 
     private let projectService = ProjectService()
+    private let projectCreator = ProjectCreator(projectService: ProjectService())
 
     var body: some View {
         VStack(spacing: 0) {
@@ -195,24 +196,12 @@ struct ContentView: View {
         defer { isCreating = false }
 
         do {
-            let projectURL = try projectService.createProjectFolder(name: name, in: settings.settings.projectsRoot)
-
-            let zip = settings.settings.moduleZipPath.trimmingCharacters(in: .whitespaces)
-            try await ZipExtractor.withExtractedModule(zipPath: zip) { moduleRoot in
-                let modulePath = moduleRoot.path
-
-                let command = settings.settings.initCommand
-                    .replacingOccurrences(of: "{PROJECT_PATH}", with: projectURL.path)
-                    .replacingOccurrences(of: "{MODULE_PATH}", with: modulePath)
-                    .replacingOccurrences(of: "{PROJECT_NAME}", with: name)
-
-                let exitCode = await commandRunner.run(command: command, cwd: projectURL)
-                if exitCode != 0 {
-                    errorMessage = "Init command exited with code \(exitCode). See the output panel for details."
-                } else {
-                    newProjectName = ""
-                }
-            }
+            try await projectCreator.create(
+                name: name,
+                settings: settings.settings,
+                runner: commandRunner
+            )
+            newProjectName = ""
             refresh()
         } catch {
             errorMessage = error.localizedDescription
