@@ -6,8 +6,13 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "bmad-manager",
+            name: "BmadManager",
             path: "Sources/BmadManager"
+        ),
+        .testTarget(
+            name: "BmadManagerTests",
+            dependencies: ["BmadManager"],
+            path: "Tests/BmadManagerTests"
         )
     ]
 )

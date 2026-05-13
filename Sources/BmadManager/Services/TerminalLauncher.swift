@@ -39,11 +39,13 @@ enum TerminalLauncher {
         }
     }
 
-    private static func shellQuote(_ value: String) -> String {
+    // Exposed as `internal` (not `private`) so the test target can verify the escaping.
+    static func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    private static func appleScriptEscape(_ value: String) -> String {
+    static func appleScriptEscape(_ value: String) -> String {
+        // Order matters: escape backslashes first, then double quotes.
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")

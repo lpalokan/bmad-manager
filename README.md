@@ -1,13 +1,17 @@
 # BMad Manager
 
+[![build](https://github.com/lpalokan/bmad-manager/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/lpalokan/bmad-manager/actions/workflows/build.yml)
+
 A small macOS app that creates new project folders pre-configured with the
 [BMad method](https://github.com/bmadcode/bmad-method) for Claude Code and
 opencode, and installs a custom "marketing growth" module on top.
 
 The UI is intentionally tiny:
 
-- Pick a project root folder and a marketing-growth `.zip` (one-time setup in Settings).
+- Pick a project root folder (one-time setup in Settings).
 - Type a new project name, click **Create new project**.
+- The first time you create a project without a marketing-growth `.zip`
+  configured, the app pops a file picker, remembers your choice, and continues.
 - Each project row has buttons to open it in Claude Code or opencode in a
   Terminal window, plus a trash button (moves to macOS Trash).
 
@@ -28,7 +32,11 @@ Settings (cogwheel icon) let you change:
 - **Projects root folder** — every new project becomes a subfolder here.
 - **Marketing growth module (.zip)** — the latest module package on disk.
 - **Init command** — the headless command run after the project folder is
-  created. Available placeholders:
+  created. The default uses the BMad [headless install
+  flags](https://docs.bmad-method.org/how-to/install-bmad/#headless-ci-installs)
+  to always install the BMad Method core (`bmm`), BMad Builder (`bmb`), and
+  Creative Intelligence Suite (`cis`) modules, configured for both Claude Code
+  and opencode. Available placeholders:
   - `{PROJECT_PATH}` — absolute path of the new project folder
   - `{MODULE_PATH}` — absolute path of the unzipped module (in `/tmp/...`)
   - `{PROJECT_NAME}` — bare folder name
@@ -65,6 +73,41 @@ To iterate while developing without producing the DMG:
 swift run
 ```
 
+### Signed + notarized releases (optional)
+
+Default behavior is fine for personal use — end users right-click → Open the
+first time to bypass Gatekeeper. To skip that step entirely (paid Apple
+Developer ID required), set two environment variables:
+
+```sh
+APPLE_DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE="my-notary-profile" \
+./scripts/build_release.sh
+```
+
+One-time setup for `NOTARY_PROFILE`:
+
+```sh
+xcrun notarytool store-credentials "my-notary-profile" \
+    --apple-id "you@example.com" \
+    --team-id "TEAMID" \
+    --password "your-app-specific-password"
+```
+
+If only `APPLE_DEVELOPER_ID` is set (no `NOTARY_PROFILE`), the app is signed
+but not notarized — Gatekeeper will still warn. Set both for a clean
+double-click experience.
+
+### Running tests
+
+```sh
+swift test
+```
+
+Covers `AppSettings`, `ProjectService`, `ZipExtractor`, and the
+`TerminalLauncher` escaping helpers. Tests are macOS-only (the package
+platform is `.macOS(.v14)`).
+
 ## Project layout
 
 ```
@@ -76,21 +119,31 @@ Sources/BmadManager/
                                   # ZipExtractor, CommandRunner, TerminalLauncher
     Views/                        # ContentView, ProjectRowView,
                                   # SettingsView, CommandOutputView
-Resources/Info.plist
-scripts/build_release.sh
+Resources/
+    Info.plist
+    icon-source.png               # 1024x1024 source for the app icon
+scripts/
+    build_release.sh
+    make_icon.sh                  # turns icon-source.png into AppIcon.icns (macOS sips + iconutil)
 ```
+
+The `.icns` and `.iconset` are generated at build time (via `scripts/make_icon.sh`,
+which `build_release.sh` calls automatically when the `.icns` is missing) and are
+git-ignored. To regenerate after editing `icon-source.png`, just rerun the build
+script or call `./scripts/make_icon.sh` directly.
 
 ## How a project gets created
 
 1. Validate the typed name (non-empty, no `/`, no leading `.`, not already present).
-2. `mkdir <projectsRoot>/<name>`.
-3. If a module zip is configured: extract it to a fresh
-   `/tmp/bmad-manager-<uuid>/` using `/usr/bin/unzip`.
-4. Substitute placeholders in the init command.
-5. Run the command in `/bin/zsh -lc '...'` with the project folder as the
+2. If no marketing-growth `.zip` is configured, pop a file picker, save the
+   choice to settings, then continue.
+3. `mkdir <projectsRoot>/<name>`.
+4. Extract the module zip to a fresh `/tmp/bmad-manager-<uuid>/` using `/usr/bin/unzip`.
+5. Substitute placeholders in the init command.
+6. Run the command in `/bin/zsh -lc '...'` with the project folder as the
    working directory (so `npx`, Homebrew, nvm, etc. resolve from your shell PATH).
    Output streams into the bottom panel.
-6. Clean up the `/tmp` extraction directory.
+7. Clean up the `/tmp` extraction directory.
 
 On failure the partial project folder is kept so you can inspect it; delete it
 from the list with the trash button when you're done.

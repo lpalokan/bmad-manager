@@ -1,0 +1,36 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build (debug, host arch)
+        run: swift build
+
+      - name: Test
+        if: hashFiles('Tests/**/*.swift') != ''
+        run: swift test
+
+      - name: Build release DMG
+        run: ./scripts/build_release.sh
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bmad-manager-dmg
+          path: dist/bmad-manager.dmg
+          if-no-files-found: error
+          retention-days: 14
