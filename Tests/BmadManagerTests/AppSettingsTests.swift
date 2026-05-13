@@ -16,22 +16,20 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testDefaultsUseHeadlessBmadInstall() {
-        // Per issue #6 — always non-interactive, always install bmm/bmb/cis,
-        // always configure claude-code and opencode tooling.
+        // Per issue #6 — always non-interactive (the `--full` flag covers
+        // bmm + bmb + cis with their defaults; the documented
+        // `--yes --modules bmm,bmb,cis` form stalled at the CIS step in
+        // practice, see issue #11) and always configure both Claude Code
+        // and opencode tooling.
         let command = AppSettings.defaults().initCommand
-        XCTAssertTrue(command.contains("--yes"),
-                      "headless install must pass --yes to skip prompts")
-        XCTAssertTrue(command.contains("--modules"),
-                      "headless install must specify modules explicitly")
-        XCTAssertTrue(command.contains("bmm"))
-        XCTAssertTrue(command.contains("bmb"))
-        XCTAssertTrue(command.contains("cis"))
-        XCTAssertTrue(command.contains("--tools"),
-                      "headless install must specify tools explicitly")
+        XCTAssertTrue(command.contains("--full"),
+                      "headless install must pass --full so CIS doesn't stall")
         XCTAssertTrue(command.contains("claude-code"))
         XCTAssertTrue(command.contains("opencode"))
-        XCTAssertTrue(command.contains("--directory"),
-                      "headless install must target an explicit directory")
+        XCTAssertTrue(command.contains("{PROJECT_PATH}"),
+                      "init command must thread the project path through")
+        XCTAssertTrue(command.contains("{MODULE_PATH}"),
+                      "init command must thread the unzipped module path through")
     }
 
     func testCodableRoundTrip() throws {

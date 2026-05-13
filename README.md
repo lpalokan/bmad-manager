@@ -32,11 +32,12 @@ Settings (cogwheel icon) let you change:
 - **Projects root folder** — every new project becomes a subfolder here.
 - **Marketing growth module (.zip)** — the latest module package on disk.
 - **Init command** — the headless command run after the project folder is
-  created. The default uses the BMad [headless install
-  flags](https://docs.bmad-method.org/how-to/install-bmad/#headless-ci-installs)
-  to always install the BMad Method core (`bmm`), BMad Builder (`bmb`), and
-  Creative Intelligence Suite (`cis`) modules, configured for both Claude Code
-  and opencode. Available placeholders:
+  created. The default uses BMad's `--full` install flag (which covers the
+  BMad Method core, BMad Builder, and Creative Intelligence Suite with their
+  defaults) and `--ide claude-code --ide opencode` to configure both IDEs.
+  The documented `--yes --modules bmm,bmb,cis` form stalled at the CIS
+  configuration step in our testing — see issue #11 for the long-term
+  follow-up. Available placeholders:
   - `{PROJECT_PATH}` — absolute path of the new project folder
   - `{MODULE_PATH}` — absolute path of the unzipped module (in `/tmp/...`)
   - `{PROJECT_NAME}` — bare folder name
