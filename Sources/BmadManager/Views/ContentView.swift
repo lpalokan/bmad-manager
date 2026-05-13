@@ -20,6 +20,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
             header
             createRow
+            sortRow
             Divider()
 
             if projects.isEmpty {
@@ -68,6 +69,7 @@ struct ContentView: View {
         }
         .onAppear { refresh() }
         .onChange(of: settings.settings.projectsRoot) { refresh() }
+        .onChange(of: settings.settings.projectSortOrder) { refresh() }
     }
 
     private var header: some View {
@@ -122,6 +124,25 @@ struct ContentView: View {
         !isCreating && !newProjectName.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    private var sortRow: some View {
+        HStack(spacing: 6) {
+            Text("Sort")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Picker("Sort", selection: $settings.settings.projectSortOrder) {
+                ForEach(ProjectSortOrder.allCases, id: \.self) { order in
+                    Text(order.displayName).tag(order)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 4)
+    }
+
     private var emptyState: some View {
         VStack(spacing: 4) {
             Spacer()
@@ -149,7 +170,10 @@ struct ContentView: View {
     // MARK: - Actions
 
     private func refresh() {
-        projects = projectService.listProjects(in: settings.settings.projectsRoot)
+        projects = projectService.listProjects(
+            in: settings.settings.projectsRoot,
+            sortedBy: settings.settings.projectSortOrder
+        )
     }
 
     private func createProject() async {

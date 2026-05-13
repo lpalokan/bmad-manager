@@ -10,9 +10,16 @@ struct ProjectRowView: View {
         HStack(spacing: 8) {
             Image(systemName: "folder")
                 .foregroundStyle(.secondary)
-            Text(project.name)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(project.name)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let createdAt = project.createdAt {
+                    Text("Created \(createdAt.formatted(.relative(presentation: .named)))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Spacer()
             Button("Claude Code", action: onClaude)
                 .buttonStyle(.bordered)

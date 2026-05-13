@@ -12,8 +12,11 @@ The UI is intentionally tiny:
 - Type a new project name, click **Create new project**.
 - The first time you create a project without a marketing-growth `.zip`
   configured, the app pops a file picker, remembers your choice, and continues.
-- Each project row has buttons to open it in Claude Code or opencode in a
-  Terminal window, plus a trash button (moves to macOS Trash).
+- Each project row shows when it was created and has buttons to open it in
+  Claude Code or opencode in a Terminal window, plus a trash button (moves
+  to macOS Trash).
+- A **Sort** menu above the list reorders projects by name (A→Z) or by
+  creation date (newest or oldest first). The choice is persisted.
 
 ## End-user install
 

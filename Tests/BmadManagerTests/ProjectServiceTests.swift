@@ -88,4 +88,50 @@ final class ProjectServiceTests: XCTestCase {
         let missing = "/tmp/bmad-manager-does-not-exist-\(UUID().uuidString)"
         XCTAssertEqual(service.listProjects(in: missing), [])
     }
+
+    // MARK: - createdAt + sort orders (#12)
+
+    func testListProjectsPopulatesCreationDate() throws {
+        _ = try service.createProjectFolder(name: "with-date", in: tempRoot.path)
+        let listed = service.listProjects(in: tempRoot.path)
+        XCTAssertNotNil(listed.first?.createdAt,
+                        "freshly created folders should expose a creation date")
+    }
+
+    func testListProjectsSortedByNameAscending() throws {
+        _ = try service.createProjectFolder(name: "beta", in: tempRoot.path)
+        _ = try service.createProjectFolder(name: "alpha", in: tempRoot.path)
+        _ = try service.createProjectFolder(name: "Charlie", in: tempRoot.path)
+        let listed = service.listProjects(in: tempRoot.path, sortedBy: .nameAscending)
+        XCTAssertEqual(listed.map(\.name), ["alpha", "beta", "Charlie"])
+    }
+
+    func testListProjectsSortedByDateNewestFirst() throws {
+        try makeTimestampedFixtures()
+        let listed = service.listProjects(in: tempRoot.path, sortedBy: .dateNewestFirst)
+        XCTAssertEqual(listed.map(\.name), ["newest", "middle", "oldest"])
+    }
+
+    func testListProjectsSortedByDateOldestFirst() throws {
+        try makeTimestampedFixtures()
+        let listed = service.listProjects(in: tempRoot.path, sortedBy: .dateOldestFirst)
+        XCTAssertEqual(listed.map(\.name), ["oldest", "middle", "newest"])
+    }
+
+    /// Builds three folders ("oldest", "middle", "newest") with explicit
+    /// creation dates so date-based sort tests aren't subject to
+    /// filesystem timestamp resolution.
+    private func makeTimestampedFixtures() throws {
+        let oldest = try service.createProjectFolder(name: "oldest", in: tempRoot.path)
+        let middle = try service.createProjectFolder(name: "middle", in: tempRoot.path)
+        let newest = try service.createProjectFolder(name: "newest", in: tempRoot.path)
+
+        let now = Date()
+        try FileManager.default.setAttributes(
+            [.creationDate: now.addingTimeInterval(-3600)], ofItemAtPath: oldest.path)
+        try FileManager.default.setAttributes(
+            [.creationDate: now.addingTimeInterval(-1800)], ofItemAtPath: middle.path)
+        try FileManager.default.setAttributes(
+            [.creationDate: now], ofItemAtPath: newest.path)
+    }
 }

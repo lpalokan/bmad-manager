@@ -69,7 +69,11 @@ final class ZipExtractorTests: XCTestCase {
         try "x".write(to: wrapper.appendingPathComponent("manifest.yaml"),
                       atomically: true, encoding: .utf8)
 
-        XCTAssertEqual(ZipExtractor.moduleRoot(in: outer), wrapper)
+        // FileManager returns URLs with the /private/var prefix on macOS
+        // (real path), but our constructed `wrapper` URL has /var (the
+        // symlink). Resolve both sides before comparing.
+        XCTAssertEqual(ZipExtractor.moduleRoot(in: outer).resolvingSymlinksInPath(),
+                       wrapper.resolvingSymlinksInPath())
     }
 
     func testModuleRootStaysWhenMultipleTopLevelEntries() throws {
@@ -81,6 +85,7 @@ final class ZipExtractorTests: XCTestCase {
         try "y".write(to: dir.appendingPathComponent("b.txt"),
                       atomically: true, encoding: .utf8)
 
+        // moduleRoot returns `dir` unchanged here, so identity equality is fine.
         XCTAssertEqual(ZipExtractor.moduleRoot(in: dir), dir)
     }
 
@@ -93,7 +98,8 @@ final class ZipExtractorTests: XCTestCase {
         try FileManager.default.createDirectory(at: wrapper, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: mac, withIntermediateDirectories: true)
 
-        XCTAssertEqual(ZipExtractor.moduleRoot(in: outer), wrapper)
+        XCTAssertEqual(ZipExtractor.moduleRoot(in: outer).resolvingSymlinksInPath(),
+                       wrapper.resolvingSymlinksInPath())
     }
 
     func testModuleRootStaysWhenSoleEntryIsAFile() throws {
