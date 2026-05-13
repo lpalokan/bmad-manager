@@ -29,6 +29,12 @@ final class CommandRunner: ObservableObject, @unchecked Sendable {
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = pipe
+            // The GUI app has no controlling TTY. Some Node CLIs (e.g.
+            // `inquirer`-based prompts in bmad-method) hang waiting on stdin
+            // when isTTY is false, even with --yes. Hand them /dev/null so
+            // they see EOF immediately and fall back to non-interactive
+            // defaults.
+            process.standardInput = FileHandle.nullDevice
 
             pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
                 let data = handle.availableData
