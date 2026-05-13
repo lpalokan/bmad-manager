@@ -52,6 +52,19 @@ enum ZipExtractor {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// Extracts the zip, descends into the GitHub-style wrapper folder if
+    /// present, invokes `body` with the module root URL, and removes the
+    /// temp dir on return or throw.
+    static func withExtractedModule<T>(
+        zipPath: String,
+        _ body: (URL) async throws -> T
+    ) async throws -> T {
+        let tmpDir = try extract(zipPath: zipPath)
+        defer { cleanup(tmpDir) }
+        let root = moduleRoot(in: tmpDir)
+        return try await body(root)
+    }
+
     /// If `dir` contains exactly one non-junk subdirectory (the GitHub
     /// "Download ZIP" wrapper pattern, where the archive wraps everything
     /// in a single top-level folder named after the repo), returns that

@@ -3,39 +3,21 @@ import SwiftUI
 
 final class SettingsStore: ObservableObject {
     @Published var settings: AppSettings {
-        didSet { save() }
+        didSet { repository.save(settings) }
     }
 
-    private let fileURL: URL
+    private let repository: SettingsRepository
 
-    init() {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = support.appendingPathComponent("bmad-manager", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        self.fileURL = dir.appendingPathComponent("settings.json")
-
-        if let data = try? Data(contentsOf: fileURL),
-           let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
-            self.settings = decoded
-        } else {
-            self.settings = AppSettings.defaults()
-            writeToDisk(AppSettings.defaults())
+    init(repository: SettingsRepository = FileSettingsRepository()) {
+        self.repository = repository
+        let loaded = repository.load()
+        self.settings = loaded ?? AppSettings.defaults()
+        if loaded == nil {
+            repository.save(AppSettings.defaults())
         }
     }
 
     func reset() {
         settings = AppSettings.defaults()
-    }
-
-    private func save() {
-        writeToDisk(settings)
-    }
-
-    private func writeToDisk(_ value: AppSettings) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? encoder.encode(value) {
-            try? data.write(to: fileURL, options: .atomic)
-        }
     }
 }

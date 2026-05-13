@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var projectToDelete: ProjectItem? = nil
 
     private let projectService = ProjectService()
+    private let projectCreator = ProjectCreator(projectService: ProjectService())
 
     var body: some View {
         VStack(spacing: 0) {
@@ -194,37 +195,16 @@ struct ContentView: View {
         showOutput = true
         defer { isCreating = false }
 
-        var moduleTmpDir: URL? = nil
-
         do {
-            let projectURL = try projectService.createProjectFolder(name: name, in: settings.settings.projectsRoot)
-
-            let zip = settings.settings.moduleZipPath.trimmingCharacters(in: .whitespaces)
-            let dir = try ZipExtractor.extract(zipPath: zip)
-            moduleTmpDir = dir
-            // GitHub "Download ZIP" archives wrap everything in a single
-            // top-level folder; descend into it so `--custom-source` sees
-            // the module root directly.
-            let modulePath = ZipExtractor.moduleRoot(in: dir).path
-
-            let command = settings.settings.initCommand
-                .replacingOccurrences(of: "{PROJECT_PATH}", with: projectURL.path)
-                .replacingOccurrences(of: "{MODULE_PATH}", with: modulePath)
-                .replacingOccurrences(of: "{PROJECT_NAME}", with: name)
-
-            let exitCode = await commandRunner.run(command: command, cwd: projectURL)
-            if exitCode != 0 {
-                errorMessage = "Init command exited with code \(exitCode). See the output panel for details."
-            } else {
-                newProjectName = ""
-            }
+            try await projectCreator.create(
+                name: name,
+                settings: settings.settings,
+                runner: commandRunner
+            )
+            newProjectName = ""
             refresh()
         } catch {
             errorMessage = error.localizedDescription
-        }
-
-        if let dir = moduleTmpDir {
-            ZipExtractor.cleanup(dir)
         }
     }
 
