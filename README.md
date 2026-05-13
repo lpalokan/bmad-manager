@@ -34,9 +34,15 @@ Settings (cogwheel icon) let you change:
 - **Init command** — the headless command run after the project folder is
   created. The default uses the BMad [headless install
   flags](https://docs.bmad-method.org/how-to/install-bmad/#headless-ci-installs)
-  to always install the BMad Method core (`bmm`), BMad Builder (`bmb`), and
-  Creative Intelligence Suite (`cis`) modules, configured for both Claude Code
-  and opencode. Available placeholders:
+  (`--yes --modules bmm,bmb,cis --tools claude-code,opencode --custom-source ... --directory ...`)
+  to install the BMad Method core, BMad Builder, and Creative Intelligence
+  Suite configured for both Claude Code and opencode, and to register the
+  unzipped marketing-growth bundle as a proper BMad module via
+  `--custom-source` (rather than overlaying its files on the project). When
+  the bundle is a GitHub "Download ZIP" archive, the app auto-descends into
+  the single wrapper folder so `--custom-source` sees the module root. If
+  you're upgrading an existing install, hit **Reset to defaults** so your
+  persisted command picks up the current flags. Available placeholders:
   - `{PROJECT_PATH}` — absolute path of the new project folder
   - `{MODULE_PATH}` — absolute path of the unzipped module (in `/tmp/...`)
   - `{PROJECT_NAME}` — bare folder name
