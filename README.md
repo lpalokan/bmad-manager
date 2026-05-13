@@ -1,5 +1,7 @@
 # BMad Manager
 
+[![build](https://github.com/lpalokan/bmad-manager/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/lpalokan/bmad-manager/actions/workflows/build.yml)
+
 A small macOS app that creates new project folders pre-configured with the
 [BMad method](https://github.com/bmadcode/bmad-method) for Claude Code and
 opencode, and installs a custom "marketing growth" module on top.
