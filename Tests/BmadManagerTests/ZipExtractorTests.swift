@@ -112,4 +112,128 @@ final class ZipExtractorTests: XCTestCase {
 
         XCTAssertEqual(ZipExtractor.moduleRoot(in: dir), dir)
     }
+
+    // MARK: - withExtractedModule
+
+    func testWithExtractedModuleDescendsWrapper() async throws {
+        let sourceDir = workDir.appendingPathComponent("payload", isDirectory: true)
+        let wrapper = sourceDir.appendingPathComponent("repo-main", isDirectory: true)
+        try FileManager.default.createDirectory(at: wrapper, withIntermediateDirectories: true)
+        try "hi".write(to: wrapper.appendingPathComponent("hello.txt"), atomically: true, encoding: .utf8)
+
+        let zipURL = workDir.appendingPathComponent("wrapped.zip")
+        let zip = Process()
+        zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        zip.arguments = ["-q", "-r", zipURL.path, "repo-main"]
+        zip.currentDirectoryURL = sourceDir
+        try zip.run()
+        zip.waitUntilExit()
+        XCTAssertEqual(zip.terminationStatus, 0)
+
+        var captured: URL?
+        try await ZipExtractor.withExtractedModule(zipPath: zipURL.path) { root in
+            captured = root
+            XCTAssertEqual(root.lastPathComponent, "repo-main")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("hello.txt").path))
+        }
+        // Temp dir should be cleaned up after closure returns
+        if let captured {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: captured.deletingLastPathComponent().path),
+                          "temp dir should be cleaned up")
+        }
+    }
+
+    func testWithExtractedModuleFlatZip() async throws {
+        let sourceDir = workDir.appendingPathComponent("payload", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try "flat content".write(to: sourceDir.appendingPathComponent("flat.txt"), atomically: true, encoding: .utf8)
+
+        let zipURL = workDir.appendingPathComponent("flat.zip")
+        let zip = Process()
+        zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        zip.arguments = ["-q", "-r", zipURL.path, "."]
+        zip.currentDirectoryURL = sourceDir
+        try zip.run()
+        zip.waitUntilExit()
+        XCTAssertEqual(zip.terminationStatus, 0)
+
+        var captured: URL?
+        try await ZipExtractor.withExtractedModule(zipPath: zipURL.path) { root in
+            captured = root
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("flat.txt").path))
+        }
+        if let captured {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: captured.path),
+                          "temp dir should be cleaned up")
+        }
+    }
+
+    func testWithExtractedModuleCleanupOnThrow() async throws {
+        let sourceDir = workDir.appendingPathComponent("payload", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try "x".write(to: sourceDir.appendingPathComponent("file.txt"), atomically: true, encoding: .utf8)
+
+        let zipURL = workDir.appendingPathComponent("throwable.zip")
+        let zip = Process()
+        zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        zip.arguments = ["-q", "-r", zipURL.path, "."]
+        zip.currentDirectoryURL = sourceDir
+        try zip.run()
+        zip.waitUntilExit()
+        XCTAssertEqual(zip.terminationStatus, 0)
+
+        enum TestError: Error { case intentional }
+        var tempDirExistsAfterThrow = false
+        do {
+            try await ZipExtractor.withExtractedModule(zipPath: zipURL.path) { root in
+                // Capture whether the temp dir still exists before we throw
+                tempDirExistsAfterThrow = FileManager.default.fileExists(atPath: root.deletingLastPathComponent().path)
+                throw TestError.intentional
+            }
+            XCTFail("expected throw")
+        } catch TestError.intentional {
+            XCTAssertTrue(tempDirExistsAfterThrow, "temp dir should exist inside closure")
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
+
+    func testWithExtractedModuleCleanupOnNormalReturn() async throws {
+        let sourceDir = workDir.appendingPathComponent("payload", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try "x".write(to: sourceDir.appendingPathComponent("file.txt"), atomically: true, encoding: .utf8)
+
+        let zipURL = workDir.appendingPathComponent("normal.zip")
+        let zip = Process()
+        zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        zip.arguments = ["-q", "-r", zipURL.path, "."]
+        zip.currentDirectoryURL = sourceDir
+        try zip.run()
+        zip.waitUntilExit()
+        XCTAssertEqual(zip.terminationStatus, 0)
+
+        var captured: URL?
+        try await ZipExtractor.withExtractedModule(zipPath: zipURL.path) { root in
+            captured = root
+        }
+        if let captured {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: captured.deletingLastPathComponent().path),
+                          "parent temp dir should be cleaned up after normal return")
+        }
+    }
+
+    func testWithExtractedModuleMissingZip() async throws {
+        let missing = "/tmp/bmad-manager-missing-\(UUID().uuidString).zip"
+        var closureCalled = false
+        do {
+            try await ZipExtractor.withExtractedModule(zipPath: missing) { _ in
+                closureCalled = true
+            }
+            XCTFail("expected throw")
+        } catch ZipError.zipNotFound {
+            XCTAssertFalse(closureCalled, "closure should not be called for missing zip")
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
 }
