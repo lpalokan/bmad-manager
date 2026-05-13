@@ -51,4 +51,26 @@ enum ZipExtractor {
     static func cleanup(_ url: URL) {
         try? FileManager.default.removeItem(at: url)
     }
+
+    /// If `dir` contains exactly one non-junk subdirectory (the GitHub
+    /// "Download ZIP" wrapper pattern, where the archive wraps everything
+    /// in a single top-level folder named after the repo), returns that
+    /// subdirectory so callers can pass the module root directly to
+    /// `bmad-method install --custom-source`. Otherwise returns `dir`.
+    static func moduleRoot(in dir: URL) -> URL {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return dir
+        }
+        let meaningful = entries.filter { $0.lastPathComponent != "__MACOSX" }
+        guard meaningful.count == 1, let only = meaningful.first else {
+            return dir
+        }
+        let isDir = (try? only.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+        return isDir ? only : dir
+    }
 }

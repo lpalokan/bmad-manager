@@ -178,7 +178,10 @@ struct ContentView: View {
             let zip = settings.settings.moduleZipPath.trimmingCharacters(in: .whitespaces)
             let dir = try ZipExtractor.extract(zipPath: zip)
             moduleTmpDir = dir
-            let modulePath = dir.path
+            // GitHub "Download ZIP" archives wrap everything in a single
+            // top-level folder; descend into it so `--custom-source` sees
+            // the module root directly.
+            let modulePath = ZipExtractor.moduleRoot(in: dir).path
 
             let command = settings.settings.initCommand
                 .replacingOccurrences(of: "{PROJECT_PATH}", with: projectURL.path)
