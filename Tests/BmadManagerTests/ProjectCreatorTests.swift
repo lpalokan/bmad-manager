@@ -1,7 +1,6 @@
 import XCTest
 @testable import BmadManager
 
-@MainActor
 final class ProjectCreatorTests: XCTestCase {
     private var projectsRoot: URL!
     private let creator = ProjectCreator(projectService: ProjectService())
@@ -35,6 +34,7 @@ final class ProjectCreatorTests: XCTestCase {
 
     // MARK: - Tests
 
+    @MainActor
     func testHappyPath() async throws {
         let zipPath = try buildFixtureZip(name: "happy")
 
@@ -54,6 +54,7 @@ final class ProjectCreatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: project.url.path))
     }
 
+    @MainActor
     func testPlaceholderSubstitution() async throws {
         let zipPath = try buildFixtureZip(name: "subst")
 
@@ -75,6 +76,7 @@ final class ProjectCreatorTests: XCTestCase {
         XCTAssertTrue(contents.contains("subst-project"))
     }
 
+    @MainActor
     func testGitHubWrapperDescent() async throws {
         // Build a zip with a wrapper folder (like GitHub downloads)
         let wrapperDir = projectsRoot.appendingPathComponent("wrapper-src", isDirectory: true)
@@ -109,6 +111,7 @@ final class ProjectCreatorTests: XCTestCase {
                       "expected MODULE_PATH to descend into wrapper, got: \(contents)")
     }
 
+    @MainActor
     func testFailureCleanupOnNonZeroExit() async throws {
         let zipPath = try buildFixtureZip(name: "fail-cleanup")
 
@@ -134,6 +137,7 @@ final class ProjectCreatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.path))
     }
 
+    @MainActor
     func testFailureCleanupOnThrow() async throws {
         let settings = AppSettings(
             projectsRoot: projectsRoot.path,
@@ -157,6 +161,7 @@ final class ProjectCreatorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.path))
     }
 
+    @MainActor
     func testEmptyModuleZipThrows() async throws {
         let settings = AppSettings(
             projectsRoot: projectsRoot.path,

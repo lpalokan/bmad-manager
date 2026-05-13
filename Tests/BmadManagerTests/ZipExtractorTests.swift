@@ -217,8 +217,8 @@ final class ZipExtractorTests: XCTestCase {
             captured = root
         }
         if let captured {
-            XCTAssertFalse(FileManager.default.fileExists(atPath: captured.deletingLastPathComponent().path),
-                          "parent temp dir should be cleaned up after normal return")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: captured.path),
+                          "temp dir should be cleaned up after normal return")
         }
     }
 

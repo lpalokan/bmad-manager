@@ -1,8 +1,8 @@
 import XCTest
 @testable import BmadManager
 
-@MainActor
 final class CommandRunnerTests: XCTestCase {
+    @MainActor
     func testRunCapturesStdoutAndExitCode() async {
         let runner = CommandRunner()
         let exitCode = await runner.run(command: "echo hello", cwd: URL(fileURLWithPath: "/tmp"))
@@ -14,6 +14,7 @@ final class CommandRunnerTests: XCTestCase {
         XCTAssertFalse(runner.isRunning)
     }
 
+    @MainActor
     func testRunReportsNonZeroExit() async {
         let runner = CommandRunner()
         let exitCode = await runner.run(command: "exit 3", cwd: URL(fileURLWithPath: "/tmp"))
