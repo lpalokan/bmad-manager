@@ -1,0 +1,16 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj/
+
+# Build artifacts
+build/
+dist/
+
+# Generated icon assets (derived from Resources/icon-source.png by scripts/make_icon.sh)
+Resources/AppIcon.icns
+Resources/AppIcon.iconset/
+
+# macOS junk
+.DS_Store

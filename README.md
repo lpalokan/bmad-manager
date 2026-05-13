@@ -76,9 +76,18 @@ Sources/BmadManager/
                                   # ZipExtractor, CommandRunner, TerminalLauncher
     Views/                        # ContentView, ProjectRowView,
                                   # SettingsView, CommandOutputView
-Resources/Info.plist
-scripts/build_release.sh
+Resources/
+    Info.plist
+    icon-source.png               # 1024x1024 source for the app icon
+scripts/
+    build_release.sh
+    make_icon.sh                  # turns icon-source.png into AppIcon.icns (macOS sips + iconutil)
 ```
+
+The `.icns` and `.iconset` are generated at build time (via `scripts/make_icon.sh`,
+which `build_release.sh` calls automatically when the `.icns` is missing) and are
+git-ignored. To regenerate after editing `icon-source.png`, just rerun the build
+script or call `./scripts/make_icon.sh` directly.
 
 ## How a project gets created
 

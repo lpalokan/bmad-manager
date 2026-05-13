@@ -37,6 +37,11 @@ if [ ! -f "$BIN_PATH" ]; then
     exit 1
 fi
 
+if [ ! -f "$ROOT_DIR/Resources/AppIcon.icns" ] && [ -f "$ROOT_DIR/Resources/icon-source.png" ]; then
+    echo "==> Generating AppIcon.icns from icon-source.png"
+    "$SCRIPT_DIR/make_icon.sh"
+fi
+
 echo "==> Assembling .app bundle"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BIN_PATH" "$APP_DIR/Contents/MacOS/$APP_NAME"
