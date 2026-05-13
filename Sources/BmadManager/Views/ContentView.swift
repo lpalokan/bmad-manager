@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var settings: SettingsStore
@@ -154,6 +155,17 @@ struct ContentView: View {
     private func createProject() async {
         let name = newProjectName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
+
+        // If no module zip is configured yet, prompt for one and remember the
+        // choice in Settings so this only happens on the first project.
+        if settings.settings.moduleZipPath.trimmingCharacters(in: .whitespaces).isEmpty {
+            guard let picked = promptForModuleZip() else {
+                errorMessage = "A marketing growth module .zip is required to create a project."
+                return
+            }
+            settings.settings.moduleZipPath = picked.path
+        }
+
         isCreating = true
         showOutput = true
         defer { isCreating = false }
@@ -163,13 +175,10 @@ struct ContentView: View {
         do {
             let projectURL = try projectService.createProjectFolder(name: name, in: settings.settings.projectsRoot)
 
-            var modulePath = ""
             let zip = settings.settings.moduleZipPath.trimmingCharacters(in: .whitespaces)
-            if !zip.isEmpty {
-                let dir = try ZipExtractor.extract(zipPath: zip)
-                moduleTmpDir = dir
-                modulePath = dir.path
-            }
+            let dir = try ZipExtractor.extract(zipPath: zip)
+            moduleTmpDir = dir
+            let modulePath = dir.path
 
             let command = settings.settings.initCommand
                 .replacingOccurrences(of: "{PROJECT_PATH}", with: projectURL.path)
@@ -190,6 +199,18 @@ struct ContentView: View {
         if let dir = moduleTmpDir {
             ZipExtractor.cleanup(dir)
         }
+    }
+
+    private func promptForModuleZip() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.zip]
+        panel.title = "Select the marketing growth module"
+        panel.prompt = "Use This Zip"
+        panel.message = "Pick the marketing growth module .zip — it will be remembered for future projects."
+        return panel.runModal() == .OK ? panel.url : nil
     }
 
     private func deleteProject(_ project: ProjectItem) async {

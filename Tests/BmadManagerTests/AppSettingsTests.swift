@@ -15,6 +15,25 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(defaults.opencodeCommand, "opencode")
     }
 
+    func testDefaultsUseHeadlessBmadInstall() {
+        // Per issue #6 — always non-interactive, always install bmm/bmb/cis,
+        // always configure claude-code and opencode tooling.
+        let command = AppSettings.defaults().initCommand
+        XCTAssertTrue(command.contains("--yes"),
+                      "headless install must pass --yes to skip prompts")
+        XCTAssertTrue(command.contains("--modules"),
+                      "headless install must specify modules explicitly")
+        XCTAssertTrue(command.contains("bmm"))
+        XCTAssertTrue(command.contains("bmb"))
+        XCTAssertTrue(command.contains("cis"))
+        XCTAssertTrue(command.contains("--tools"),
+                      "headless install must specify tools explicitly")
+        XCTAssertTrue(command.contains("claude-code"))
+        XCTAssertTrue(command.contains("opencode"))
+        XCTAssertTrue(command.contains("--directory"),
+                      "headless install must target an explicit directory")
+    }
+
     func testCodableRoundTrip() throws {
         let original = AppSettings(
             projectsRoot: "/tmp/my-projects",
