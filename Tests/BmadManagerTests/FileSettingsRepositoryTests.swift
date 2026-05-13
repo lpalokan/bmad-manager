@@ -8,7 +8,6 @@ final class FileSettingsRepositoryTests: XCTestCase {
         tempURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("bmad-manager-repo-test-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempURL, withIntermediateDirectories: true)
-            .appendingPathComponent("settings.json")
     }
 
     override func tearDownWithError() throws {
