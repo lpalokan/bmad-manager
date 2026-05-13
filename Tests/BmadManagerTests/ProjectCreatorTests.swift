@@ -156,9 +156,10 @@ final class ProjectCreatorTests: XCTestCase {
             // expected
         }
 
-        // Project folder should NOT have been created (extraction happens after folder creation)
+        // Project folder was created before the zip extraction throw,
+        // so the partial-state policy applies (same as testFailureCleanupOnNonZeroExit).
         let projectURL = projectsRoot.appendingPathComponent("throw-project")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.path))
     }
 
     @MainActor
