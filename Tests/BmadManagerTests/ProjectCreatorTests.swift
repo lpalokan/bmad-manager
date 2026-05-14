@@ -1,52 +1,68 @@
 import XCTest
 @testable import BmadManager
 
+/// Test double for the `ModuleSource` seam — yields a pre-built directory
+/// without spinning up a real zip extraction or git clone, so orchestration
+/// tests stay focused on `ProjectCreator`'s own behaviour.
+private struct FakeModuleSource: ModuleSource {
+    let moduleRoot: URL
+    let errorBeforeBody: Error?
+
+    init(moduleRoot: URL, errorBeforeBody: Error? = nil) {
+        self.moduleRoot = moduleRoot
+        self.errorBeforeBody = errorBeforeBody
+    }
+
+    func withModuleRoot<T>(_ body: (URL) async throws -> T) async throws -> T {
+        if let errorBeforeBody { throw errorBeforeBody }
+        return try await body(moduleRoot)
+    }
+}
+
+private enum FakeSourceError: Error { case missingFixture }
+
 final class ProjectCreatorTests: XCTestCase {
     private var projectsRoot: URL!
-    private let creator = ProjectCreator(projectService: ProjectService())
+    private var moduleRoot: URL!
 
     override func setUpWithError() throws {
         projectsRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("bmad-manager-ptest-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: projectsRoot, withIntermediateDirectories: true)
+        moduleRoot = projectsRoot.appendingPathComponent("module-root", isDirectory: true)
+        try FileManager.default.createDirectory(at: moduleRoot, withIntermediateDirectories: true)
+        try "stub".write(to: moduleRoot.appendingPathComponent("manifest.yaml"),
+                         atomically: true, encoding: .utf8)
     }
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: projectsRoot)
     }
 
-    // MARK: - Helpers
+    private func makeSettings(initCommand: String) -> AppSettings {
+        AppSettings(
+            projectsRoot: projectsRoot.path,
+            moduleSourceKind: .gitRepo,
+            moduleRepoURL: "ignored-by-fake",
+            moduleRepoRef: "",
+            moduleZipPath: "",
+            initCommand: initCommand,
+            claudeCommand: "claude",
+            opencodeCommand: "opencode",
+            projectSortOrder: .nameAscending
+        )
+    }
 
-    private func buildFixtureZip(name: String, content: String = "module content") throws -> String {
-        let sourceDir = projectsRoot.appendingPathComponent("src-\(name)", isDirectory: true)
-        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
-        try content.write(to: sourceDir.appendingPathComponent("manifest.yaml"), atomically: true, encoding: .utf8)
-
-        let zipURL = projectsRoot.appendingPathComponent("\(name).zip")
-        let zip = Process()
-        zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-        zip.arguments = ["-q", "-r", zipURL.path, "."]
-        zip.currentDirectoryURL = sourceDir
-        try zip.run()
-        zip.waitUntilExit()
-        return zipURL.path
+    private func makeCreator(source: ModuleSource) -> ProjectCreator {
+        ProjectCreator(projectService: ProjectService()) { _ in source }
     }
 
     // MARK: - Tests
 
     @MainActor
     func testHappyPath() async throws {
-        let zipPath = try buildFixtureZip(name: "happy")
-
-        let settings = AppSettings(
-            projectsRoot: projectsRoot.path,
-            moduleZipPath: zipPath,
-            initCommand: "true",
-            claudeCommand: "claude",
-            opencodeCommand: "opencode",
-            projectSortOrder: .nameAscending
-        )
-
+        let settings = makeSettings(initCommand: "true")
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
         let runner = CommandRunner()
         let project = try await creator.create(name: "happy-project", settings: settings, runner: runner)
 
@@ -56,17 +72,10 @@ final class ProjectCreatorTests: XCTestCase {
 
     @MainActor
     func testPlaceholderSubstitution() async throws {
-        let zipPath = try buildFixtureZip(name: "subst")
-
-        let settings = AppSettings(
-            projectsRoot: projectsRoot.path,
-            moduleZipPath: zipPath,
-            initCommand: "echo '{PROJECT_PATH}' > marker.txt && echo '{PROJECT_NAME}' >> marker.txt",
-            claudeCommand: "claude",
-            opencodeCommand: "opencode",
-            projectSortOrder: .nameAscending
+        let settings = makeSettings(
+            initCommand: "echo '{PROJECT_PATH}' > marker.txt && echo '{PROJECT_NAME}' >> marker.txt && echo '{MODULE_PATH}' >> marker.txt"
         )
-
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
         let runner = CommandRunner()
         let project = try await creator.create(name: "subst-project", settings: settings, runner: runner)
 
@@ -74,56 +83,13 @@ final class ProjectCreatorTests: XCTestCase {
         let contents = try String(contentsOf: markerURL, encoding: .utf8)
         XCTAssertTrue(contents.contains(project.url.path))
         XCTAssertTrue(contents.contains("subst-project"))
-    }
-
-    @MainActor
-    func testGitHubWrapperDescent() async throws {
-        // Build a zip with a wrapper folder (like GitHub downloads)
-        let wrapperDir = projectsRoot.appendingPathComponent("wrapper-src", isDirectory: true)
-        let inner = wrapperDir.appendingPathComponent("repo-main", isDirectory: true)
-        try FileManager.default.createDirectory(at: inner, withIntermediateDirectories: true)
-        try "wrapper content".write(to: inner.appendingPathComponent("manifest.yaml"),
-                                    atomically: true, encoding: .utf8)
-
-        let zipURL = projectsRoot.appendingPathComponent("wrapped.zip")
-        let zip = Process()
-        zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-        zip.arguments = ["-q", "-r", zipURL.path, "repo-main"]
-        zip.currentDirectoryURL = wrapperDir
-        try zip.run()
-        zip.waitUntilExit()
-
-        let settings = AppSettings(
-            projectsRoot: projectsRoot.path,
-            moduleZipPath: zipURL.path,
-            initCommand: "echo module root: {MODULE_PATH} > info.txt",
-            claudeCommand: "claude",
-            opencodeCommand: "opencode",
-            projectSortOrder: .nameAscending
-        )
-
-        let runner = CommandRunner()
-        let project = try await creator.create(name: "wrapper-test", settings: settings, runner: runner)
-
-        let infoURL = project.url.appendingPathComponent("info.txt")
-        let contents = try String(contentsOf: infoURL, encoding: .utf8)
-        XCTAssertTrue(contents.contains("repo-main"),
-                      "expected MODULE_PATH to descend into wrapper, got: \(contents)")
+        XCTAssertTrue(contents.contains(moduleRoot.path))
     }
 
     @MainActor
     func testFailureCleanupOnNonZeroExit() async throws {
-        let zipPath = try buildFixtureZip(name: "fail-cleanup")
-
-        let settings = AppSettings(
-            projectsRoot: projectsRoot.path,
-            moduleZipPath: zipPath,
-            initCommand: "exit 42",
-            claudeCommand: "claude",
-            opencodeCommand: "opencode",
-            projectSortOrder: .nameAscending
-        )
-
+        let settings = makeSettings(initCommand: "exit 42")
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
         let runner = CommandRunner()
         do {
             try await creator.create(name: "fail-project", settings: settings, runner: runner)
@@ -132,56 +98,49 @@ final class ProjectCreatorTests: XCTestCase {
             XCTAssertEqual(code, 42)
         }
 
-        // Project folder should still exist (partial-state policy)
+        // Partial-state policy: the project folder is kept so the user can
+        // inspect what was created before the init command failed.
         let projectURL = projectsRoot.appendingPathComponent("fail-project")
         XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.path))
     }
 
     @MainActor
-    func testFailureCleanupOnThrow() async throws {
-        let settings = AppSettings(
-            projectsRoot: projectsRoot.path,
-            moduleZipPath: "/tmp/nonexistent-\(UUID().uuidString).zip",
-            initCommand: "true",
-            claudeCommand: "claude",
-            opencodeCommand: "opencode",
-            projectSortOrder: .nameAscending
+    func testSourceErrorPropagatesAndProjectFolderRemains() async throws {
+        // `ModuleSource` adapters validate their own config and throw before
+        // invoking `body`. ProjectCreator should let that error propagate
+        // unchanged, and the partial-state policy still applies (project
+        // folder is created before the source is materialised).
+        let settings = makeSettings(initCommand: "true")
+        let creator = makeCreator(
+            source: FakeModuleSource(moduleRoot: moduleRoot,
+                                     errorBeforeBody: FakeSourceError.missingFixture)
         )
-
         let runner = CommandRunner()
         do {
             try await creator.create(name: "throw-project", settings: settings, runner: runner)
             XCTFail("expected throw")
-        } catch ZipError.zipNotFound {
+        } catch FakeSourceError.missingFixture {
             // expected
         }
 
-        // Project folder was created before the zip extraction throw,
-        // so the partial-state policy applies (same as testFailureCleanupOnNonZeroExit).
         let projectURL = projectsRoot.appendingPathComponent("throw-project")
         XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.path))
     }
 
+    // MARK: - Factory wiring
+
     @MainActor
-    func testEmptyModuleZipThrows() async throws {
-        let settings = AppSettings(
-            projectsRoot: projectsRoot.path,
-            moduleZipPath: "",
-            initCommand: "true",
-            claudeCommand: "claude",
-            opencodeCommand: "opencode",
-            projectSortOrder: .nameAscending
-        )
+    func testDefaultFactoryDispatchesByKind() {
+        // Smoke test that ModuleSourceFactory.make returns the concrete
+        // adapter implied by moduleSourceKind. Each adapter has its own
+        // tests for materialisation behaviour — here we only verify the
+        // dispatch step.
+        var settings = AppSettings.defaults()
 
-        let runner = CommandRunner()
-        do {
-            try await creator.create(name: "empty-zip", settings: settings, runner: runner)
-            XCTFail("expected throw")
-        } catch ProjectCreationError.noModuleZipConfigured {
-            // expected
-        }
+        settings.moduleSourceKind = .gitRepo
+        XCTAssertTrue(ModuleSourceFactory.make(for: settings) is GitRepoModuleSource)
 
-        let projectURL = projectsRoot.appendingPathComponent("empty-zip")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.path))
+        settings.moduleSourceKind = .localZip
+        XCTAssertTrue(ModuleSourceFactory.make(for: settings) is LocalZipModuleSource)
     }
 }

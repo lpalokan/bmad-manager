@@ -10,6 +10,9 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(defaults.projectsRoot.contains("~"))
         XCTAssertTrue(defaults.initCommand.contains("{PROJECT_PATH}"))
         XCTAssertTrue(defaults.initCommand.contains("{MODULE_PATH}"))
+        XCTAssertEqual(defaults.moduleSourceKind, .gitRepo)
+        XCTAssertEqual(defaults.moduleRepoURL, "https://github.com/lpalokan/bmad-marketing-growth")
+        XCTAssertEqual(defaults.moduleRepoRef, "")
         XCTAssertEqual(defaults.moduleZipPath, "")
         XCTAssertEqual(defaults.claudeCommand, "claude")
         XCTAssertEqual(defaults.opencodeCommand, "opencode")
@@ -32,6 +35,43 @@ final class AppSettingsTests: XCTestCase {
         let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
         XCTAssertEqual(decoded.projectsRoot, "/tmp/legacy")
         XCTAssertEqual(decoded.projectSortOrder, .nameAscending)
+    }
+
+    func testLegacyWithConfiguredZipInfersLocalZipKind() throws {
+        // Pre-source-picker settings.json files don't carry moduleSourceKind.
+        // If the user had already configured a zip path, preserve their
+        // workflow on upgrade rather than silently switching them to git.
+        let legacy = """
+        {
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "/tmp/m.zip",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertEqual(decoded.moduleSourceKind, .localZip)
+        XCTAssertEqual(decoded.moduleZipPath, "/tmp/m.zip")
+        XCTAssertEqual(decoded.moduleRepoURL, "https://github.com/lpalokan/bmad-marketing-growth")
+    }
+
+    func testLegacyWithoutConfiguredZipDefaultsToGitRepo() throws {
+        // Fresh upgrade with no zip ever picked → land on the new default
+        // source (GitHub repo) instead of a non-functional .localZip + "".
+        let legacy = """
+        {
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertEqual(decoded.moduleSourceKind, .gitRepo)
+        XCTAssertEqual(decoded.moduleRepoURL, "https://github.com/lpalokan/bmad-marketing-growth")
+        XCTAssertEqual(decoded.moduleRepoRef, "")
     }
 
     func testDefaultsUseHeadlessBmadInstall() {
@@ -61,14 +101,34 @@ final class AppSettingsTests: XCTestCase {
                       "init command must thread the unzipped module path through")
     }
 
-    func testCodableRoundTrip() throws {
+    func testCodableRoundTripLocalZip() throws {
         let original = AppSettings(
             projectsRoot: "/tmp/my-projects",
+            moduleSourceKind: .localZip,
+            moduleRepoURL: "https://github.com/example/repo",
+            moduleRepoRef: "v1.0",
             moduleZipPath: "/tmp/module.zip",
             initCommand: "echo {PROJECT_PATH} && cp {MODULE_PATH}/* .",
             claudeCommand: "claude --verbose",
             opencodeCommand: "opencode --debug",
             projectSortOrder: .dateNewestFirst
+        )
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
+        XCTAssertEqual(original, decoded)
+    }
+
+    func testCodableRoundTripGitRepo() throws {
+        let original = AppSettings(
+            projectsRoot: "/tmp/my-projects",
+            moduleSourceKind: .gitRepo,
+            moduleRepoURL: "https://github.com/example/repo",
+            moduleRepoRef: "main",
+            moduleZipPath: "",
+            initCommand: "echo {PROJECT_PATH}",
+            claudeCommand: "claude",
+            opencodeCommand: "opencode",
+            projectSortOrder: .nameAscending
         )
         let encoded = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
