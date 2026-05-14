@@ -27,6 +27,6 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSAppleEventsUsageDescription</key>
-    <string>BMad Manager opens Terminal to launch Claude Code or opencode in your selected project folder.</string>
+    <string>BMad Manager opens your chosen terminal (Terminal or iTerm2) to launch Claude Code or opencode in your selected project folder.</string>
 </dict>
 </plist>

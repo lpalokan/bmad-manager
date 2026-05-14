@@ -53,6 +53,7 @@ struct AppSettings: Codable, Equatable {
     var claudeCommand: String
     var opencodeCommand: String
     var projectSortOrder: ProjectSortOrder
+    var terminalKind: TerminalKind
 
     static let defaultModuleRepoURL = "https://github.com/lpalokan/bmad-marketing-growth"
 
@@ -76,7 +77,8 @@ struct AppSettings: Codable, Equatable {
             initCommand: "npx bmad-method install --yes --modules bmm,bmb,cis --tools claude-code,opencode --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'",
             claudeCommand: "claude",
             opencodeCommand: "opencode",
-            projectSortOrder: .nameAscending
+            projectSortOrder: .nameAscending,
+            terminalKind: .terminal
         )
     }
 
@@ -92,6 +94,7 @@ struct AppSettings: Codable, Equatable {
         case claudeCommand
         case opencodeCommand
         case projectSortOrder
+        case terminalKind
     }
 
     init(projectsRoot: String,
@@ -102,7 +105,8 @@ struct AppSettings: Codable, Equatable {
          initCommand: String,
          claudeCommand: String,
          opencodeCommand: String,
-         projectSortOrder: ProjectSortOrder = .nameAscending) {
+         projectSortOrder: ProjectSortOrder = .nameAscending,
+         terminalKind: TerminalKind = .terminal) {
         self.projectsRoot = projectsRoot
         self.moduleSourceKind = moduleSourceKind
         self.moduleRepoURL = moduleRepoURL
@@ -112,6 +116,7 @@ struct AppSettings: Codable, Equatable {
         self.claudeCommand = claudeCommand
         self.opencodeCommand = opencodeCommand
         self.projectSortOrder = projectSortOrder
+        self.terminalKind = terminalKind
     }
 
     init(from decoder: Decoder) throws {
@@ -136,5 +141,9 @@ struct AppSettings: Codable, Equatable {
             let zipConfigured = !moduleZipPath.trimmingCharacters(in: .whitespaces).isEmpty
             moduleSourceKind = zipConfigured ? .localZip : .gitRepo
         }
+
+        // Legacy settings.json files predate the terminal picker — default
+        // to Terminal.app so upgrades keep the previous behaviour.
+        terminalKind = try c.decodeIfPresent(TerminalKind.self, forKey: .terminalKind) ?? .terminal
     }
 }

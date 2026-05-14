@@ -17,6 +17,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(defaults.claudeCommand, "claude")
         XCTAssertEqual(defaults.opencodeCommand, "opencode")
         XCTAssertEqual(defaults.projectSortOrder, .nameAscending)
+        XCTAssertEqual(defaults.terminalKind, .terminal)
     }
 
     func testDecodesLegacySettingsWithoutSortOrder() throws {
@@ -140,5 +141,41 @@ final class AppSettingsTests: XCTestCase {
         let encoded = try JSONEncoder().encode(defaults)
         let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
         XCTAssertEqual(defaults, decoded)
+    }
+
+    func testLegacyWithoutTerminalKindDefaultsToTerminalApp() throws {
+        // Pre-terminal-picker settings.json files don't carry terminalKind.
+        // The decoder must fall back to .terminal so existing users keep
+        // the only behaviour the app previously supported.
+        let legacy = """
+        {
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertEqual(decoded.terminalKind, .terminal)
+    }
+
+    func testCodableRoundTripPreservesTerminalKind() throws {
+        let original = AppSettings(
+            projectsRoot: "/tmp/my-projects",
+            moduleSourceKind: .gitRepo,
+            moduleRepoURL: "https://github.com/example/repo",
+            moduleRepoRef: "main",
+            moduleZipPath: "",
+            initCommand: "echo {PROJECT_PATH}",
+            claudeCommand: "claude",
+            opencodeCommand: "opencode",
+            projectSortOrder: .nameAscending,
+            terminalKind: .iterm2
+        )
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
+        XCTAssertEqual(decoded.terminalKind, .iterm2)
+        XCTAssertEqual(original, decoded)
     }
 }
