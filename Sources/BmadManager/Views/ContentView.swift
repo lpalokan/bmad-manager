@@ -181,9 +181,10 @@ struct ContentView: View {
         let name = newProjectName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
 
-        // If no module zip is configured yet, prompt for one and remember the
-        // choice in Settings so this only happens on the first project.
-        if settings.settings.moduleZipPath.trimmingCharacters(in: .whitespaces).isEmpty {
+        // Only the local-zip source needs a one-time file picker. The git-repo
+        // source has a default URL, so first-time users never see this prompt.
+        if settings.settings.moduleSourceKind == .localZip,
+           settings.settings.moduleZipPath.trimmingCharacters(in: .whitespaces).isEmpty {
             guard let picked = promptForModuleZip() else {
                 errorMessage = "A marketing growth module .zip is required to create a project."
                 return

@@ -22,11 +22,34 @@ struct SettingsView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Marketing growth module (.zip)").font(.subheadline).bold()
-                HStack {
-                    TextField("", text: $store.settings.moduleZipPath)
+                Text("Marketing growth module source").font(.subheadline).bold()
+                Picker("Source", selection: $store.settings.moduleSourceKind) {
+                    ForEach(ModuleSourceKind.allCases, id: \.self) { kind in
+                        Text(kind.displayName).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                switch store.settings.moduleSourceKind {
+                case .gitRepo:
+                    TextField("GitHub repo URL", text: $store.settings.moduleRepoURL)
                         .textFieldStyle(.roundedBorder)
-                    Button("Choose…") { chooseZip() }
+                    TextField("Branch, tag, or SHA (blank = default branch)",
+                              text: $store.settings.moduleRepoRef)
+                        .textFieldStyle(.roundedBorder)
+                    Text("Requires git on PATH (Xcode Command Line Tools provides it).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .localZip:
+                    HStack {
+                        TextField("Path to .zip", text: $store.settings.moduleZipPath)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Choose…") { chooseZip() }
+                    }
+                    Text("GitHub \"Download ZIP\" archives are unwrapped automatically.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -69,7 +92,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .frame(width: 620, height: 540)
+        .frame(width: 620, height: 620)
         .confirmationDialog(
             "Reset all settings to defaults?",
             isPresented: $showResetConfirm,

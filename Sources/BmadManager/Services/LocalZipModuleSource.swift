@@ -1,18 +1,37 @@
 import Foundation
 
 enum ZipError: LocalizedError {
+    case notConfigured
     case zipNotFound(String)
     case extractionFailed(String)
 
     var errorDescription: String? {
         switch self {
-        case .zipNotFound(let path): return "Zip file not found: \(path)"
-        case .extractionFailed(let message): return "Zip extraction failed: \(message)"
+        case .notConfigured:           return "No marketing growth module .zip is configured."
+        case .zipNotFound(let path):   return "Zip file not found: \(path)"
+        case .extractionFailed(let m): return "Zip extraction failed: \(m)"
         }
     }
 }
 
-enum ZipExtractor {
+/// `ModuleSource` adapter that materialises the module by extracting a
+/// local `.zip` into a fresh temp directory.
+struct LocalZipModuleSource: ModuleSource {
+    let zipPath: String
+
+    func withModuleRoot<T>(_ body: (URL) async throws -> T) async throws -> T {
+        let trimmed = zipPath.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            throw ZipError.notConfigured
+        }
+        let tmpDir = try LocalZipModuleSource.extract(zipPath: trimmed)
+        defer { LocalZipModuleSource.cleanup(tmpDir) }
+        let root = LocalZipModuleSource.moduleRoot(in: tmpDir)
+        return try await body(root)
+    }
+
+    // MARK: - Internals (also exercised directly by LocalZipModuleSourceTests)
+
     /// Extracts the zip to a fresh /tmp/bmad-manager-<uuid>/ directory and returns its URL.
     static func extract(zipPath: String) throws -> URL {
         let expanded = (zipPath as NSString).expandingTildeInPath
@@ -50,19 +69,6 @@ enum ZipExtractor {
 
     static func cleanup(_ url: URL) {
         try? FileManager.default.removeItem(at: url)
-    }
-
-    /// Extracts the zip, descends into the GitHub-style wrapper folder if
-    /// present, invokes `body` with the module root URL, and removes the
-    /// temp dir on return or throw.
-    static func withExtractedModule<T>(
-        zipPath: String,
-        _ body: (URL) async throws -> T
-    ) async throws -> T {
-        let tmpDir = try extract(zipPath: zipPath)
-        defer { cleanup(tmpDir) }
-        let root = moduleRoot(in: tmpDir)
-        return try await body(root)
     }
 
     /// If `dir` contains exactly one non-junk subdirectory (the GitHub

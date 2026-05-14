@@ -1,13 +1,10 @@
 import Foundation
 
 enum ProjectCreationError: LocalizedError {
-    case noModuleZipConfigured
     case initCommandFailed(Int32)
 
     var errorDescription: String? {
         switch self {
-        case .noModuleZipConfigured:
-            return "No marketing growth module .zip is configured."
         case .initCommandFailed(let code):
             return "Init command exited with code \(code). See the output panel for details."
         }
@@ -16,6 +13,15 @@ enum ProjectCreationError: LocalizedError {
 
 struct ProjectCreator {
     let projectService: ProjectService
+    let moduleSourceFor: (AppSettings) -> ModuleSource
+
+    init(
+        projectService: ProjectService,
+        moduleSourceFor: @escaping (AppSettings) -> ModuleSource = ModuleSourceFactory.make
+    ) {
+        self.projectService = projectService
+        self.moduleSourceFor = moduleSourceFor
+    }
 
     @discardableResult
     func create(
@@ -23,19 +29,13 @@ struct ProjectCreator {
         settings: AppSettings,
         runner: CommandRunner
     ) async throws -> ProjectItem {
-        let moduleZip = settings.moduleZipPath.trimmingCharacters(in: .whitespaces)
-        guard !moduleZip.isEmpty else {
-            throw ProjectCreationError.noModuleZipConfigured
-        }
-
         let projectURL = try projectService.createProjectFolder(name: name, in: settings.projectsRoot)
+        let source = moduleSourceFor(settings)
 
-        try await ZipExtractor.withExtractedModule(zipPath: moduleZip) { moduleRoot in
-            let modulePath = moduleRoot.path
-
+        try await source.withModuleRoot { moduleRoot in
             let command = settings.initCommand
                 .replacingOccurrences(of: "{PROJECT_PATH}", with: projectURL.path)
-                .replacingOccurrences(of: "{MODULE_PATH}", with: modulePath)
+                .replacingOccurrences(of: "{MODULE_PATH}", with: moduleRoot.path)
                 .replacingOccurrences(of: "{PROJECT_NAME}", with: name)
 
             let exitCode = await runner.run(command: command, cwd: projectURL)

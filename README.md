@@ -10,8 +10,11 @@ The UI is intentionally tiny:
 
 - Pick a project root folder (one-time setup in Settings).
 - Type a new project name, click **Create new project**.
-- The first time you create a project without a marketing-growth `.zip`
-  configured, the app pops a file picker, remembers your choice, and continues.
+- By default the marketing-growth module is pulled fresh from
+  [github.com/lpalokan/bmad-marketing-growth](https://github.com/lpalokan/bmad-marketing-growth)
+  via a shallow `git clone`. You can switch to a local `.zip` in Settings —
+  if you switch to local-zip without one configured, the app pops a file
+  picker, remembers your choice, and continues.
 - Each project row shows when it was created and has buttons to open it in
   Claude Code or opencode in a Terminal window, plus a trash button (moves
   to macOS Trash).
@@ -33,21 +36,27 @@ You receive **`bmad-manager.dmg`** from the developer.
 Settings (cogwheel icon) let you change:
 
 - **Projects root folder** — every new project becomes a subfolder here.
-- **Marketing growth module (.zip)** — the latest module package on disk.
+- **Marketing growth module source** — pick one:
+  - **GitHub repo** (default): a public `https://...` URL plus an optional
+    branch/tag/SHA. Blank ref = follow the repo's default branch. Each
+    project creation does a `git clone --depth 1` into a temp dir, so you
+    always get the latest upstream. Requires `git` on PATH — Xcode Command
+    Line Tools provides it (`xcode-select --install`).
+  - **Local zip**: path to a `.zip` on disk. GitHub "Download ZIP" archives
+    are auto-unwrapped (the app descends into the single wrapper folder so
+    `--custom-source` sees the module root).
 - **Init command** — the headless command run after the project folder is
   created. The default uses the BMad [headless install
   flags](https://docs.bmad-method.org/how-to/install-bmad/#headless-ci-installs)
   (`--yes --modules bmm,bmb,cis --tools claude-code,opencode --custom-source ... --directory ...`)
   to install the BMad Method core, BMad Builder, and Creative Intelligence
   Suite configured for both Claude Code and opencode, and to register the
-  unzipped marketing-growth bundle as a proper BMad module via
-  `--custom-source` (rather than overlaying its files on the project). When
-  the bundle is a GitHub "Download ZIP" archive, the app auto-descends into
-  the single wrapper folder so `--custom-source` sees the module root. If
+  materialised marketing-growth bundle as a proper BMad module via
+  `--custom-source` (rather than overlaying its files on the project). If
   you're upgrading an existing install, hit **Reset to defaults** so your
   persisted command picks up the current flags. Available placeholders:
   - `{PROJECT_PATH}` — absolute path of the new project folder
-  - `{MODULE_PATH}` — absolute path of the unzipped module (in `/tmp/...`)
+  - `{MODULE_PATH}` — absolute path of the materialised module (in `/tmp/...`)
   - `{PROJECT_NAME}` — bare folder name
 - **Claude Code / opencode commands** — the binaries (or aliases) invoked by
   the per-row launch buttons.
@@ -113,9 +122,12 @@ double-click experience.
 swift test
 ```
 
-Covers `AppSettings`, `ProjectService`, `ZipExtractor`, and the
-`TerminalLauncher` escaping helpers. Tests are macOS-only (the package
-platform is `.macOS(.v14)`).
+Covers `AppSettings`, `ProjectService`, both `ModuleSource` adapters
+(`GitRepoModuleSource`, `LocalZipModuleSource`), `ProjectCreator`
+orchestration via a fake source, and the `TerminalLauncher` escaping
+helpers. Tests are macOS-only (the package platform is `.macOS(.v14)`)
+and require full Xcode (XCTest isn't shipped in the Command Line Tools
+stand-alone install).
 
 ## Project layout
 
@@ -125,7 +137,9 @@ Sources/BmadManager/
     BmadManagerApp.swift          # @main App
     Models/                       # AppSettings, ProjectItem
     Services/                     # SettingsStore, ProjectService,
-                                  # ZipExtractor, CommandRunner, TerminalLauncher
+                                  # ModuleSource (+ GitRepoModuleSource,
+                                  # LocalZipModuleSource),
+                                  # CommandRunner, TerminalLauncher
     Views/                        # ContentView, ProjectRowView,
                                   # SettingsView, CommandOutputView
 Resources/
@@ -144,15 +158,20 @@ script or call `./scripts/make_icon.sh` directly.
 ## How a project gets created
 
 1. Validate the typed name (non-empty, no `/`, no leading `.`, not already present).
-2. If no marketing-growth `.zip` is configured, pop a file picker, save the
-   choice to settings, then continue.
+2. If the source is **Local zip** and none is configured, pop a file picker,
+   save the choice to settings, then continue. (The GitHub-repo source has a
+   default URL and never prompts.)
 3. `mkdir <projectsRoot>/<name>`.
-4. Extract the module zip to a fresh `/tmp/bmad-manager-<uuid>/` using `/usr/bin/unzip`.
+4. Materialise the module into a fresh `/tmp/bmad-manager-<uuid>/`:
+   - **GitHub repo**: `git clone --depth 1 [--branch <ref>] <url>` into the
+     temp dir. The clone root is the module root.
+   - **Local zip**: extract with `/usr/bin/unzip`, then descend into the
+     single wrapper folder if the archive has GitHub's "Download ZIP" shape.
 5. Substitute placeholders in the init command.
 6. Run the command in `/bin/zsh -lc '...'` with the project folder as the
    working directory (so `npx`, Homebrew, nvm, etc. resolve from your shell PATH).
    Output streams into the bottom panel.
-7. Clean up the `/tmp` extraction directory.
+7. Clean up the `/tmp` materialisation directory.
 
 On failure the partial project folder is kept so you can inspect it; delete it
 from the list with the trash button when you're done.
