@@ -7,6 +7,11 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showResetConfirm = false
 
+    // Detected once when the sheet opens — re-querying LaunchServices on
+    // every redraw is wasteful, and a user installing a new terminal mid-
+    // session can just reopen Settings.
+    @State private var installedTerminals: [TerminalKind] = TerminalDetector.installedKinds()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Settings")
@@ -67,6 +72,21 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Terminal").font(.subheadline).bold()
+                Picker("Terminal", selection: $store.settings.terminalKind) {
+                    ForEach(installedTerminals) { kind in
+                        Text(kind.displayName).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .disabled(installedTerminals.count <= 1)
+                Text("Only terminals installed on this Mac are shown. Install another supported terminal to add it here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Claude Code command").font(.subheadline).bold()
@@ -93,6 +113,7 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 620, height: 620)
+        .onAppear { reconcileTerminalSelection() }
         .confirmationDialog(
             "Reset all settings to defaults?",
             isPresented: $showResetConfirm,
@@ -100,6 +121,19 @@ struct SettingsView: View {
         ) {
             Button("Reset", role: .destructive) { store.reset() }
             Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    /// If the persisted terminal kind isn't installed (e.g. the user
+    /// uninstalled iTerm2 after picking it), fall back to the first
+    /// installed kind so the Picker has a matching tag and the launch
+    /// path doesn't fail later. Terminal.app ships with macOS, so
+    /// `installedTerminals` should never actually be empty — the
+    /// fallback case is a defensive belt.
+    private func reconcileTerminalSelection() {
+        guard !installedTerminals.isEmpty else { return }
+        if !installedTerminals.contains(store.settings.terminalKind) {
+            store.settings.terminalKind = installedTerminals.first ?? .fallback
         }
     }
 

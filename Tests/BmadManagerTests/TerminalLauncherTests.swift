@@ -44,4 +44,19 @@ final class TerminalLauncherTests: XCTestCase {
         // quote), which is what AppleScript expects.
         XCTAssertEqual(TerminalLauncher.appleScriptEscape(#"\""#), #"\\\""#)
     }
+
+    // MARK: - Per-terminal AppleScript dispatch
+
+    func testAppleScriptForTerminalDrivesTerminalApp() {
+        let script = TerminalLauncher.appleScript(for: .terminal, shellLine: "cd '/tmp' && ls")
+        XCTAssertTrue(script.contains("tell application \"Terminal\""))
+        XCTAssertTrue(script.contains("do script \"cd '/tmp' && ls\""))
+    }
+
+    func testAppleScriptForITerm2DrivesITerm() {
+        let script = TerminalLauncher.appleScript(for: .iterm2, shellLine: "cd '/tmp' && ls")
+        XCTAssertTrue(script.contains("tell application \"iTerm\""))
+        XCTAssertTrue(script.contains("create window with default profile"))
+        XCTAssertTrue(script.contains("write text \"cd '/tmp' && ls\""))
+    }
 }

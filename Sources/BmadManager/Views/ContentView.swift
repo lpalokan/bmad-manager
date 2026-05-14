@@ -237,7 +237,11 @@ struct ContentView: View {
             return
         }
         do {
-            try TerminalLauncher.open(projectPath: project.url.path, command: trimmed)
+            try TerminalLauncher.open(
+                projectPath: project.url.path,
+                command: trimmed,
+                kind: settings.settings.terminalKind
+            )
         } catch {
             errorMessage = error.localizedDescription
         }
