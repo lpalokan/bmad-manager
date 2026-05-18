@@ -4,6 +4,7 @@ struct ProjectRowView: View {
     let project: ProjectItem
     let onClaude: () -> Void
     let onOpencode: () -> Void
+    let onOpenFolder: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -24,6 +25,12 @@ struct ProjectRowView: View {
             Button("Claude Code", action: onClaude)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+            Button(action: onOpenFolder) {
+                Label("Open Folder", systemImage: "folder.fill")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help("Open project folder in Finder")
             Button("opencode", action: onOpencode)
                 .buttonStyle(.bordered)
                 .controlSize(.small)

@@ -163,6 +163,7 @@ struct ContentView: View {
                 project: project,
                 onClaude: { openInTerminal(project: project, command: settings.settings.claudeCommand) },
                 onOpencode: { openInTerminal(project: project, command: settings.settings.opencodeCommand) },
+                onOpenFolder: { openProjectFolder(project: project) },
                 onDelete: { projectToDelete = project }
             )
         }
@@ -228,6 +229,10 @@ struct ContentView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func openProjectFolder(project: ProjectItem) {
+        NSWorkspace.shared.open(project.url)
     }
 
     private func openInTerminal(project: ProjectItem, command: String) {
