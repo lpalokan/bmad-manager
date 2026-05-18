@@ -18,12 +18,29 @@ struct BmadManagerApp: App {
                 .environmentObject(commandRunner)
                 .frame(minWidth: 640, minHeight: 480)
         }
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("Quit BMad Manager") {
+                    NSApp.terminate(nil)
+                }
+                .keyboardShortcut("q", modifiers: .command)
+            }
+        }
     }
 }
 
 final class BmadManagerAppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    /// Set activation policy *before* the menu bar is wired so Cmd-Q and
+    /// other system shortcuts work from the first press.
+    func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 }
