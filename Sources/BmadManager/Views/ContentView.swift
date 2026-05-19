@@ -2,20 +2,16 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+/// Thin adapter that binds `ProjectCoordinator` to SwiftUI views.
+/// All project-lifecycle logic lives in the coordinator so it can be
+/// tested without XCUITest.
 struct ContentView: View {
     @EnvironmentObject var settings: SettingsStore
     @EnvironmentObject var commandRunner: CommandRunner
+    @EnvironmentObject var coordinator: ProjectCoordinator
 
     @State private var newProjectName: String = ""
-    @State private var projects: [ProjectItem] = []
     @State private var showSettings: Bool = false
-    @State private var errorMessage: String? = nil
-    @State private var showOutput: Bool = false
-    @State private var isCreating: Bool = false
-    @State private var projectToDelete: ProjectItem? = nil
-
-    private let projectService = ProjectService()
-    private let projectCreator = ProjectCreator(projectService: ProjectService())
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,13 +20,13 @@ struct ContentView: View {
             sortRow
             Divider()
 
-            if projects.isEmpty {
+            if coordinator.projects.isEmpty {
                 emptyState
             } else {
                 projectList
             }
 
-            if showOutput || commandRunner.isRunning {
+            if coordinator.showOutput || commandRunner.isRunning {
                 Divider()
                 CommandOutputView()
                     .frame(height: 200)
@@ -40,37 +36,37 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(settings)
-                .onDisappear { refresh() }
+                .onDisappear { coordinator.refresh() }
         }
         .alert(
             "Error",
             isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { if !$0 { errorMessage = nil } }
+                get: { coordinator.errorMessage != nil },
+                set: { if !$0 { coordinator.errorMessage = nil } }
             )
         ) {
-            Button("OK") { errorMessage = nil }
+            Button("OK") { coordinator.errorMessage = nil }
         } message: {
-            Text(errorMessage ?? "")
+            Text(coordinator.errorMessage ?? "")
         }
         .confirmationDialog(
-            projectToDelete.map { "Move '\($0.name)' to the Trash?" } ?? "Move to Trash?",
+            coordinator.projectToDelete.map { "Move '\($0.name)' to the Trash?" } ?? "Move to Trash?",
             isPresented: Binding(
-                get: { projectToDelete != nil },
-                set: { if !$0 { projectToDelete = nil } }
+                get: { coordinator.projectToDelete != nil },
+                set: { if !$0 { coordinator.projectToDelete = nil } }
             ),
             titleVisibility: .visible
         ) {
-            if let project = projectToDelete {
+            if let project = coordinator.projectToDelete {
                 Button("Move to Trash", role: .destructive) {
-                    Task { await deleteProject(project) }
+                    Task { await coordinator.deleteProject(project) }
                 }
             }
             Button("Cancel", role: .cancel) {}
         }
-        .onAppear { refresh() }
-        .onChange(of: settings.settings.projectsRoot) { refresh() }
-        .onChange(of: settings.settings.projectSortOrder) { refresh() }
+        .onAppear { coordinator.refresh() }
+        .onChange(of: settings.settings.projectsRoot) { coordinator.refresh() }
+        .onChange(of: settings.settings.projectSortOrder) { coordinator.refresh() }
     }
 
     private var header: some View {
@@ -79,11 +75,11 @@ struct ContentView: View {
                 .font(.headline)
             Spacer()
             Button {
-                showOutput.toggle()
+                coordinator.showOutput.toggle()
             } label: {
-                Image(systemName: showOutput ? "terminal.fill" : "terminal")
+                Image(systemName: coordinator.showOutput ? "terminal.fill" : "terminal")
             }
-            .help(showOutput ? "Hide output" : "Show output")
+            .help(coordinator.showOutput ? "Hide output" : "Show output")
             .buttonStyle(.plain)
 
             Button {
@@ -108,7 +104,7 @@ struct ContentView: View {
             Button {
                 Task { await createProject() }
             } label: {
-                if isCreating {
+                if coordinator.isCreating {
                     ProgressView().controlSize(.small)
                 } else {
                     Text("Create new project")
@@ -122,7 +118,7 @@ struct ContentView: View {
     }
 
     private var canCreate: Bool {
-        !isCreating && !newProjectName.trimmingCharacters(in: .whitespaces).isEmpty
+        !coordinator.isCreating && !newProjectName.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var sortRow: some View {
@@ -158,55 +154,29 @@ struct ContentView: View {
     }
 
     private var projectList: some View {
-        List(projects) { project in
+        List(coordinator.projects) { project in
             ProjectRowView(
                 project: project,
-                onClaude: { openInTerminal(project: project, command: settings.settings.claudeCommand) },
-                onOpencode: { openInTerminal(project: project, command: settings.settings.opencodeCommand) },
-                onOpenFolder: { openProjectFolder(project: project) },
-                onDelete: { projectToDelete = project }
+                onClaude: { coordinator.openInTerminal(project: project, command: settings.settings.claudeCommand) },
+                onOpencode: { coordinator.openInTerminal(project: project, command: settings.settings.opencodeCommand) },
+                onOpenFolder: { coordinator.openProjectFolder(project) },
+                onDelete: { coordinator.projectToDelete = project }
             )
         }
     }
 
     // MARK: - Actions
 
-    private func refresh() {
-        projects = projectService.listProjects(
-            in: settings.settings.projectsRoot,
-            sortedBy: settings.settings.projectSortOrder
-        )
-    }
-
     private func createProject() async {
         let name = newProjectName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
 
-        // Only the local-zip source needs a one-time file picker. The git-repo
-        // source has a default URL, so first-time users never see this prompt.
-        if settings.settings.moduleSourceKind == .localZip,
-           settings.settings.moduleZipPath.trimmingCharacters(in: .whitespaces).isEmpty {
-            guard let picked = promptForModuleZip() else {
-                errorMessage = "A marketing growth module .zip is required to create a project."
-                return
-            }
-            settings.settings.moduleZipPath = picked.path
+        await coordinator.createProject(name: name) { [self] in
+            promptForModuleZip()
         }
 
-        isCreating = true
-        showOutput = true
-        defer { isCreating = false }
-
-        do {
-            try await projectCreator.create(
-                name: name,
-                settings: settings.settings,
-                runner: commandRunner
-            )
+        if coordinator.errorMessage == nil {
             newProjectName = ""
-            refresh()
-        } catch {
-            errorMessage = error.localizedDescription
         }
     }
 
@@ -220,35 +190,5 @@ struct ContentView: View {
         panel.prompt = "Use This Zip"
         panel.message = "Pick the marketing growth module .zip — it will be remembered for future projects."
         return panel.runModal() == .OK ? panel.url : nil
-    }
-
-    private func deleteProject(_ project: ProjectItem) async {
-        do {
-            try await projectService.trash(project)
-            refresh()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func openProjectFolder(project: ProjectItem) {
-        NSWorkspace.shared.open(project.url)
-    }
-
-    private func openInTerminal(project: ProjectItem, command: String) {
-        let trimmed = command.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else {
-            errorMessage = "Command is empty. Set it in Settings."
-            return
-        }
-        do {
-            try TerminalLauncher.open(
-                projectPath: project.url.path,
-                command: trimmed,
-                kind: settings.settings.terminalKind
-            )
-        } catch {
-            errorMessage = error.localizedDescription
-        }
     }
 }

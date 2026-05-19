@@ -10,12 +10,30 @@ struct BmadManagerApp: App {
 
     @StateObject private var settingsStore = SettingsStore()
     @StateObject private var commandRunner = CommandRunner()
+    @StateObject private var projectCoordinator: ProjectCoordinator = {
+        // Cannot capture other @StateObject properties in the default-value
+        // closure because they may not exist yet.  We substitute the real
+        // runner in init() after all StateObjects are created.
+        ProjectCoordinator(settings: SettingsStore(), runCommand: { _, _ in 0 })
+    }()
+
+    init() {
+        // Wire the real CommandRunner after @StateObject wrappers are
+        // allocated so we don't race on instance creation order.
+        let store = settingsStore
+        let runner = commandRunner
+        _projectCoordinator = StateObject(wrappedValue: ProjectCoordinator(
+            settings: store,
+            runCommand: { cmd, cwd in await runner.run(command: cmd, cwd: cwd) }
+        ))
+    }
 
     var body: some Scene {
         WindowGroup("BMad Manager") {
             ContentView()
                 .environmentObject(settingsStore)
                 .environmentObject(commandRunner)
+                .environmentObject(projectCoordinator)
                 .frame(minWidth: 640, minHeight: 480)
         }
         .commands {
