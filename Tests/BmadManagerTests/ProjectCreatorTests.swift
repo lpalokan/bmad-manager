@@ -59,25 +59,30 @@ final class ProjectCreatorTests: XCTestCase {
 
     // MARK: - Tests
 
-    @MainActor
     func testHappyPath() async throws {
         let settings = makeSettings(initCommand: "true")
         let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
-        let runner = CommandRunner()
-        let project = try await creator.create(name: "happy-project", settings: settings, runner: runner)
+        let project = try await creator.create(
+            name: "happy-project",
+            settings: settings
+        ) { _, _ in 0 }
 
         XCTAssertEqual(project.name, "happy-project")
         XCTAssertTrue(FileManager.default.fileExists(atPath: project.url.path))
     }
 
-    @MainActor
     func testPlaceholderSubstitution() async throws {
         let settings = makeSettings(
             initCommand: "echo '{PROJECT_PATH}' > marker.txt && echo '{PROJECT_NAME}' >> marker.txt && echo '{MODULE_PATH}' >> marker.txt"
         )
         let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
-        let runner = CommandRunner()
-        let project = try await creator.create(name: "subst-project", settings: settings, runner: runner)
+        let project = try await creator.create(
+            name: "subst-project",
+            settings: settings
+        ) { command, cwd in
+            let (_, exitCode) = ShellProcess.run(command: command, cwd: cwd)
+            return await exitCode.value
+        }
 
         let markerURL = project.url.appendingPathComponent("marker.txt")
         let contents = try String(contentsOf: markerURL, encoding: .utf8)
@@ -86,13 +91,14 @@ final class ProjectCreatorTests: XCTestCase {
         XCTAssertTrue(contents.contains(moduleRoot.path))
     }
 
-    @MainActor
     func testFailureCleanupOnNonZeroExit() async throws {
         let settings = makeSettings(initCommand: "exit 42")
         let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
-        let runner = CommandRunner()
         do {
-            try await creator.create(name: "fail-project", settings: settings, runner: runner)
+            try await creator.create(
+                name: "fail-project",
+                settings: settings
+            ) { _, _ in 42 }
             XCTFail("expected throw")
         } catch ProjectCreationError.initCommandFailed(let code) {
             XCTAssertEqual(code, 42)
@@ -104,7 +110,6 @@ final class ProjectCreatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.path))
     }
 
-    @MainActor
     func testSourceErrorPropagatesAndProjectFolderRemains() async throws {
         // `ModuleSource` adapters validate their own config and throw before
         // invoking `body`. ProjectCreator should let that error propagate
@@ -115,9 +120,11 @@ final class ProjectCreatorTests: XCTestCase {
             source: FakeModuleSource(moduleRoot: moduleRoot,
                                      errorBeforeBody: FakeSourceError.missingFixture)
         )
-        let runner = CommandRunner()
         do {
-            try await creator.create(name: "throw-project", settings: settings, runner: runner)
+            try await creator.create(
+                name: "throw-project",
+                settings: settings
+            ) { _, _ in 0 }
             XCTFail("expected throw")
         } catch FakeSourceError.missingFixture {
             // expected
@@ -129,7 +136,6 @@ final class ProjectCreatorTests: XCTestCase {
 
     // MARK: - Factory wiring
 
-    @MainActor
     func testDefaultFactoryDispatchesByKind() {
         // Smoke test that ModuleSourceFactory.make returns the concrete
         // adapter implied by moduleSourceKind. Each adapter has its own

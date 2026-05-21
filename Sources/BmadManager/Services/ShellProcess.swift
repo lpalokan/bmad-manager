@@ -24,6 +24,13 @@ struct ShellProcess {
                 }
 
                 process.terminationHandler = { proc in
+                    // Drain any data the readability handler hasn't processed yet.
+                    // On fast runners the termination handler can fire before the
+                    // readability handler, so clearing it first would lose output.
+                    let remaining = pipe.fileHandleForReading.readDataToEndOfFile()
+                    if !remaining.isEmpty, let chunk = String(data: remaining, encoding: .utf8) {
+                        continuation.yield(chunk)
+                    }
                     pipe.fileHandleForReading.readabilityHandler = nil
                     continuation.finish()
                     resume.resume(returning: proc.terminationStatus)

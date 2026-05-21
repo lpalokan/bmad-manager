@@ -27,7 +27,7 @@ struct ProjectCreator {
     func create(
         name: String,
         settings: AppSettings,
-        runner: CommandRunner
+        runCommand: (String, URL) async -> Int32 = { _, _ in 0 }
     ) async throws -> ProjectItem {
         let projectURL = try projectService.createProjectFolder(name: name, in: settings.projectsRoot)
         let source = moduleSourceFor(settings)
@@ -38,7 +38,7 @@ struct ProjectCreator {
                 .replacingOccurrences(of: "{MODULE_PATH}", with: moduleRoot.path)
                 .replacingOccurrences(of: "{PROJECT_NAME}", with: name)
 
-            let exitCode = await runner.run(command: command, cwd: projectURL)
+            let exitCode = await runCommand(command, projectURL)
             if exitCode != 0 {
                 throw ProjectCreationError.initCommandFailed(exitCode)
             }
