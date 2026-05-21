@@ -17,6 +17,7 @@ private final class FakeTerminalLauncher: TerminalLauncherProtocol {
 
 private enum FakeError: Error { case terminalFailed }
 
+@MainActor
 final class ProjectCoordinatorTests: XCTestCase {
     private var projectsRoot: URL!
     private var settings: SettingsStore!
@@ -129,8 +130,21 @@ final class ProjectCoordinatorTests: XCTestCase {
         settings.settings.moduleZipPath = ""
 
         let coordinator = makeCoordinator()
+
+        // Create a real zip fixture so unzip succeeds.
+        // (Don't put the payload inside projectsRoot — listProjects would pick it up.)
+        let payloadDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("bmad-zip-payload-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: payloadDir, withIntermediateDirectories: true)
+        try? "hi".write(to: payloadDir.appendingPathComponent("dummy.txt"), atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: payloadDir) }
         let zipURL = projectsRoot.appendingPathComponent("fake.zip")
-        try? "".write(to: zipURL, atomically: true, encoding: .utf8)
+        let zip = Process()
+        zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        zip.arguments = ["-q", "-r", zipURL.path, "."]
+        zip.currentDirectoryURL = payloadDir
+        try? zip.run()
+        zip.waitUntilExit()
 
         await coordinator.createProject(name: "zippy", promptForModuleZip: { zipURL })
 
