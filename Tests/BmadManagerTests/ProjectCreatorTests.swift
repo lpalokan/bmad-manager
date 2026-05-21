@@ -79,7 +79,10 @@ final class ProjectCreatorTests: XCTestCase {
         let project = try await creator.create(
             name: "subst-project",
             settings: settings
-        ) { _, _ in 0 }
+        ) { command, cwd in
+            let (_, exitCode) = ShellProcess.run(command: command, cwd: cwd)
+            return await exitCode.value
+        }
 
         let markerURL = project.url.appendingPathComponent("marker.txt")
         let contents = try String(contentsOf: markerURL, encoding: .utf8)
