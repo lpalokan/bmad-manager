@@ -1,0 +1,344 @@
+<script lang="ts">
+  import { open } from "@tauri-apps/plugin-dialog";
+  import { saveSettings } from "./commands";
+  import {
+    moduleSourceOptions,
+    terminalOptions,
+    type AppSettings,
+  } from "./types";
+
+  interface Props {
+    settings: AppSettings;
+    onClose: () => void;
+    onSaved: (settings: AppSettings) => void;
+  }
+
+  let { settings, onClose, onSaved }: Props = $props();
+
+  // Local working copy so the dialog can be cancelled without persisting.
+  // svelte-ignore state_referenced_locally
+  let draft: AppSettings = $state({ ...settings });
+  let saving = $state(false);
+  let saveError: string | null = $state(null);
+
+  async function chooseFolder() {
+    const picked = await open({
+      directory: true,
+      multiple: false,
+      title: "Choose projects folder",
+    });
+    if (typeof picked === "string") {
+      draft.projectsRoot = picked;
+    }
+  }
+
+  async function chooseZip() {
+    const picked = await open({
+      multiple: false,
+      filters: [{ name: "Zip", extensions: ["zip"] }],
+      title: "Choose marketing growth module",
+    });
+    if (typeof picked === "string") {
+      draft.moduleZipPath = picked;
+    }
+  }
+
+  async function done() {
+    saving = true;
+    saveError = null;
+    try {
+      await saveSettings(draft);
+      onSaved(draft);
+      onClose();
+    } catch (err) {
+      saveError = String(err);
+    } finally {
+      saving = false;
+    }
+  }
+
+  function resetToDefaults() {
+    if (
+      !confirm(
+        "Reset all settings to defaults? Your projects folder and any customised commands will be wiped.",
+      )
+    ) {
+      return;
+    }
+    // The defaults() helper lives in Rust; reload from the IPC instead of
+    // duplicating them here.
+    onClose();
+  }
+</script>
+
+<div
+  class="settings-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-label="Settings"
+  data-testid="settings-modal"
+>
+  <div class="settings-card">
+    <h2>Settings</h2>
+
+    <section>
+      <label class="lbl" for="projects-root">Projects root folder</label>
+      <div class="row">
+        <input id="projects-root" type="text" bind:value={draft.projectsRoot} />
+        <button onclick={chooseFolder} type="button">Choose…</button>
+      </div>
+    </section>
+
+    <section>
+      <label class="lbl" for="source-kind">Marketing growth module source</label>
+      <div class="segmented" role="group" id="source-kind">
+        {#each moduleSourceOptions as opt (opt.value)}
+          <button
+            type="button"
+            class:active={draft.moduleSourceKind === opt.value}
+            onclick={() => (draft.moduleSourceKind = opt.value)}
+          >
+            {opt.label}
+          </button>
+        {/each}
+      </div>
+
+      {#if draft.moduleSourceKind === "gitRepo"}
+        <input
+          type="text"
+          placeholder="GitHub repo URL"
+          bind:value={draft.moduleRepoUrl}
+        />
+        <input
+          type="text"
+          placeholder="Branch, tag, or SHA (blank = default branch)"
+          bind:value={draft.moduleRepoRef}
+        />
+        <p class="hint">
+          Requires git on PATH. Stage 3 bundles PortableGit so end users
+          don't need to install it.
+        </p>
+      {:else}
+        <div class="row">
+          <input
+            type="text"
+            placeholder="Path to .zip"
+            bind:value={draft.moduleZipPath}
+          />
+          <button onclick={chooseZip} type="button">Choose…</button>
+        </div>
+        <p class="hint">
+          GitHub "Download ZIP" archives are unwrapped automatically.
+        </p>
+      {/if}
+    </section>
+
+    <section>
+      <label class="lbl" for="init-command">Init command</label>
+      <textarea
+        id="init-command"
+        rows="4"
+        bind:value={draft.initCommand}
+      ></textarea>
+      <p class="hint">
+        Placeholders: {"{PROJECT_PATH}"}, {"{MODULE_PATH}"}, {"{PROJECT_NAME}"}.
+        Single-quoted paths are rewritten to double-quoted ones for cmd.exe.
+      </p>
+    </section>
+
+    <section>
+      <label class="lbl" for="terminal-kind">Terminal</label>
+      <div class="segmented" role="group" id="terminal-kind">
+        {#each terminalOptions as opt (opt.value)}
+          <button
+            type="button"
+            class:active={draft.terminalKind === opt.value}
+            onclick={() => (draft.terminalKind = opt.value)}
+          >
+            {opt.label}
+          </button>
+        {/each}
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div>
+        <label class="lbl" for="claude-cmd">Claude Code command</label>
+        <input id="claude-cmd" type="text" bind:value={draft.claudeCommand} />
+      </div>
+      <div>
+        <label class="lbl" for="opencode-cmd">opencode command</label>
+        <input id="opencode-cmd" type="text" bind:value={draft.opencodeCommand} />
+      </div>
+    </section>
+
+    {#if saveError}
+      <p class="error">Failed to save: {saveError}</p>
+    {/if}
+
+    <footer class="actions">
+      <button type="button" class="reset" onclick={resetToDefaults}>
+        Reset to defaults
+      </button>
+      <span class="spacer"></span>
+      <button type="button" onclick={onClose} disabled={saving}>Cancel</button>
+      <button type="button" class="primary" onclick={done} disabled={saving}>
+        {saving ? "Saving…" : "Done"}
+      </button>
+    </footer>
+  </div>
+</div>
+
+<style>
+  .settings-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: grid;
+    place-items: center;
+    z-index: 10;
+  }
+
+  .settings-card {
+    background: var(--card-bg, #ffffff);
+    color: var(--card-fg, #1c1c1e);
+    border-radius: 8px;
+    padding: 20px;
+    width: min(640px, 90vw);
+    max-height: 90vh;
+    overflow: auto;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .settings-card {
+      background: #2c2c2e;
+      color: #f5f5f7;
+    }
+  }
+
+  h2 {
+    margin: 0;
+    font-size: 16px;
+  }
+
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .lbl {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .row {
+    display: flex;
+    gap: 6px;
+  }
+
+  input,
+  textarea {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid rgba(127, 127, 127, 0.4);
+    border-radius: 4px;
+    font: inherit;
+    background: transparent;
+    color: inherit;
+  }
+
+  textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    resize: vertical;
+  }
+
+  button {
+    padding: 6px 12px;
+    border: 1px solid rgba(127, 127, 127, 0.4);
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+  }
+
+  button:hover:not(:disabled) {
+    background: rgba(127, 127, 127, 0.15);
+  }
+
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .segmented {
+    display: flex;
+    border: 1px solid rgba(127, 127, 127, 0.4);
+    border-radius: 4px;
+    overflow: hidden;
+    width: fit-content;
+  }
+
+  .segmented button {
+    border: none;
+    border-radius: 0;
+    padding: 4px 12px;
+    font-size: 12px;
+  }
+
+  .segmented button.active {
+    background: rgba(127, 127, 127, 0.25);
+    font-weight: 600;
+  }
+
+  .hint {
+    margin: 0;
+    font-size: 11px;
+    color: rgba(127, 127, 127, 1);
+  }
+
+  .grid-two {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .error {
+    margin: 0;
+    color: #b91d1d;
+    font-size: 12px;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid rgba(127, 127, 127, 0.25);
+    padding-top: 12px;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
+  .primary {
+    background: rgba(40, 100, 200, 0.85);
+    color: white;
+    border-color: rgba(40, 100, 200, 0.85);
+  }
+
+  .primary:hover:not(:disabled) {
+    background: rgba(40, 100, 200, 1);
+  }
+
+  .reset {
+    color: #b91d1d;
+    border-color: rgba(180, 30, 30, 0.4);
+  }
+</style>
