@@ -1,12 +1,133 @@
 <script lang="ts">
-  // Stage 1: placeholder UI shell. The three regions named in issue #25
-  // (header with settings cogwheel, project list area, output panel) are
-  // visibly laid out with hardcoded content. Stage 2 replaces the
-  // placeholders with the real ContentView, ProjectRow, Settings, and
-  // CommandOutput components ported from the Swift UI.
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { onDestroy, onMount } from "svelte";
+  import CommandOutput from "./lib/CommandOutput.svelte";
+  import ProjectRow from "./lib/ProjectRow.svelte";
+  import Settings from "./lib/Settings.svelte";
+  import {
+    createProject,
+    deleteProject,
+    listProjects,
+    loadSettings,
+    openInClaude,
+    openInOpencode,
+    saveSettings,
+  } from "./lib/commands";
+  import { projectSortOrderOptions, type AppSettings, type OutputEvent, type ProjectItem, type ProjectSortOrder } from "./lib/types";
 
-  let showOutput = $state(false);
+  let settings: AppSettings | null = $state(null);
+  let projects: ProjectItem[] = $state([]);
+  let newProjectName = $state("");
+  let isCreating = $state(false);
   let showSettings = $state(false);
+  let showOutput = $state(false);
+  let outputLines: string[] = $state([]);
+  let lastExitCode: number | null = $state(null);
+  let errorMessage: string | null = $state(null);
+
+  let unlisten: UnlistenFn | null = null;
+
+  onMount(async () => {
+    try {
+      settings = await loadSettings();
+      await refresh();
+      unlisten = await listen<OutputEvent>("project-create-output", (event) => {
+        const payload = event.payload;
+        if (payload.kind === "stdout" || payload.kind === "stderr") {
+          outputLines = [...outputLines, payload.line];
+        } else if (payload.kind === "exit") {
+          lastExitCode = payload.code;
+        }
+      });
+    } catch (err) {
+      errorMessage = `Failed to load settings: ${err}`;
+    }
+  });
+
+  onDestroy(() => {
+    if (unlisten) unlisten();
+  });
+
+  async function refresh() {
+    try {
+      projects = await listProjects();
+    } catch (err) {
+      errorMessage = `Failed to list projects: ${err}`;
+    }
+  }
+
+  async function onCreate() {
+    const trimmed = newProjectName.trim();
+    if (!trimmed || isCreating) return;
+    isCreating = true;
+    showOutput = true;
+    outputLines = [];
+    lastExitCode = null;
+    errorMessage = null;
+    try {
+      await createProject(trimmed);
+      newProjectName = "";
+      await refresh();
+    } catch (err) {
+      errorMessage = `Create failed: ${err}`;
+    } finally {
+      isCreating = false;
+    }
+  }
+
+  async function onDelete(project: ProjectItem) {
+    if (
+      !confirm(`Move '${project.name}' to the Recycle Bin?`)
+    ) {
+      return;
+    }
+    try {
+      await deleteProject(project.path);
+      await refresh();
+    } catch (err) {
+      errorMessage = `Delete failed: ${err}`;
+    }
+  }
+
+  async function onClaude(project: ProjectItem) {
+    try {
+      await openInClaude(project.path);
+    } catch (err) {
+      errorMessage = `Open in Claude failed: ${err}`;
+    }
+  }
+
+  async function onOpencode(project: ProjectItem) {
+    try {
+      await openInOpencode(project.path);
+    } catch (err) {
+      errorMessage = `Open in opencode failed: ${err}`;
+    }
+  }
+
+  async function changeSort(order: ProjectSortOrder) {
+    if (!settings) return;
+    settings.projectSortOrder = order;
+    try {
+      await saveSettings(settings);
+      await refresh();
+    } catch (err) {
+      errorMessage = `Save failed: ${err}`;
+    }
+  }
+
+  function dismissError() {
+    errorMessage = null;
+  }
+
+  function settingsSaved(updated: AppSettings) {
+    settings = updated;
+    refresh();
+  }
+
+  const canCreate = $derived(
+    !!settings && !isCreating && newProjectName.trim().length > 0,
+  );
 </script>
 
 <main class="app">
@@ -34,40 +155,79 @@
     </div>
   </header>
 
-  <section class="project-list" data-testid="project-list">
-    <div class="placeholder">
-      <p>Stage 1 scaffold.</p>
-      <p class="subtle">
-        Stage 2 wires this region to the Rust <code>list_projects</code> command.
-      </p>
+  <section class="create-row">
+    <input
+      type="text"
+      placeholder="New project name"
+      bind:value={newProjectName}
+      onkeydown={(e) => {
+        if (e.key === "Enter" && canCreate) onCreate();
+      }}
+    />
+    <button class="primary" disabled={!canCreate} onclick={onCreate}>
+      {isCreating ? "Creating…" : "Create new project"}
+    </button>
+  </section>
+
+  <section class="sort-row">
+    <span class="lbl">Sort</span>
+    <select
+      value={settings?.projectSortOrder ?? "nameAscending"}
+      onchange={(e) =>
+        changeSort((e.target as HTMLSelectElement).value as ProjectSortOrder)}
+      disabled={!settings}
+    >
+      {#each projectSortOrderOptions as opt (opt.value)}
+        <option value={opt.value}>{opt.label}</option>
+      {/each}
+    </select>
+  </section>
+
+  {#if errorMessage}
+    <div class="error-banner" role="alert">
+      <span>{errorMessage}</span>
+      <button onclick={dismissError} aria-label="Dismiss error">×</button>
     </div>
+  {/if}
+
+  <section class="project-list" data-testid="project-list">
+    {#if projects.length === 0}
+      <div class="empty">
+        <p>No projects yet.</p>
+        <p class="subtle">
+          Type a name above and click <strong>Create new project</strong>.
+        </p>
+      </div>
+    {:else}
+      <ul>
+        {#each projects as project (project.path)}
+          <ProjectRow
+            {project}
+            onClaude={() => onClaude(project)}
+            onOpencode={() => onOpencode(project)}
+            onDelete={() => onDelete(project)}
+          />
+        {/each}
+      </ul>
+    {/if}
   </section>
 
   {#if showOutput}
     <section class="output-panel" data-testid="output-panel">
-      <pre>(command output will stream here in Stage 2)</pre>
+      <CommandOutput
+        lines={outputLines}
+        isRunning={isCreating}
+        {lastExitCode}
+      />
     </section>
   {/if}
 
-  {#if showSettings}
-    <div
-      class="settings-modal"
-      data-testid="settings-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Settings"
-    >
-      <div class="settings-card">
-        <h2>Settings</h2>
-        <p class="subtle">
-          Stage 2 replaces this placeholder with the full settings form
-          (projects root, module source, init command, terminal, etc.).
-        </p>
-        <div class="settings-actions">
-          <button onclick={() => (showSettings = false)}>Close</button>
-        </div>
-      </div>
-    </div>
+  {#if showSettings && settings}
+    <Settings
+      {settings}
+      onClose={() => (showSettings = false)}
+      onSaved={settingsSaved}
+    />
   {/if}
 </main>
 
@@ -76,6 +236,7 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
+    min-height: 0;
   }
 
   .header {
@@ -112,14 +273,98 @@
     background: rgba(127, 127, 127, 0.15);
   }
 
+  .create-row {
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(127, 127, 127, 0.12);
+    flex-shrink: 0;
+  }
+
+  .create-row input {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid rgba(127, 127, 127, 0.4);
+    border-radius: 4px;
+    font: inherit;
+    background: transparent;
+    color: inherit;
+  }
+
+  .primary {
+    background: rgba(40, 100, 200, 0.85);
+    color: white;
+    border: 1px solid rgba(40, 100, 200, 0.85);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .sort-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    flex-shrink: 0;
+  }
+
+  .sort-row .lbl {
+    font-size: 11px;
+    color: rgba(127, 127, 127, 1);
+  }
+
+  .sort-row select {
+    padding: 2px 6px;
+    border: 1px solid rgba(127, 127, 127, 0.4);
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 11px;
+  }
+
+  .error-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: rgba(180, 30, 30, 0.1);
+    border-bottom: 1px solid rgba(180, 30, 30, 0.4);
+    color: #b91d1d;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  .error-banner span {
+    flex: 1;
+  }
+
+  .error-banner button {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
   .project-list {
     flex: 1;
-    padding: 16px;
     overflow: auto;
     min-height: 0;
   }
 
-  .placeholder {
+  .project-list ul {
+    margin: 0;
+    padding: 0;
+  }
+
+  .empty {
     text-align: center;
     margin-top: 64px;
   }
@@ -130,51 +375,10 @@
   }
 
   .output-panel {
-    border-top: 1px solid rgba(127, 127, 127, 0.25);
     height: 200px;
-    overflow: auto;
-    padding: 8px 12px;
-    background: rgba(127, 127, 127, 0.08);
     flex-shrink: 0;
-  }
-
-  .output-panel pre {
-    margin: 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px;
-  }
-
-  .settings-modal {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.4);
-    display: grid;
-    place-items: center;
-  }
-
-  .settings-card {
-    background: var(--card-bg, #ffffff);
-    color: var(--card-fg, #1c1c1e);
-    border-radius: 8px;
-    padding: 20px;
-    min-width: 360px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    .settings-card {
-      background: #2c2c2e;
-      color: #f5f5f7;
-    }
-  }
-
-  .settings-card h2 {
-    margin-top: 0;
-  }
-
-  .settings-actions {
-    margin-top: 16px;
     display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
+    min-height: 0;
   }
 </style>

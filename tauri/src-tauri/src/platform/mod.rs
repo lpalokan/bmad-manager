@@ -2,18 +2,24 @@
 //!
 //! Every OS-touching operation goes through this module so the macOS and
 //! Windows arms can evolve independently without leaking `#[cfg(...)]`
-//! checks into the rest of the crate. Stage 1 stubs every function with
-//! `unimplemented!()`; Stage 2 fills in the Windows arm, and a later
-//! milestone ports the Swift implementations to `platform::macos`.
+//! checks into the rest of the crate. Stage 2 fills in the Windows arm;
+//! a later milestone ports the Swift implementations to `platform::macos`.
 
-/// Terminal the user wants `launch_terminal` to drive. Stage 2 moves this
-/// into `models::settings` once the rest of the settings model lands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TerminalKind {
-    /// Default native terminal: Windows Terminal on Windows, Terminal.app on macOS.
-    System,
-    /// Alternate: cmd.exe / PowerShell on Windows, iTerm2 on macOS.
-    Alternate,
+use std::sync::OnceLock;
+
+use tauri::AppHandle;
+
+/// Initialised at app startup by [`set_app_handle`] so `resolve_npx_path`
+/// and `resolve_git_path` can find the bundled resources without each
+/// caller threading the `AppHandle` through manually.
+static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+pub fn set_app_handle(handle: AppHandle) {
+    let _ = APP_HANDLE.set(handle);
+}
+
+pub fn app_handle() -> Option<&'static AppHandle> {
+    APP_HANDLE.get()
 }
 
 #[cfg(target_os = "windows")]

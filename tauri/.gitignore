@@ -6,6 +6,11 @@ dist
 # Rust / Cargo
 src-tauri/target
 
+# Tauri-generated permission schemas; rebuilt by tauri-build on every
+# `cargo check` from the live plugin set, so committing them just leads
+# to merge churn whenever a dep version changes.
+src-tauri/gen
+
 # Stage 3 will populate these from CI; never check in the binaries themselves.
 src-tauri/resources/node-portable
 src-tauri/resources/portable-git

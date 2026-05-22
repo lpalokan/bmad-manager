@@ -9,8 +9,9 @@ opencode, and installs a custom "marketing growth" module on top.
 
 A Windows port via Tauri is in progress under [`tauri/`](tauri/) —
 see [issue #25](https://github.com/lpalokan/bmad-manager/issues/25) for the
-shipping plan. Stage 1 (scaffold) lives on `feature/25-tauri-windows-stage-1`;
-end-user Windows installs aren't available yet.
+shipping plan. Stages 1 (scaffold) and 2 (Rust ports + Svelte UI) have
+landed on `main`; Stage 3 will bundle Node + PortableGit into a single
+NSIS installer and ship a GitHub Release.
 
 The UI is intentionally tiny:
 
@@ -102,11 +103,12 @@ swift run
 The Windows port lives under [`tauri/`](tauri/) and is being built in three
 stages tracked by [issue #25](https://github.com/lpalokan/bmad-manager/issues/25):
 
-1. **Stage 1 — scaffold** *(current)*: Tauri + Svelte project, platform module
+1. **Stage 1 — scaffold** *(done)*: Tauri + Svelte project, platform module
    skeleton, BDD harnesses, Windows `cargo check` CI.
-2. **Stage 2 — services + UI**: Rust ports of `SettingsStore`, `ProjectService`,
-   the two `ModuleSource` adapters, `CommandRunner`; Svelte UI driving them via
-   Tauri commands.
+2. **Stage 2 — services + UI** *(current)*: Rust ports of `SettingsStore`,
+   `ProjectService`, both `ModuleSource` adapters, `CommandRunner`,
+   `ProjectCreator`; the full `platform::windows` arm; Svelte UI components
+   driving them via Tauri commands.
 3. **Stage 3 — bundle + release**: portable Node + PortableGit baked into the
    NSIS installer, pre-warmed `bmad-method` npm cache, GitHub Release workflow.
 

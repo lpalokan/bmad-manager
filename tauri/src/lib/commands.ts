@@ -1,0 +1,26 @@
+// Thin wrappers around Tauri's `invoke()` so component code never has to
+// remember command names or argument-key casing.
+
+import { invoke } from "@tauri-apps/api/core";
+import type { AppSettings, ProjectItem } from "./types";
+
+export const loadSettings = (): Promise<AppSettings> =>
+  invoke<AppSettings>("load_settings");
+
+export const saveSettings = (settings: AppSettings): Promise<void> =>
+  invoke("save_settings", { settings });
+
+export const listProjects = (): Promise<ProjectItem[]> =>
+  invoke<ProjectItem[]>("list_projects");
+
+export const createProject = (name: string): Promise<ProjectItem> =>
+  invoke<ProjectItem>("create_project", { name });
+
+export const deleteProject = (path: string): Promise<void> =>
+  invoke("delete_project", { path });
+
+export const openInClaude = (projectPath: string): Promise<void> =>
+  invoke("open_in_claude", { projectPath });
+
+export const openInOpencode = (projectPath: string): Promise<void> =>
+  invoke("open_in_opencode", { projectPath });

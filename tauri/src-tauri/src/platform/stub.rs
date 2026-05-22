@@ -1,37 +1,37 @@
 //! Fallback arm for non-Windows / non-macOS targets (Linux dev containers,
-//! CI sanity checks). Every function panics — these stubs exist only so
-//! `cargo check` on Linux can verify the rest of the crate compiles without
-//! pulling in real OS integrations.
+//! CI sanity checks). Read-only helpers (`settings_dir`, `augmented_path`,
+//! `resolve_*_path`) return sensible local-dev values so the Rust unit
+//! tests and BDD harness can exercise the cross-platform services without
+//! pulling in real OS integrations. `run_shell` / `launch_terminal` still
+//! panic — those need a real platform arm.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use super::TerminalKind;
+use crate::models::TerminalKind;
 
 pub fn run_shell(_command: &str, _cwd: &Path) -> i32 {
     unimplemented!("platform::stub::run_shell — not implemented on this OS")
 }
 
-pub fn launch_terminal(
-    _path: &Path,
-    _command: &str,
-    _kind: TerminalKind,
-) -> Result<(), String> {
+pub fn launch_terminal(_path: &Path, _command: &str, _kind: TerminalKind) -> Result<(), String> {
     unimplemented!("platform::stub::launch_terminal — not implemented on this OS")
 }
 
 pub fn settings_dir() -> PathBuf {
-    unimplemented!("platform::stub::settings_dir — not implemented on this OS")
+    dirs::config_dir()
+        .map(|d| d.join("bmad-manager"))
+        .unwrap_or_else(|| PathBuf::from("bmad-manager"))
 }
 
 pub fn resolve_npx_path() -> PathBuf {
-    unimplemented!("platform::stub::resolve_npx_path — not implemented on this OS")
+    PathBuf::from("npx")
 }
 
 pub fn resolve_git_path() -> PathBuf {
-    unimplemented!("platform::stub::resolve_git_path — not implemented on this OS")
+    PathBuf::from("git")
 }
 
 pub fn augmented_path() -> OsString {
-    unimplemented!("platform::stub::augmented_path — not implemented on this OS")
+    std::env::var_os("PATH").unwrap_or_default()
 }
