@@ -91,10 +91,22 @@ pnpm tauri build
 
 ## Tests
 
+Svelte UI BDD (cucumber-js + tsx):
+
 ```
-pnpm test:bdd                                              Svelte UI BDD
-cargo test --manifest-path src-tauri/Cargo.toml --test bdd  Rust BDD
-cargo test --manifest-path src-tauri/Cargo.toml             Rust unit tests
+pnpm test:bdd
+```
+
+Rust BDD (cucumber-rs harness):
+
+```
+cargo test --manifest-path src-tauri/Cargo.toml --test bdd
+```
+
+Rust unit tests (every `#[cfg(test)] mod tests` block under `src-tauri/src/`):
+
+```
+cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
 See [`../CLAUDE.md`](../CLAUDE.md) for the BDD-first policy.
@@ -107,9 +119,16 @@ The TS step bindings run via `node --import tsx` (see the `test:bdd` script in `
 
 ## Type check + lint
 
+Svelte type-check:
+
 ```
-pnpm check                                          svelte-check
-cargo check --manifest-path src-tauri/Cargo.toml    Rust crate
+pnpm check
+```
+
+Rust crate check:
+
+```
+cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
 ## CI
