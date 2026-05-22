@@ -1,0 +1,77 @@
+name: tauri-windows-check
+
+# Stage-1 smoke CI for the Tauri Windows port (issue #25). Verifies the
+# Rust crate compiles on the Windows target and the frontend builds.
+# Stage 3 replaces this with a full `tauri build` + bundled Node/Git
+# installer pipeline.
+
+on:
+  push:
+    branches:
+      - "feature/25-tauri-windows-stage-1"
+      - "claude/windows-app-version-ulLYB"
+    paths:
+      - "tauri/**"
+      - ".github/workflows/tauri-windows-check.yml"
+  pull_request:
+    paths:
+      - "tauri/**"
+      - ".github/workflows/tauri-windows-check.yml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: tauri
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tauri/src-tauri/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('tauri/src-tauri/Cargo.toml') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: tauri/pnpm-lock.yaml
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Frontend type check
+        run: pnpm check
+
+      - name: Frontend BDD smoke
+        run: pnpm test:bdd
+
+      - name: Cargo check (Rust crate)
+        working-directory: tauri/src-tauri
+        run: cargo check --locked --all-targets
+
+      - name: Rust BDD smoke
+        working-directory: tauri/src-tauri
+        run: cargo test --locked --test bdd

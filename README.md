@@ -1,10 +1,16 @@
 # BMad Manager
 
 [![build](https://github.com/lpalokan/bmad-manager/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/lpalokan/bmad-manager/actions/workflows/build.yml)
+[![tauri-windows-check](https://github.com/lpalokan/bmad-manager/actions/workflows/tauri-windows-check.yml/badge.svg?branch=main)](https://github.com/lpalokan/bmad-manager/actions/workflows/tauri-windows-check.yml)
 
 A small macOS app that creates new project folders pre-configured with the
 [BMad method](https://github.com/bmadcode/bmad-method) for Claude Code and
 opencode, and installs a custom "marketing growth" module on top.
+
+A Windows port via Tauri is in progress under [`tauri/`](tauri/) —
+see [issue #25](https://github.com/lpalokan/bmad-manager/issues/25) for the
+shipping plan. Stage 1 (scaffold) lives on `feature/25-tauri-windows-stage-1`;
+end-user Windows installs aren't available yet.
 
 The UI is intentionally tiny:
 
@@ -90,6 +96,22 @@ To iterate while developing without producing the DMG:
 ```sh
 swift run
 ```
+
+### Windows build (Tauri, in progress)
+
+The Windows port lives under [`tauri/`](tauri/) and is being built in three
+stages tracked by [issue #25](https://github.com/lpalokan/bmad-manager/issues/25):
+
+1. **Stage 1 — scaffold** *(current)*: Tauri + Svelte project, platform module
+   skeleton, BDD harnesses, Windows `cargo check` CI.
+2. **Stage 2 — services + UI**: Rust ports of `SettingsStore`, `ProjectService`,
+   the two `ModuleSource` adapters, `CommandRunner`; Svelte UI driving them via
+   Tauri commands.
+3. **Stage 3 — bundle + release**: portable Node + PortableGit baked into the
+   NSIS installer, pre-warmed `bmad-method` npm cache, GitHub Release workflow.
+
+See [`tauri/README.md`](tauri/README.md) for prerequisites and developer
+commands. End-user Windows install instructions land with Stage 3.
 
 ### Signed + notarized releases (optional)
 
