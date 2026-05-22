@@ -31,6 +31,13 @@ where
     cmd.args(&args)
         .current_dir(cwd)
         .env("PATH", platform::augmented_path())
+        // Point npx at the user-writable cache seeded from the bundled
+        // pre-warm at first launch (see `bundled_tooling::seed_*`). On the
+        // Linux stub arm this is just a per-user fallback path; on Windows
+        // it's `%LOCALAPPDATA%\bmad-manager\npm-cache`. Setting it here
+        // means every project-create run picks it up without the user
+        // having to configure anything.
+        .env("NPM_CONFIG_CACHE", platform::user_npm_cache_dir())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::null());

@@ -28,8 +28,24 @@ pub fn resolve_npx_path() -> PathBuf {
     PathBuf::from("npx")
 }
 
+pub fn resolve_node_path() -> PathBuf {
+    PathBuf::from("node")
+}
+
 pub fn resolve_git_path() -> PathBuf {
     PathBuf::from("git")
+}
+
+pub fn resolve_bundled_npm_cache_path() -> Option<PathBuf> {
+    // No bundled resources on non-target platforms; the seeder treats
+    // this as a silent no-op so the unit tests pass on Linux CI.
+    None
+}
+
+pub fn user_npm_cache_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .map(|d| d.join("bmad-manager").join("npm-cache"))
+        .unwrap_or_else(|| PathBuf::from("bmad-manager").join("npm-cache"))
 }
 
 pub fn augmented_path() -> OsString {

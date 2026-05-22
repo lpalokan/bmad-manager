@@ -1,3 +1,4 @@
+pub mod bundled_tooling;
 pub mod command_runner;
 pub mod git_source;
 pub mod init_command;

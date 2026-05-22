@@ -29,6 +29,11 @@ pub struct TauriWorld {
     pub last_path_dir: Option<PathBuf>,
     pub last_executable_path: Option<PathBuf>,
     pub last_detection: Option<Option<PathBuf>>,
+    pub stub_binary: Option<PathBuf>,
+    pub bundled_cache_dir: Option<PathBuf>,
+    pub user_cache_dir: Option<PathBuf>,
+    pub detected_version: Option<Option<String>>,
+    pub seed_outcome: Option<bool>,
 }
 
 impl TauriWorld {

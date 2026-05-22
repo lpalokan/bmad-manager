@@ -99,10 +99,35 @@ pub fn resolve_npx_path() -> PathBuf {
     bundled_resource("node-portable/npx.cmd").unwrap_or_else(|| PathBuf::from("npx.cmd"))
 }
 
+/// Absolute path to the bundled portable Node's `node.exe`, with the
+/// same dev-friendly fallback to whatever's on `PATH`. Used by the
+/// bundled-tooling version probe in the Settings dialog.
+pub fn resolve_node_path() -> PathBuf {
+    bundled_resource("node-portable/node.exe").unwrap_or_else(|| PathBuf::from("node.exe"))
+}
+
 /// Absolute path to bundled PortableGit's `cmd/git.exe`, with the same
 /// dev-friendly fallback to `git.exe` on `PATH`.
 pub fn resolve_git_path() -> PathBuf {
     bundled_resource("portable-git/cmd/git.exe").unwrap_or_else(|| PathBuf::from("git.exe"))
+}
+
+/// Absolute path to the pre-warmed npm cache shipped inside the
+/// installer's `resources/npm-cache/`. Returns `None` when no handle is
+/// registered yet or when the resource is missing in a dev build —
+/// callers (the startup seeder) treat that as a silent no-op.
+pub fn resolve_bundled_npm_cache_path() -> Option<PathBuf> {
+    bundled_resource("npm-cache")
+}
+
+/// User-writable npm cache location seeded from the bundled cache on
+/// first launch and used as `NPM_CONFIG_CACHE` for every spawned `npx`.
+/// `%LOCALAPPDATA%\bmad-manager\npm-cache` on Windows; a sensible
+/// per-user fallback elsewhere so the unit tests still work.
+pub fn user_npm_cache_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .map(|d| d.join("bmad-manager").join("npm-cache"))
+        .unwrap_or_else(|| PathBuf::from("bmad-manager").join("npm-cache"))
 }
 
 fn bundled_resource(relative: &str) -> Option<PathBuf> {
