@@ -8,6 +8,7 @@ name: tauri-windows-check
 on:
   push:
     branches:
+      - "main"
       - "feature/25-tauri-windows-stage-1"
       - "claude/windows-app-version-ulLYB"
     paths:
