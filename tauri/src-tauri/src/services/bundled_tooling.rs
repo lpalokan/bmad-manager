@@ -106,6 +106,29 @@ pub fn seed_user_npm_cache_best_effort() {
     }
 }
 
+/// Dump the resolved bundled-tool paths and whether each one exists.
+/// Called once at startup so a misconfigured `bundle.resources` shows
+/// up in the app's stderr stream (visible in Event Viewer / a console
+/// when launched from the terminal) without a debugger.
+pub fn log_resolved_paths() {
+    let node = platform::resolve_node_path();
+    let npx = platform::resolve_npx_path();
+    let git = platform::resolve_git_path();
+    let cache = platform::resolve_bundled_npm_cache_path();
+    eprintln!(
+        "[bmad-manager] resolved node={} (exists={}), npx={} (exists={}), git={} (exists={}), bundled-npm-cache={}",
+        node.display(),
+        node.exists(),
+        npx.display(),
+        npx.exists(),
+        git.display(),
+        git.exists(),
+        cache
+            .map(|p| format!("{} (exists={})", p.display(), p.exists()))
+            .unwrap_or_else(|| "<unresolved>".to_string()),
+    );
+}
+
 fn user_cache_already_populated(user: &Path) -> io::Result<bool> {
     if !user.exists() {
         return Ok(false);

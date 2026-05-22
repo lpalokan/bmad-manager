@@ -36,11 +36,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "resources/node-portable/**/*",
-      "resources/portable-git/**/*",
-      "resources/npm-cache/**/*"
-    ],
+    "resources": {
+      "resources/node-portable/**/*": "node-portable",
+      "resources/portable-git/**/*": "portable-git",
+      "resources/npm-cache/**/*": "npm-cache"
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser"
