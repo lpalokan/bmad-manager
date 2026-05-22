@@ -10,6 +10,11 @@ pub fn run() {
         .manage(commands::AppState::new())
         .setup(|app| {
             platform::set_app_handle(app.handle().clone());
+            // Surface what the bundled-resource resolver returned so a
+            // misconfigured `bundle.resources` (path drift between the
+            // glob target and the runtime resolver) shows up in stderr
+            // without a debugger.
+            services::bundled_tooling::log_resolved_paths();
             // Best-effort one-time copy of the bundled npm cache into the
             // user's writable %LOCALAPPDATA%. Failures are logged and
             // ignored — `npx bmad-method install` will still work, just
