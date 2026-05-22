@@ -9,6 +9,7 @@
 mod steps;
 mod support;
 
+use cucumber::World;
 use support::TauriWorld;
 
 #[tokio::main]
