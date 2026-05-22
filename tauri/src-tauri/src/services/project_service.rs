@@ -97,10 +97,10 @@ pub fn list_projects(root: &Path, order: ProjectSortOrder) -> Vec<ProjectItem> {
 pub fn sort_projects(items: &mut [ProjectItem], order: ProjectSortOrder) {
     match order {
         ProjectSortOrder::NameAscending => {
-            items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            items.sort_by_key(|p| p.name.to_lowercase());
         }
         ProjectSortOrder::DateNewestFirst => {
-            items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            items.sort_by_key(|p| std::cmp::Reverse(p.created_at));
         }
         ProjectSortOrder::DateOldestFirst => {
             items.sort_by(|a, b| match (a.created_at, b.created_at) {
