@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 
 use crate::models::{AppSettings, ProjectItem};
 use crate::platform;
+use crate::services::bundled_tooling::{self, BundledTooling};
 use crate::services::command_runner::OutputEvent;
 use crate::services::{path_detection, project_creator, project_service, settings_store};
 
@@ -97,6 +98,11 @@ pub fn delete_project(path: String) -> CmdResult<()> {
     let p = PathBuf::from(&path);
     project_service::trash_project(&p).map_err(IpcError)?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_bundled_tooling() -> BundledTooling {
+    bundled_tooling::detect()
 }
 
 #[tauri::command]

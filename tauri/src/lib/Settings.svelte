@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { detectCommandInPath, saveSettings } from "./commands";
+  import { detectCommandInPath, getBundledTooling, saveSettings } from "./commands";
   import {
     moduleSourceOptions,
     terminalOptions,
     type AppSettings,
+    type BundledTooling,
   } from "./types";
 
   interface Props {
@@ -20,6 +22,16 @@
   let draft: AppSettings = $state({ ...settings });
   let saving = $state(false);
   let saveError: string | null = $state(null);
+  let bundled: BundledTooling | null = $state(null);
+  let bundledError: string | null = $state(null);
+
+  onMount(async () => {
+    try {
+      bundled = await getBundledTooling();
+    } catch (err) {
+      bundledError = String(err);
+    }
+  });
 
   // Per-agent PATH-detection results. `null` = unknown / pending,
   // a string = resolved absolute path, `false` = checked and not found.
@@ -270,6 +282,28 @@
       </div>
     </section>
 
+    <section data-testid="bundled-tooling">
+      <span class="lbl">Bundled tooling</span>
+      <div class="bundled">
+        {#if bundledError}
+          <p class="hint">Couldn't read bundled versions: {bundledError}</p>
+        {:else if bundled}
+          <dl>
+            <dt>Node</dt>
+            <dd>{bundled.nodeVersion ?? "not bundled (uses system node)"}</dd>
+            <dt>Git</dt>
+            <dd>{bundled.gitVersion ?? "not bundled (uses system git)"}</dd>
+          </dl>
+        {:else}
+          <p class="hint">Reading versions…</p>
+        {/if}
+        <p class="hint">
+          Read-only. These ship inside the installer so end users don't
+          need to install Node or Git separately.
+        </p>
+      </div>
+    </section>
+
     {#if saveError}
       <p class="error">Failed to save: {saveError}</p>
     {/if}
@@ -457,5 +491,22 @@
   .reset {
     color: #b91d1d;
     border-color: rgba(180, 30, 30, 0.4);
+  }
+
+  .bundled dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 2px 12px;
+    font-size: 12px;
+  }
+
+  .bundled dt {
+    font-weight: 600;
+  }
+
+  .bundled dd {
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 </style>

@@ -5,12 +5,13 @@ The Tauri tree is the active development target; the Swift app is in
 maintenance mode. Issue [#25](https://github.com/lpalokan/bmad-manager/issues/25)
 tracks the full Windows shipping plan.
 
-**Stage 2** is now landed: Rust ports of every Swift service
-(`SettingsStore`, `ProjectService`, both `ModuleSource` adapters,
-`CommandRunner`, `ProjectCreator`), the full `platform::windows` arm,
-seven Tauri commands wiring them to the frontend, and four Svelte
-components (`Settings`, `ProjectRow`, `CommandOutput`, and the main
-`App`). Stage 3 still has to bundle Node + Git and ship a GitHub Release.
+**Stage 3** is now landed: the NSIS installer bundles portable Node
+and PortableGit alongside a pre-warmed `bmad-method` npm cache, so
+end users double-click one `.exe` and have a working app with zero
+prerequisite installs. The installer is per-user (no UAC prompt) and
+the `.github/workflows/tauri-windows.yml` release pipeline produces it
+on every push to the Stage 3 branch (and attaches it to a GitHub
+Release on `windows-v*` tag pushes).
 
 ## Layout
 
@@ -67,7 +68,9 @@ tauri/
 
 - **Rust** stable (`rustup install stable`)
 - **Node.js** 22 LTS
-- **pnpm** 10.x
+- **pnpm** — pinned via `packageManager` in `package.json`; enable
+  [corepack](https://nodejs.org/api/corepack.html) (`corepack enable`)
+  and pnpm tracks the pinned version automatically.
 - **Windows targets only need MSVC + WebView2** — the GitHub Actions runner has both. For a local Windows dev loop see [the Tauri Windows prerequisites](https://v2.tauri.app/start/prerequisites/#windows).
 - **macOS dev loop** also works (`pnpm tauri dev`) for the frontend; calls into `platform::macos` panic with `unimplemented!()` until the unification milestone.
 
@@ -109,12 +112,37 @@ pnpm check                                          svelte-check
 cargo check --manifest-path src-tauri/Cargo.toml    Rust crate
 ```
 
-## What's *not* here yet
+## CI
 
-| Stage | Scope |
-|-------|-------|
-| 3 | Bundled portable Node + PortableGit under `src-tauri/resources/`, pre-warmed `bmad-method` npm cache, `tauri-windows.yml` release workflow producing a downloadable `.exe`, README install instructions for end users |
+`tauri-windows-check.yml` exercises `cargo fmt`, `cargo clippy
+--all-targets -D warnings`, `cargo check`, `cargo test --lib`, `cargo
+test --test bdd`, `pnpm build`, `pnpm check`, and `pnpm test:bdd` on
+`windows-latest` for every push to `main` and the active feature
+branch — the fast feedback loop while iterating.
 
-`tauri-windows-check.yml` exercises `cargo fmt`, `cargo clippy --all-targets -D warnings`, `cargo check`, `cargo test --lib`, `cargo test --test bdd`, `pnpm build`, `pnpm check`, and `pnpm test:bdd` on `windows-latest` for every push to `main` and the Stage 2 branch.
+`tauri-windows.yml` is the release pipeline. It downloads the pinned
+portable Node (`NODE_VERSION` env var) and PortableGit
+(`GIT_FOR_WINDOWS_VERSION` + `GIT_FOR_WINDOWS_TAG`), pre-warms the npm
+cache with `bmad-method`, runs `pnpm tauri build`, and uploads the
+resulting NSIS installer as a workflow artifact named
+`BmadManager-windows-x64-<sha>.exe`. Tagging the commit with
+`windows-v*` additionally publishes a GitHub Release with the
+installer attached.
 
-The Rust unit tests and BDD scenarios run on Linux too (the `platform::stub` arm returns dev-friendly defaults), so the dev loop on a non-Windows machine can run everything except the actual `wt.exe` / `cmd /K` calls.
+The bundled binaries live under `src-tauri/resources/`:
+
+```
+src-tauri/resources/
+  node-portable/        bundled Node 22.x  (CI-populated, .gitignored)
+  portable-git/         bundled Git 2.47.x (CI-populated, .gitignored)
+  npm-cache/            pre-warmed bmad-method cache (CI-populated)
+```
+
+At first launch the app copies `npm-cache/` into the user-writable
+`%LOCALAPPDATA%\bmad-manager\npm-cache` and points `NPM_CONFIG_CACHE`
+at it; subsequent runs reuse the user cache.
+
+The Rust unit tests and BDD scenarios run on Linux too (the
+`platform::stub` arm returns dev-friendly defaults), so the dev loop
+on a non-Windows machine can run everything except the actual
+`wt.exe` / `cmd /K` calls and the NSIS bundle.

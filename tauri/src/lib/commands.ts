@@ -2,10 +2,13 @@
 // remember command names or argument-key casing.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, ProjectItem } from "./types";
+import type { AppSettings, BundledTooling, ProjectItem } from "./types";
 
 export const loadSettings = (): Promise<AppSettings> =>
   invoke<AppSettings>("load_settings");
+
+export const getBundledTooling = (): Promise<BundledTooling> =>
+  invoke<BundledTooling>("get_bundled_tooling");
 
 export const saveSettings = (settings: AppSettings): Promise<void> =>
   invoke("save_settings", { settings });
