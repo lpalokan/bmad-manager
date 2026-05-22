@@ -1,0 +1,12 @@
+# Node / Vite
+node_modules
+dist
+.svelte-kit
+
+# Rust / Cargo
+src-tauri/target
+
+# Stage 3 will populate these from CI; never check in the binaries themselves.
+src-tauri/resources/node-portable
+src-tauri/resources/portable-git
+src-tauri/resources/npm-cache

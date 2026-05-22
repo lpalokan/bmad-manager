@@ -1,0 +1,4 @@
+# pnpm 11+ reads settings here. esbuild's postinstall fetches the
+# platform-specific native binary; vite won't build without it.
+onlyBuiltDependencies:
+  - esbuild
