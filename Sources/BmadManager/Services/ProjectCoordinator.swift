@@ -24,19 +24,18 @@ final class ProjectCoordinator: ObservableObject {
     private let projectService: ProjectService
     private let projectCreator: ProjectCreator
     private let terminalLauncher: any TerminalLauncherProtocol
-    private let settings: SettingsStore
-    private let runCommand: (String, URL) async -> Int32
 
     // MARK: - Init
 
-    init(
-        settings: SettingsStore,
-        terminalLauncher: any TerminalLauncherProtocol = DefaultTerminalLauncher(),
-        runCommand: @escaping (String, URL) async -> Int32
-    ) {
-        self.settings = settings
+    /// The coordinator deliberately does NOT capture a `SettingsStore` or
+    /// a `runCommand` closure at init. Both flow in per-call from the
+    /// `ContentView`, which reads them off its own `@EnvironmentObject`
+    /// bindings — the same instances SwiftUI manages and the Picker
+    /// writes to. Capturing them here would re-introduce the
+    /// `@StateObject` init-dance drift that caused the Terminal-vs-iTerm2,
+    /// projects-root-doesn't-reindex, and empty-output-panel bugs.
+    init(terminalLauncher: any TerminalLauncherProtocol = DefaultTerminalLauncher()) {
         self.terminalLauncher = terminalLauncher
-        self.runCommand = runCommand
 
         let projectService = ProjectService()
         self.projectService = projectService
@@ -45,28 +44,30 @@ final class ProjectCoordinator: ObservableObject {
 
     // MARK: - Actions
 
-    func refresh() {
-        projects = projectService.listProjects(
-            in: settings.settings.projectsRoot,
-            sortedBy: settings.settings.projectSortOrder
-        )
+    /// Refreshes the project list from the on-disk projects folder.
+    ///
+    /// Both `root` and `sortOrder` are taken from the caller rather than
+    /// read off `settings.settings.*` so the coordinator can't drift out
+    /// of sync with the View's `SettingsStore`. (See the matching note on
+    /// `openInTerminal` — same root cause: the App's @StateObject init
+    /// dance can hand us a SettingsStore reference that's a different
+    /// instance from the one the View's @EnvironmentObject binds to.)
+    func refresh(root: String, sortOrder: ProjectSortOrder) {
+        projects = projectService.listProjects(in: root, sortedBy: sortOrder)
     }
 
-    /// Creates a new project. The `promptForModuleZip` closure is called only
-    /// when the local-zip source is configured but no path has been chosen yet.
-    /// Pass `{ nil }` to skip the prompt (the caller will see an error message).
-    func createProject(name: String, promptForModuleZip: () -> URL? = { nil }) async {
-        let s = settings.settings
-
-        if s.moduleSourceKind == .localZip,
-           s.moduleZipPath.trimmingCharacters(in: .whitespaces).isEmpty {
-            guard let picked = promptForModuleZip() else {
-                errorMessage = "A marketing growth module .zip is required to create a project."
-                return
-            }
-            settings.settings.moduleZipPath = picked.path
-        }
-
+    /// Creates a new project using the supplied settings snapshot and
+    /// `runCommand`. The caller is responsible for prompting the user
+    /// for a missing module zip path and persisting any update back into
+    /// the SettingsStore before calling — that prompt is pure UI
+    /// concern, and centralising it in the View also avoids the
+    /// stale-store hazard the App's @StateObject init dance used to
+    /// trigger.
+    func createProject(
+        name: String,
+        settings: AppSettings,
+        runCommand: @escaping (String, URL) async -> Int32
+    ) async {
         isCreating = true
         showOutput = true
         defer { isCreating = false }
@@ -74,20 +75,24 @@ final class ProjectCoordinator: ObservableObject {
         do {
             try await projectCreator.create(
                 name: name,
-                settings: settings.settings,
+                settings: settings,
                 runCommand: runCommand
             )
             errorMessage = nil
-            refresh()
+            refresh(root: settings.projectsRoot, sortOrder: settings.projectSortOrder)
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    func deleteProject(_ project: ProjectItem) async {
+    func deleteProject(
+        _ project: ProjectItem,
+        root: String,
+        sortOrder: ProjectSortOrder
+    ) async {
         do {
             try await projectService.trash(project)
-            refresh()
+            refresh(root: root, sortOrder: sortOrder)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription

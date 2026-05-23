@@ -28,7 +28,12 @@ final class ProjectCoordinatorTests: XCTestCase {
             .appendingPathComponent("bmad-manager-coord-test-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: projectsRoot, withIntermediateDirectories: true)
         terminal = FakeTerminalLauncher()
-        settings = SettingsStore()
+        // Use an in-memory repository so the test never writes to the
+        // real ~/Library/Application Support/.../settings.json — otherwise
+        // setting `settings.projectsRoot` here would persist this temp
+        // path into the user's actual settings file via the @Published
+        // didSet on SettingsStore.
+        settings = SettingsStore(repository: InMemorySettingsRepository())
         settings.settings = AppSettings.defaults()
         settings.settings.projectsRoot = projectsRoot.path
     }
@@ -37,32 +42,81 @@ final class ProjectCoordinatorTests: XCTestCase {
         try? FileManager.default.removeItem(at: projectsRoot)
     }
 
-    private func makeCoordinator(
-        runCommand: @escaping (String, URL) async -> Int32 = { _, _ in 0 }
-    ) -> ProjectCoordinator {
-        ProjectCoordinator(
-            settings: settings,
-            terminalLauncher: terminal,
-            runCommand: runCommand
+    private var defaultRunCommand: (String, URL) async -> Int32 = { _, _ in 0 }
+
+    private func makeCoordinator() -> ProjectCoordinator {
+        ProjectCoordinator(terminalLauncher: terminal)
+    }
+
+    private func createProject(
+        _ coordinator: ProjectCoordinator,
+        name: String,
+        zipPath: URL? = nil,
+        runCommand: ((String, URL) async -> Int32)? = nil
+    ) async {
+        if let zipPath {
+            settings.settings.moduleZipPath = zipPath.path
+        }
+        await coordinator.createProject(
+            name: name,
+            settings: settings.settings,
+            runCommand: runCommand ?? defaultRunCommand
+        )
+    }
+
+    private func deleteProject(
+        _ coordinator: ProjectCoordinator,
+        _ project: ProjectItem
+    ) async {
+        await coordinator.deleteProject(
+            project,
+            root: settings.settings.projectsRoot,
+            sortOrder: settings.settings.projectSortOrder
         )
     }
 
     // MARK: - Refresh
 
+    private func refresh(_ coordinator: ProjectCoordinator) {
+        coordinator.refresh(
+            root: settings.settings.projectsRoot,
+            sortOrder: settings.settings.projectSortOrder
+        )
+    }
+
     func testRefreshReturnsEmptyWhenNoProjects() {
         let coordinator = makeCoordinator()
-        coordinator.refresh()
+        refresh(coordinator)
         XCTAssertTrue(coordinator.projects.isEmpty)
     }
 
     func testRefreshListsCreatedProject() async throws {
         let coordinator = makeCoordinator()
 
-        await coordinator.createProject(name: "my-project")
-        coordinator.refresh()
+        await createProject(coordinator, name: "my-project")
+        refresh(coordinator)
 
         XCTAssertEqual(coordinator.projects.count, 1)
         XCTAssertEqual(coordinator.projects.first?.name, "my-project")
+    }
+
+    func testRefreshHonoursRootFromCaller() throws {
+        // Regression: prior to the projectsRoot drift fix, refresh() read
+        // `settings.settings.projectsRoot` off the coordinator's captured
+        // SettingsStore. Under the App's @StateObject init dance that
+        // store can drift from the View's @EnvironmentObject, so updating
+        // the projects folder in Settings reindexed the OLD folder until
+        // the next launch. Now refresh() takes the root from the caller.
+        let other = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("bmad-manager-other-root-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: other) }
+        try FileManager.default.createDirectory(at: other.appendingPathComponent("only-here"), withIntermediateDirectories: true)
+
+        let coordinator = makeCoordinator()
+        coordinator.refresh(root: other.path, sortOrder: .nameAscending)
+
+        XCTAssertEqual(coordinator.projects.map(\.name), ["only-here"])
     }
 
     // MARK: - Create
@@ -70,7 +124,7 @@ final class ProjectCoordinatorTests: XCTestCase {
     func testCreateProjectHappyPath() async throws {
         let coordinator = makeCoordinator()
 
-        await coordinator.createProject(name: "test-proj")
+        await createProject(coordinator, name: "test-proj")
 
         XCTAssertEqual(coordinator.projects.count, 1)
         XCTAssertEqual(coordinator.projects.first?.name, "test-proj")
@@ -86,15 +140,15 @@ final class ProjectCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator()
         coordinator.showOutput = false
 
-        await coordinator.createProject(name: "output-test")
+        await createProject(coordinator, name: "output-test")
 
         XCTAssertTrue(coordinator.showOutput)
     }
 
     func testCreateProjectNonZeroExitCapturesError() async {
-        let coordinator = makeCoordinator(runCommand: { _, _ in 42 })
+        let coordinator = makeCoordinator()
 
-        await coordinator.createProject(name: "fail-proj")
+        await createProject(coordinator, name: "fail-proj", runCommand: { _, _ in 42 })
 
         XCTAssertNotNil(coordinator.errorMessage)
         XCTAssertTrue(coordinator.errorMessage?.contains("42") ?? false)
@@ -105,27 +159,14 @@ final class ProjectCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator()
         coordinator.errorMessage = "previous error"
 
-        await coordinator.createProject(name: "good")
+        await createProject(coordinator, name: "good")
 
         XCTAssertNil(coordinator.errorMessage)
     }
 
     // MARK: - Zip prompt
 
-    func testCreateProjectWithoutZipPathFailsWhenLocalZip() async {
-        settings.settings.moduleSourceKind = .localZip
-        settings.settings.moduleZipPath = ""
-
-        let coordinator = makeCoordinator()
-
-        // promptForModuleZip returns nil → creation should fail
-        await coordinator.createProject(name: "nozip", promptForModuleZip: { nil })
-
-        XCTAssertEqual(coordinator.errorMessage, "A marketing growth module .zip is required to create a project.")
-        XCTAssertEqual(coordinator.projects.count, 0)
-    }
-
-    func testCreateProjectSucceedsWhenZipPromptProvidesPath() async {
+    func testCreateProjectSucceedsWhenViewProvidesZipPath() async {
         settings.settings.moduleSourceKind = .localZip
         settings.settings.moduleZipPath = ""
 
@@ -146,7 +187,9 @@ final class ProjectCoordinatorTests: XCTestCase {
         try? zip.run()
         zip.waitUntilExit()
 
-        await coordinator.createProject(name: "zippy", promptForModuleZip: { zipURL })
+        // The View handles prompting; here we simulate the View persisting
+        // the picked zip path before calling the coordinator.
+        await createProject(coordinator, name: "zippy", zipPath: zipURL)
 
         XCTAssertNil(coordinator.errorMessage)
         XCTAssertEqual(coordinator.projects.count, 1)
@@ -159,7 +202,7 @@ final class ProjectCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator()
 
         // First create a project
-        await coordinator.createProject(name: "to-delete")
+        await createProject(coordinator, name: "to-delete")
         XCTAssertEqual(coordinator.projects.count, 1)
 
         guard let project = coordinator.projects.first else {
@@ -167,7 +210,7 @@ final class ProjectCoordinatorTests: XCTestCase {
             return
         }
 
-        await coordinator.deleteProject(project)
+        await deleteProject(coordinator, project)
 
         XCTAssertEqual(coordinator.projects.count, 0)
         XCTAssertNil(coordinator.errorMessage)
@@ -176,7 +219,7 @@ final class ProjectCoordinatorTests: XCTestCase {
 
     func testDeleteProjectResetsErrorOnSuccess() async throws {
         let coordinator = makeCoordinator()
-        await coordinator.createProject(name: "del-reset")
+        await createProject(coordinator, name: "del-reset")
         coordinator.errorMessage = "old error"
 
         guard let project = coordinator.projects.first else {
@@ -184,7 +227,7 @@ final class ProjectCoordinatorTests: XCTestCase {
             return
         }
 
-        await coordinator.deleteProject(project)
+        await deleteProject(coordinator, project)
         XCTAssertNil(coordinator.errorMessage)
     }
 
