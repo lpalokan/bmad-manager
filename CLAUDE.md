@@ -1,3 +1,12 @@
+# Active platform
+
+This repository ships two coexisting trees:
+
+- **Swift macOS app** (`Sources/BmadManager/`, built by `scripts/build_release.sh` into `bmad-manager.app`) — **the actively shipped platform**. New features land here so they reach users on Mac on the next release build.
+- **Tauri Windows port** (`tauri/`) — work-in-progress cross-platform rewrite. Its macOS arm (`tauri/src-tauri/src/platform/macos.rs`) is intentionally `unimplemented!()` until the unification milestone, so it cannot ship on Mac today. Mirror Swift features into the Tauri tree only when both platforms are explicitly in scope, or when the request names Windows specifically.
+
+When a request is ambiguous about which tree, default to Swift and confirm.
+
 # GitHub Workflow
 
 Never merge pull requests. Only create PRs. The user will review, merge, and close them.
@@ -44,7 +53,7 @@ Do not write feature/implementation code before its Gherkin scenario exists and 
 
 ## Per-stack BDD layout and commands
 
-The Swift macOS app under `Sources/BmadManager/` is in maintenance mode while the Tauri Windows port is the active development target. New behaviour lands in the Tauri tree; the Swift tree gets BDD coverage only when a bug fix or back-port requires it.
+The Swift macOS app under `Sources/BmadManager/` is the active platform (see "Active platform" above). New behaviour lands in the Swift tree first with full Gherkin coverage. The Tauri Windows port (`tauri/`) gets the equivalent scenarios when a request explicitly covers Windows or both platforms.
 
 **Tauri Rust backend** (`tauri/src-tauri/`):
 
@@ -68,14 +77,13 @@ The Swift macOS app under `Sources/BmadManager/` is in maintenance mode while th
   pnpm --dir tauri test:bdd
   ```
 
-**Swift macOS app** (`Sources/BmadManager/`, only when a bug fix needs a regression scenario):
+**Swift macOS app** (`Sources/BmadManager/`, the active platform — features land here first):
 
-- Features: `Tests/BmadManagerTests/Features/*.feature`
-- Step bindings: `Tests/BmadManagerTests/Features/Steps/` (XCTest-backed)
+- Tests live alongside their unit under `Tests/BmadManagerTests/<ThingTests>.swift` (XCTest). A Gherkin layer was scoped but never wired into `Package.swift`; the test-first discipline is still mandatory — write the failing `XCTestCase` first, watch it fail for the right reason, then implement. Use scenario-style test names (`testDecodesLegacySettingsWithoutPiCommand`) so the intent reads like a spec.
 - Run:
 
   ```
-  swift test --filter BmadManagerTests.Features
+  swift test
   ```
 
 See `docs/testing.md` for the full workflow, step catalogue, and maintenance guide.

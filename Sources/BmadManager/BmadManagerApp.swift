@@ -8,25 +8,17 @@ struct BmadManagerApp: App {
     // window invisible. No-op inside the bundled .app, which is already .regular.
     @NSApplicationDelegateAdaptor(BmadManagerAppDelegate.self) private var appDelegate
 
+    // No init-time capture of these stores. Both flow into the
+    // coordinator's methods per-call from `ContentView`, which reads
+    // them off its own `@EnvironmentObject` bindings. Capturing them
+    // here used to hand the coordinator a different SettingsStore /
+    // CommandRunner instance than the one SwiftUI ended up installing
+    // on the view tree — that drift was the root cause of the
+    // Terminal-vs-iTerm2, projects-root-doesn't-reindex, and
+    // empty-output-panel bugs.
     @StateObject private var settingsStore = SettingsStore()
     @StateObject private var commandRunner = CommandRunner()
-    @StateObject private var projectCoordinator: ProjectCoordinator = {
-        // Cannot capture other @StateObject properties in the default-value
-        // closure because they may not exist yet.  We substitute the real
-        // runner in init() after all StateObjects are created.
-        ProjectCoordinator(settings: SettingsStore(), runCommand: { _, _ in 0 })
-    }()
-
-    init() {
-        // Wire the real CommandRunner after @StateObject wrappers are
-        // allocated so we don't race on instance creation order.
-        let store = settingsStore
-        let runner = commandRunner
-        _projectCoordinator = StateObject(wrappedValue: ProjectCoordinator(
-            settings: store,
-            runCommand: { cmd, cwd in await runner.run(command: cmd, cwd: cwd) }
-        ))
-    }
+    @StateObject private var projectCoordinator = ProjectCoordinator()
 
     var body: some Scene {
         WindowGroup("BMad Manager") {

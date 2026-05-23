@@ -130,6 +130,54 @@ async fn legacy_without_terminal_kind(world: &mut TauriWorld) {
     );
 }
 
+#[given("a legacy settings JSON without piCommand")]
+async fn legacy_without_pi_command(world: &mut TauriWorld) {
+    world.raw_json = Some(
+        r#"{
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }"#
+        .to_string(),
+    );
+}
+
+#[then(regex = r#"^the claude command is "(.+)"$"#)]
+async fn claude_command_is(world: &mut TauriWorld, expected: String) {
+    let s = settings_for_assertion(world);
+    assert_eq!(s.claude_command, expected);
+}
+
+#[then(regex = r#"^the opencode command is "(.+)"$"#)]
+async fn opencode_command_is(world: &mut TauriWorld, expected: String) {
+    let s = settings_for_assertion(world);
+    assert_eq!(s.opencode_command, expected);
+}
+
+#[then(regex = r#"^the pi command is "(.+)"$"#)]
+async fn pi_command_is(world: &mut TauriWorld, expected: String) {
+    let s = settings_for_assertion(world);
+    assert_eq!(s.pi_command, expected);
+}
+
+#[when(regex = r#"^I round-trip the default settings with pi command "(.+)"$"#)]
+async fn round_trip_with_pi_command(world: &mut TauriWorld, pi_command: String) {
+    let mut original = AppSettings::defaults();
+    original.pi_command = pi_command;
+    let json = serde_json::to_string(&original).expect("encode");
+    let decoded: AppSettings = serde_json::from_str(&json).expect("decode");
+    world.settings = Some(original);
+    world.decoded_settings = Some(decoded);
+}
+
+#[then(regex = r#"^the decoded pi command is "(.+)"$"#)]
+async fn decoded_pi_command_is(world: &mut TauriWorld, expected: String) {
+    let decoded = world.decoded_settings.as_ref().expect("decoded");
+    assert_eq!(decoded.pi_command, expected);
+}
+
 #[when("I decode it")]
 async fn decode_raw_json(world: &mut TauriWorld) {
     let raw = world.raw_json.as_ref().expect("raw json loaded");

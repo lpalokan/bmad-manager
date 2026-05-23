@@ -24,3 +24,9 @@ export const openInClaude = (projectPath: string): Promise<void> =>
 
 export const openInOpencode = (projectPath: string): Promise<void> =>
   invoke("open_in_opencode", { projectPath });
+
+export const openInPi = (projectPath: string): Promise<void> =>
+  invoke("open_in_pi", { projectPath });
+
+export const detectCommandInPath = (command: string): Promise<string | null> =>
+  invoke<string | null>("detect_command_in_path", { command });

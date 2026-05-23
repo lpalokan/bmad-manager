@@ -20,6 +20,8 @@ pub fn run() {
             commands::delete_project,
             commands::open_in_claude,
             commands::open_in_opencode,
+            commands::open_in_pi,
+            commands::detect_command_in_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

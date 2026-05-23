@@ -36,7 +36,7 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(settings)
-                .onDisappear { coordinator.refresh() }
+                .onDisappear { refreshProjects() }
         }
         .alert(
             "Error",
@@ -59,14 +59,27 @@ struct ContentView: View {
         ) {
             if let project = coordinator.projectToDelete {
                 Button("Move to Trash", role: .destructive) {
-                    Task { await coordinator.deleteProject(project) }
+                    Task {
+                        await coordinator.deleteProject(
+                            project,
+                            root: settings.settings.projectsRoot,
+                            sortOrder: settings.settings.projectSortOrder
+                        )
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
         }
-        .onAppear { coordinator.refresh() }
-        .onChange(of: settings.settings.projectsRoot) { coordinator.refresh() }
-        .onChange(of: settings.settings.projectSortOrder) { coordinator.refresh() }
+        .onAppear { refreshProjects() }
+        .onChange(of: settings.settings.projectsRoot) { refreshProjects() }
+        .onChange(of: settings.settings.projectSortOrder) { refreshProjects() }
+    }
+
+    private func refreshProjects() {
+        coordinator.refresh(
+            root: settings.settings.projectsRoot,
+            sortOrder: settings.settings.projectSortOrder
+        )
     }
 
     private var header: some View {
@@ -157,8 +170,27 @@ struct ContentView: View {
         List(coordinator.projects) { project in
             ProjectRowView(
                 project: project,
-                onClaude: { coordinator.openInTerminal(project: project, command: settings.settings.claudeCommand) },
-                onOpencode: { coordinator.openInTerminal(project: project, command: settings.settings.opencodeCommand) },
+                onClaude: {
+                    coordinator.openInTerminal(
+                        project: project,
+                        command: settings.settings.claudeCommand,
+                        kind: settings.settings.terminalKind
+                    )
+                },
+                onOpencode: {
+                    coordinator.openInTerminal(
+                        project: project,
+                        command: settings.settings.opencodeCommand,
+                        kind: settings.settings.terminalKind
+                    )
+                },
+                onPi: {
+                    coordinator.openInTerminal(
+                        project: project,
+                        command: settings.settings.piCommand,
+                        kind: settings.settings.terminalKind
+                    )
+                },
                 onOpenFolder: { coordinator.openProjectFolder(project) },
                 onDelete: { coordinator.projectToDelete = project }
             )
@@ -171,9 +203,27 @@ struct ContentView: View {
         let name = newProjectName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
 
-        await coordinator.createProject(name: name) { [self] in
-            promptForModuleZip()
+        // If the user is on local-zip and hasn't picked a module yet,
+        // prompt for one and persist the choice before kicking off
+        // creation. Centralising the prompt here keeps the coordinator
+        // free of UI concerns and avoids the @StateObject-drift bug
+        // that captured-SettingsStore reads used to expose.
+        if settings.settings.moduleSourceKind == .localZip,
+           settings.settings.moduleZipPath.trimmingCharacters(in: .whitespaces).isEmpty {
+            guard let picked = promptForModuleZip() else {
+                coordinator.errorMessage = "A marketing growth module .zip is required to create a project."
+                return
+            }
+            settings.settings.moduleZipPath = picked.path
         }
+
+        await coordinator.createProject(
+            name: name,
+            settings: settings.settings,
+            runCommand: { command, cwd in
+                await commandRunner.run(command: command, cwd: cwd)
+            }
+        )
 
         if coordinator.errorMessage == nil {
             newProjectName = ""

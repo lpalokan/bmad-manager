@@ -12,11 +12,62 @@ struct SettingsView: View {
     // session can just reopen Settings.
     @State private var installedTerminals: [TerminalKind] = TerminalDetector.installedKinds()
 
+    // PATH-detection results for the three coding-agent commands. `nil`
+    // means "not found"; a string is the resolved absolute path. The
+    // dictionary is re-computed whenever the user edits the relevant
+    // command field so they get immediate feedback after typing.
+    @State private var claudeDetected: String? = nil
+    @State private var opencodeDetected: String? = nil
+    @State private var piDetected: String? = nil
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Settings")
                 .font(.title2).bold()
 
+            ScrollView {
+                form
+                    .padding(.trailing, 4) // breathing room for the scroller
+            }
+
+            Divider()
+
+            HStack {
+                Button("Reset to defaults", role: .destructive) {
+                    showResetConfirm = true
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 620, height: 720)
+        .onAppear {
+            reconcileTerminalSelection()
+            refreshAgentDetection()
+        }
+        .onChange(of: store.settings.claudeCommand) {
+            claudeDetected = PathDetector.detect(store.settings.claudeCommand)
+        }
+        .onChange(of: store.settings.opencodeCommand) {
+            opencodeDetected = PathDetector.detect(store.settings.opencodeCommand)
+        }
+        .onChange(of: store.settings.piCommand) {
+            piDetected = PathDetector.detect(store.settings.piCommand)
+        }
+        .confirmationDialog(
+            "Reset all settings to defaults?",
+            isPresented: $showResetConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Reset", role: .destructive) { store.reset() }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Projects root folder").font(.subheadline).bold()
                 HStack {
@@ -87,40 +138,35 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Claude Code command").font(.subheadline).bold()
-                    TextField("", text: $store.settings.claudeCommand)
-                        .textFieldStyle(.roundedBorder)
+            VStack(alignment: .leading, spacing: 10) {
+                agentRow(
+                    label: "Claude Code",
+                    text: $store.settings.claudeCommand,
+                    detected: claudeDetected
+                ) {
+                    if let picked = browseForExecutable(label: "Claude Code") {
+                        store.settings.claudeCommand = picked
+                    }
                 }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("opencode command").font(.subheadline).bold()
-                    TextField("", text: $store.settings.opencodeCommand)
-                        .textFieldStyle(.roundedBorder)
+                agentRow(
+                    label: "opencode",
+                    text: $store.settings.opencodeCommand,
+                    detected: opencodeDetected
+                ) {
+                    if let picked = browseForExecutable(label: "opencode") {
+                        store.settings.opencodeCommand = picked
+                    }
+                }
+                agentRow(
+                    label: "Pi",
+                    text: $store.settings.piCommand,
+                    detected: piDetected
+                ) {
+                    if let picked = browseForExecutable(label: "Pi") {
+                        store.settings.piCommand = picked
+                    }
                 }
             }
-
-            Spacer()
-
-            HStack {
-                Button("Reset to defaults", role: .destructive) {
-                    showResetConfirm = true
-                }
-                Spacer()
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(20)
-        .frame(width: 620, height: 620)
-        .onAppear { reconcileTerminalSelection() }
-        .confirmationDialog(
-            "Reset all settings to defaults?",
-            isPresented: $showResetConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Reset", role: .destructive) { store.reset() }
-            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -145,6 +191,52 @@ struct SettingsView: View {
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
             store.settings.projectsRoot = url.path
+        }
+    }
+
+    private func browseForExecutable(label: String) -> String? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.treatsFilePackagesAsDirectories = true
+        panel.title = "Choose \(label) executable"
+        panel.prompt = "Use This Binary"
+        panel.message = "Pick the \(label) executable. Most installs live under /usr/local/bin or /opt/homebrew/bin."
+        return panel.runModal() == .OK ? panel.url?.path : nil
+    }
+
+    private func refreshAgentDetection() {
+        claudeDetected   = PathDetector.detect(store.settings.claudeCommand)
+        opencodeDetected = PathDetector.detect(store.settings.opencodeCommand)
+        piDetected       = PathDetector.detect(store.settings.piCommand)
+    }
+
+    @ViewBuilder
+    private func agentRow(
+        label: String,
+        text: Binding<String>,
+        detected: String?,
+        browse: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("\(label) command").font(.subheadline).bold()
+            HStack {
+                TextField("", text: text)
+                    .textFieldStyle(.roundedBorder)
+                Button("Browse…", action: browse)
+            }
+            if let path = detected {
+                Text("Detected at \(path)")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Text("Not found on PATH. Use Browse… to point at the binary.")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
         }
     }
 

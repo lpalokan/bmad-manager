@@ -11,6 +11,7 @@
     loadSettings,
     openInClaude,
     openInOpencode,
+    openInPi,
     saveSettings,
   } from "./lib/commands";
   import { projectSortOrderOptions, type AppSettings, type OutputEvent, type ProjectItem, type ProjectSortOrder } from "./lib/types";
@@ -102,6 +103,14 @@
       await openInOpencode(project.path);
     } catch (err) {
       errorMessage = `Open in opencode failed: ${err}`;
+    }
+  }
+
+  async function onPi(project: ProjectItem) {
+    try {
+      await openInPi(project.path);
+    } catch (err) {
+      errorMessage = `Open in Pi failed: ${err}`;
     }
   }
 
@@ -205,6 +214,7 @@
             {project}
             onClaude={() => onClaude(project)}
             onOpencode={() => onOpencode(project)}
+            onPi={() => onPi(project)}
             onDelete={() => onDelete(project)}
           />
         {/each}
