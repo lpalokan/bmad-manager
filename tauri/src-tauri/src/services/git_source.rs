@@ -19,6 +19,11 @@ pub enum GitError {
 /// archives). `git_exe` is the absolute path to the git binary to invoke;
 /// Windows passes the bundled PortableGit's `cmd/git.exe`, macOS will
 /// pass the system git when the unification milestone lands.
+///
+/// On failure, the captured stdout + stderr from the git process are
+/// inlined into the returned error so the caller can surface them in
+/// the output panel — otherwise a clone failure looks like an opaque
+/// "git clone failed" line in the UI.
 pub fn clone(git_exe: &Path, url: &str, git_ref: &str, dest: &Path) -> Result<(), GitError> {
     let trimmed_url = url.trim();
     if trimmed_url.is_empty() {
@@ -34,19 +39,37 @@ pub fn clone(git_exe: &Path, url: &str, git_ref: &str, dest: &Path) -> Result<()
     args.push(trimmed_url.to_string());
     args.push(dest.to_string_lossy().into_owned());
 
-    let output = Command::new(git_exe)
-        .args(&args)
+    let mut cmd = Command::new(git_exe);
+    cmd.args(&args);
+
+    // Match command_runner: suppress the console window flash on
+    // Windows when the parent is a Tauri GUI app. See command_runner.rs
+    // for the rationale.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+
+    let output = cmd
         .output()
         .map_err(|e| GitError::GitNotAvailable(e.to_string()))?;
 
     if !output.status.success() {
-        let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let code = output.status.code().unwrap_or(-1);
         let _ = std::fs::remove_dir_all(dest);
-        return Err(GitError::CloneFailed(if message.is_empty() {
-            "unknown error".to_string()
-        } else {
-            message
-        }));
+        let mut message = format!("exit {code}");
+        if !stderr.is_empty() {
+            message.push_str("\nstderr: ");
+            message.push_str(&stderr);
+        }
+        if !stdout.is_empty() {
+            message.push_str("\nstdout: ");
+            message.push_str(&stdout);
+        }
+        return Err(GitError::CloneFailed(message));
     }
     Ok(())
 }
