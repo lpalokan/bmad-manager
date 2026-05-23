@@ -14,6 +14,17 @@ Reference the issue number in the PR body (e.g., "Closes #2").
 
 When working on a feature branch, always `git add -A && git commit` and `git push origin <branch>` before declaring the work done. Uncommitted or unpushed changes are incomplete.
 
+# Commit message conventions
+
+[release-please](https://github.com/googleapis/release-please) drives versioning from conventional-commit prefixes on `main`. Without these prefixes the bot will never open a Release PR and the publish pipeline stays idle.
+
+- `feat: ...` — minor bump
+- `fix: ...` — patch bump
+- `feat!: ...` or trailer `BREAKING CHANGE: ...` — major bump (pre-1.0, configured as minor)
+- `chore:`, `docs:`, `refactor:`, `test:`, `ci:`, `build:` — no bump, no CHANGELOG entry
+
+Commits without a recognised prefix are silently ignored by the bot, so a stray `Fix typo` commit will not trigger a release.
+
 # Shell command conventions
 
 When giving the user shell commands to run, do not put inline `#` comments in the command blocks (neither trailing nor standalone). The user pastes blocks into zsh and the comments cause confusion. Put any explanation in prose before or after the block instead.

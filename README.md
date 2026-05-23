@@ -28,6 +28,18 @@ The UI is intentionally tiny:
 - A **Sort** menu above the list reorders projects by name (A→Z) or by
   creation date (newest or oldest first). The choice is persisted.
 
+## Install via Homebrew (recommended)
+
+```
+brew install --cask lpalokan/tap/bmad-manager
+```
+
+The cask strips macOS's quarantine flag, so the app launches from
+`/Applications` immediately — no right-click → **Open** dance, no paid
+Apple Developer ID required. Updates ship via `brew upgrade`.
+
+Manual DMG install below still works if you prefer it.
+
 ## End-user install
 
 You receive **`bmad-manager.dmg`** from the developer.
