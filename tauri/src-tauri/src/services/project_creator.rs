@@ -31,11 +31,48 @@ pub async fn create_project<F>(
 where
     F: FnMut(OutputEvent) + Send,
 {
-    let projects_root = expand_tilde(&settings.projects_root);
-    let project_path = project_service::create_project_folder(name, &projects_root)?;
+    emit_diag(
+        &mut on_event,
+        format!(
+            "create_project name={name:?} module_source={:?} repo_url={:?} repo_ref={:?} zip_path={:?}",
+            settings.module_source_kind,
+            settings.module_repo_url,
+            settings.module_repo_ref,
+            settings.module_zip_path,
+        ),
+    );
 
-    let module_dir = materialise_module(settings).await?;
+    let projects_root = expand_tilde(&settings.projects_root);
+    emit_diag(
+        &mut on_event,
+        format!(
+            "projects_root={} (exists={})",
+            projects_root.display(),
+            projects_root.exists()
+        ),
+    );
+
+    let project_path = project_service::create_project_folder(name, &projects_root)?;
+    emit_diag(
+        &mut on_event,
+        format!(
+            "project_path={} (exists={})",
+            project_path.display(),
+            project_path.exists()
+        ),
+    );
+
+    let module_dir = materialise_module(settings, &mut on_event).await?;
     let module_root_path = zip_source::module_root(&module_dir);
+    emit_diag(
+        &mut on_event,
+        format!(
+            "module_dir={} module_root={} (exists={})",
+            module_dir.display(),
+            module_root_path.display(),
+            module_root_path.exists()
+        ),
+    );
 
     let command = init_command::substitute(
         &settings.init_command,
@@ -44,8 +81,10 @@ where
         &module_root_path.to_string_lossy(),
         cfg!(target_os = "windows"),
     );
+    emit_diag(&mut on_event, format!("init_command={command}"));
 
     let exit_code = command_runner::run(&command, &project_path, &mut on_event).await;
+    emit_diag(&mut on_event, format!("init_command exit_code={exit_code}"));
 
     // Cleanup the temp module dir whether the init succeeded or not so
     // we don't leak gigabytes of clones across repeated failed runs.
@@ -61,20 +100,60 @@ where
     Ok(ProjectItem::new(project_path, created_at))
 }
 
-async fn materialise_module(settings: &AppSettings) -> Result<PathBuf, ProjectCreationError> {
+fn emit_diag<F>(on_event: &mut F, message: String)
+where
+    F: FnMut(OutputEvent),
+{
+    on_event(OutputEvent::Stderr {
+        line: format!("[bmad] {message}"),
+    });
+}
+
+async fn materialise_module<F>(
+    settings: &AppSettings,
+    on_event: &mut F,
+) -> Result<PathBuf, ProjectCreationError>
+where
+    F: FnMut(OutputEvent),
+{
     match settings.module_source_kind {
         ModuleSourceKind::GitRepo => {
             let dest = git_source::fresh_tempdir();
             let git_exe = platform::resolve_git_path();
+            emit_diag(
+                on_event,
+                format!(
+                    "git clone {url:?} ref={r:?} via {git} (exists={ok}) into {dest}",
+                    url = settings.module_repo_url,
+                    r = settings.module_repo_ref,
+                    git = git_exe.display(),
+                    ok = git_exe.exists(),
+                    dest = dest.display(),
+                ),
+            );
             git_source::clone(
                 &git_exe,
                 &settings.module_repo_url,
                 &settings.module_repo_ref,
                 &dest,
             )?;
+            emit_diag(
+                on_event,
+                format!(
+                    "git clone succeeded — dest exists={} files={}",
+                    dest.exists(),
+                    dest.read_dir().map(|d| d.count()).unwrap_or(0)
+                ),
+            );
             Ok(dest)
         }
-        ModuleSourceKind::LocalZip => Ok(zip_source::extract_zip(&settings.module_zip_path)?),
+        ModuleSourceKind::LocalZip => {
+            emit_diag(
+                on_event,
+                format!("extracting zip {}", settings.module_zip_path),
+            );
+            Ok(zip_source::extract_zip(&settings.module_zip_path)?)
+        }
     }
 }
 

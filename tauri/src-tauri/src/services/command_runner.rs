@@ -27,20 +27,59 @@ where
     F: FnMut(OutputEvent) + Send,
 {
     let (shell, args) = platform_shell_invocation(command);
+    let augmented_path = platform::augmented_path();
+    let npm_cache = platform::user_npm_cache_dir();
+
+    // Surface what we're actually about to spawn so the output panel
+    // shows the exact shell + cwd + relevant env vars before any user
+    // output. Critical for diagnosing "system cannot find the path"
+    // style errors on Windows where the failing path is otherwise
+    // invisible.
+    on_event(OutputEvent::Stderr {
+        line: format!("[bmad] shell={shell:?} args={args:?} cwd={}", cwd.display()),
+    });
+    on_event(OutputEvent::Stderr {
+        line: format!("[bmad] PATH={}", augmented_path.to_string_lossy()),
+    });
+    on_event(OutputEvent::Stderr {
+        line: format!("[bmad] NPM_CONFIG_CACHE={}", npm_cache.display()),
+    });
+    on_event(OutputEvent::Stderr {
+        line: format!(
+            "[bmad] cwd-exists={} npx={} (exists={}) git={} (exists={})",
+            cwd.exists(),
+            platform::resolve_npx_path().display(),
+            platform::resolve_npx_path().exists(),
+            platform::resolve_git_path().display(),
+            platform::resolve_git_path().exists(),
+        ),
+    });
+
     let mut cmd = Command::new(&shell);
     cmd.args(&args)
         .current_dir(cwd)
-        .env("PATH", platform::augmented_path())
+        .env("PATH", &augmented_path)
         // Point npx at the user-writable cache seeded from the bundled
         // pre-warm at first launch (see `bundled_tooling::seed_*`). On the
         // Linux stub arm this is just a per-user fallback path; on Windows
         // it's `%LOCALAPPDATA%\bmad-manager\npm-cache`. Setting it here
         // means every project-create run picks it up without the user
         // having to configure anything.
-        .env("NPM_CONFIG_CACHE", platform::user_npm_cache_dir())
+        .env("NPM_CONFIG_CACHE", &npm_cache)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
+
+    // CREATE_NO_WINDOW = 0x08000000 — without it, spawning cmd.exe from
+    // a Tauri GUI flashes a visible console window for every subprocess
+    // (npm/npx/node child processes inherit and stack windows). The
+    // stdout/stderr pipes still flow back to the output panel either
+    // way; this just keeps the screen quiet.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
