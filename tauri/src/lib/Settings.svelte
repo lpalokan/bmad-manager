@@ -1,6 +1,6 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
-  import { saveSettings } from "./commands";
+  import { detectCommandInPath, saveSettings } from "./commands";
   import {
     moduleSourceOptions,
     terminalOptions,
@@ -20,6 +20,52 @@
   let draft: AppSettings = $state({ ...settings });
   let saving = $state(false);
   let saveError: string | null = $state(null);
+
+  // Per-agent PATH-detection results. `null` = unknown / pending,
+  // a string = resolved absolute path, `false` = checked and not found.
+  type Detection = string | false | null;
+  let detections: Record<"claude" | "opencode" | "pi", Detection> = $state({
+    claude: null,
+    opencode: null,
+    pi: null,
+  });
+
+  async function detect(which: "claude" | "opencode" | "pi", command: string) {
+    detections[which] = null;
+    const trimmed = command.trim();
+    if (!trimmed) {
+      detections[which] = false;
+      return;
+    }
+    try {
+      const found = await detectCommandInPath(trimmed);
+      detections[which] = found ?? false;
+    } catch {
+      detections[which] = false;
+    }
+  }
+
+  $effect(() => {
+    detect("claude", draft.claudeCommand);
+  });
+  $effect(() => {
+    detect("opencode", draft.opencodeCommand);
+  });
+  $effect(() => {
+    detect("pi", draft.piCommand);
+  });
+
+  async function browseForAgent(which: "claude" | "opencode" | "pi", label: string) {
+    const picked = await open({
+      multiple: false,
+      title: `Choose ${label} executable`,
+    });
+    if (typeof picked === "string") {
+      if (which === "claude") draft.claudeCommand = picked;
+      else if (which === "opencode") draft.opencodeCommand = picked;
+      else draft.piCommand = picked;
+    }
+  }
 
   async function chooseFolder() {
     const picked = await open({
@@ -161,14 +207,66 @@
       </div>
     </section>
 
-    <section class="grid-two">
+    <section class="agents">
       <div>
         <label class="lbl" for="claude-cmd">Claude Code command</label>
-        <input id="claude-cmd" type="text" bind:value={draft.claudeCommand} />
+        <div class="row">
+          <input id="claude-cmd" type="text" bind:value={draft.claudeCommand} />
+          <button
+            type="button"
+            onclick={() => browseForAgent("claude", "Claude Code")}
+          >
+            Browse…
+          </button>
+        </div>
+        {#if detections.claude === null}
+          <p class="hint">Checking PATH…</p>
+        {:else if detections.claude === false}
+          <p class="hint not-found">
+            Not found on PATH. Use <strong>Browse…</strong> to point at the binary.
+          </p>
+        {:else}
+          <p class="hint detected">Detected at <code>{detections.claude}</code></p>
+        {/if}
       </div>
       <div>
         <label class="lbl" for="opencode-cmd">opencode command</label>
-        <input id="opencode-cmd" type="text" bind:value={draft.opencodeCommand} />
+        <div class="row">
+          <input id="opencode-cmd" type="text" bind:value={draft.opencodeCommand} />
+          <button
+            type="button"
+            onclick={() => browseForAgent("opencode", "opencode")}
+          >
+            Browse…
+          </button>
+        </div>
+        {#if detections.opencode === null}
+          <p class="hint">Checking PATH…</p>
+        {:else if detections.opencode === false}
+          <p class="hint not-found">
+            Not found on PATH. Use <strong>Browse…</strong> to point at the binary.
+          </p>
+        {:else}
+          <p class="hint detected">Detected at <code>{detections.opencode}</code></p>
+        {/if}
+      </div>
+      <div>
+        <label class="lbl" for="pi-cmd">Pi command</label>
+        <div class="row">
+          <input id="pi-cmd" type="text" bind:value={draft.piCommand} />
+          <button type="button" onclick={() => browseForAgent("pi", "Pi")}>
+            Browse…
+          </button>
+        </div>
+        {#if detections.pi === null}
+          <p class="hint">Checking PATH…</p>
+        {:else if detections.pi === false}
+          <p class="hint not-found">
+            Not found on PATH. Use <strong>Browse…</strong> to point at the binary.
+          </p>
+        {:else}
+          <p class="hint detected">Detected at <code>{detections.pi}</code></p>
+        {/if}
       </div>
     </section>
 
@@ -303,10 +401,29 @@
     color: rgba(127, 127, 127, 1);
   }
 
-  .grid-two {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
+  .agents {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .agents > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .hint.detected {
+    color: rgb(40, 130, 60);
+  }
+
+  .hint.not-found {
+    color: #b91d1d;
+  }
+
+  .hint code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
   }
 
   .error {

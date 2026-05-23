@@ -26,6 +26,9 @@ pub struct TauriWorld {
     pub last_string_error: Option<String>,
     pub listed_projects: Vec<ProjectItem>,
     pub init_template: Option<String>,
+    pub last_path_dir: Option<PathBuf>,
+    pub last_executable_path: Option<PathBuf>,
+    pub last_detection: Option<Option<PathBuf>>,
 }
 
 impl TauriWorld {

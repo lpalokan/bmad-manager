@@ -14,7 +14,7 @@ use tokio::sync::Mutex;
 use crate::models::{AppSettings, ProjectItem};
 use crate::platform;
 use crate::services::command_runner::OutputEvent;
-use crate::services::{project_creator, project_service, settings_store};
+use crate::services::{path_detection, project_creator, project_service, settings_store};
 
 pub struct AppState {
     pub settings_path: PathBuf,
@@ -109,11 +109,27 @@ pub fn open_in_opencode(project_path: String, state: State<'_, AppState>) -> Cmd
     open_in_terminal(&project_path, "opencode", state)
 }
 
+#[tauri::command]
+pub fn open_in_pi(project_path: String, state: State<'_, AppState>) -> CmdResult<()> {
+    open_in_terminal(&project_path, "pi", state)
+}
+
+/// Returns the absolute path the supplied command resolves to on the
+/// current `PATH`, or `None` if it's not found. The Settings dialog
+/// calls this per coding-agent command so the user knows whether the
+/// bare-name defaults work before they need to browse for a binary.
+#[tauri::command]
+pub fn detect_command_in_path(command: String) -> Option<String> {
+    path_detection::detect_command_in_path(&command, None)
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
 fn open_in_terminal(project_path: &str, which: &str, state: State<'_, AppState>) -> CmdResult<()> {
     let settings = settings_store::load_or_init(&state.settings_path)?;
     let command = match which {
         "claude" => settings.claude_command.trim().to_string(),
         "opencode" => settings.opencode_command.trim().to_string(),
+        "pi" => settings.pi_command.trim().to_string(),
         _ => unreachable!(),
     };
     if command.is_empty() {

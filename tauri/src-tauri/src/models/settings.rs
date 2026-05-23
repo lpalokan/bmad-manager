@@ -103,6 +103,7 @@ pub struct AppSettings {
     pub init_command: String,
     pub claude_command: String,
     pub opencode_command: String,
+    pub pi_command: String,
     pub project_sort_order: ProjectSortOrder,
     pub terminal_kind: TerminalKind,
 }
@@ -122,6 +123,7 @@ impl AppSettings {
             init_command: "npx bmad-method install --yes --modules bmm,bmb,cis --tools claude-code,opencode --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'".to_string(),
             claude_command: "claude".to_string(),
             opencode_command: "opencode".to_string(),
+            pi_command: "pi".to_string(),
             project_sort_order: ProjectSortOrder::NameAscending,
             terminal_kind: TerminalKind::default_for_platform(),
         }
@@ -162,6 +164,8 @@ impl<'de> Deserialize<'de> for AppSettings {
             claude_command: String,
             opencode_command: String,
             #[serde(default)]
+            pi_command: Option<String>,
+            #[serde(default)]
             project_sort_order: Option<ProjectSortOrder>,
             #[serde(default)]
             terminal_kind: Option<TerminalKind>,
@@ -191,6 +195,7 @@ impl<'de> Deserialize<'de> for AppSettings {
             init_command: raw.init_command,
             claude_command: raw.claude_command,
             opencode_command: raw.opencode_command,
+            pi_command: raw.pi_command.unwrap_or_else(|| "pi".to_string()),
             project_sort_order: raw
                 .project_sort_order
                 .unwrap_or(ProjectSortOrder::NameAscending),
@@ -218,6 +223,7 @@ mod tests {
         assert_eq!(d.module_zip_path, "");
         assert_eq!(d.claude_command, "claude");
         assert_eq!(d.opencode_command, "opencode");
+        assert_eq!(d.pi_command, "pi");
         assert_eq!(d.project_sort_order, ProjectSortOrder::NameAscending);
     }
 
@@ -331,6 +337,7 @@ mod tests {
             init_command: "echo {PROJECT_PATH}".to_string(),
             claude_command: "claude".to_string(),
             opencode_command: "opencode".to_string(),
+            pi_command: "pi".to_string(),
             project_sort_order: ProjectSortOrder::DateNewestFirst,
             terminal_kind: TerminalKind::WindowsTerminal,
         };
