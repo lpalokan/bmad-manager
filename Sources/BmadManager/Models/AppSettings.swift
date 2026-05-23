@@ -75,7 +75,7 @@ struct AppSettings: Codable, Equatable {
             moduleRepoURL: AppSettings.defaultModuleRepoURL,
             moduleRepoRef: "",
             moduleZipPath: "",
-            initCommand: "npx bmad-method install --yes --modules bmm,bmb,cis --tools claude-code,opencode --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'",
+            initCommand: "npx bmad-method install --yes --modules bmm,bmb,cis --tools claude-code,opencode,pi --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'",
             claudeCommand: "claude",
             opencodeCommand: "opencode",
             piCommand: "pi",

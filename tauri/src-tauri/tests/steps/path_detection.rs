@@ -104,7 +104,9 @@ async fn detection_returns_same_absolute(world: &mut TauriWorld) {
 fn write_executable(path: &PathBuf) {
     use std::os::unix::fs::PermissionsExt;
     std::fs::write(path, "#!/bin/sh\nexit 0\n").expect("write fake exe");
-    let mut perms = std::fs::metadata(path).expect("stat fake exe").permissions();
+    let mut perms = std::fs::metadata(path)
+        .expect("stat fake exe")
+        .permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(path, perms).expect("chmod fake exe");
 }

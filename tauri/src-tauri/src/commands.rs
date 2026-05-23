@@ -120,8 +120,7 @@ pub fn open_in_pi(project_path: String, state: State<'_, AppState>) -> CmdResult
 /// bare-name defaults work before they need to browse for a binary.
 #[tauri::command]
 pub fn detect_command_in_path(command: String) -> Option<String> {
-    path_detection::detect_command_in_path(&command, None)
-        .map(|p| p.to_string_lossy().into_owned())
+    path_detection::detect_command_in_path(&command, None).map(|p| p.to_string_lossy().into_owned())
 }
 
 fn open_in_terminal(project_path: &str, which: &str, state: State<'_, AppState>) -> CmdResult<()> {

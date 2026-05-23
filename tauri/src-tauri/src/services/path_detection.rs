@@ -86,13 +86,7 @@ fn pathext_suffixes() -> Vec<String> {
                 .map(|s| s.to_ascii_lowercase())
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_else(|| {
-            vec![
-                ".exe".to_string(),
-                ".cmd".to_string(),
-                ".bat".to_string(),
-            ]
-        })
+        .unwrap_or_else(|| vec![".exe".to_string(), ".cmd".to_string(), ".bat".to_string()])
 }
 
 #[cfg(test)]
@@ -117,14 +111,8 @@ mod tests {
 
     #[test]
     fn empty_command_returns_none() {
-        assert_eq!(
-            detect_command_in_path("", Some(OsStr::new(""))),
-            None
-        );
-        assert_eq!(
-            detect_command_in_path("   ", Some(OsStr::new(""))),
-            None
-        );
+        assert_eq!(detect_command_in_path("", Some(OsStr::new(""))), None);
+        assert_eq!(detect_command_in_path("   ", Some(OsStr::new(""))), None);
     }
 
     #[test]
@@ -144,10 +132,6 @@ mod tests {
         let exe = tmp.path().join(exe_name);
         make_exec(&exe);
         let path = OsString::from(tmp.path());
-        let lookup = if cfg!(windows) { "tool" } else { "tool" };
-        assert_eq!(
-            detect_command_in_path(lookup, Some(&path)),
-            Some(exe)
-        );
+        assert_eq!(detect_command_in_path("tool", Some(&path)), Some(exe));
     }
 }

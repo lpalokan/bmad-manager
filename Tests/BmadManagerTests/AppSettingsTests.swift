@@ -116,6 +116,7 @@ final class AppSettingsTests: XCTestCase {
                       "headless install must specify tools explicitly")
         XCTAssertTrue(command.contains("claude-code"))
         XCTAssertTrue(command.contains("opencode"))
+        XCTAssertTrue(command.contains("pi"))
         XCTAssertTrue(command.contains("--custom-source"),
                       "marketing-growth module must register via --custom-source")
         XCTAssertTrue(command.contains("--directory"),

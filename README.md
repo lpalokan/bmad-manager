@@ -73,9 +73,9 @@ Settings (cogwheel icon) let you change:
 - **Init command** — the headless command run after the project folder is
   created. The default uses the BMad [headless install
   flags](https://docs.bmad-method.org/how-to/install-bmad/#headless-ci-installs)
-  (`--yes --modules bmm,bmb,cis --tools claude-code,opencode --custom-source ... --directory ...`)
+  (`--yes --modules bmm,bmb,cis --tools claude-code,opencode,pi --custom-source ... --directory ...`)
   to install the BMad Method core, BMad Builder, and Creative Intelligence
-  Suite configured for both Claude Code and opencode, and to register the
+  Suite configured for Claude Code, opencode, and Pi, and to register the
   materialised marketing-growth bundle as a proper BMad module via
   `--custom-source` (rather than overlaying its files on the project). If
   you're upgrading an existing install, hit **Reset to defaults** so your
