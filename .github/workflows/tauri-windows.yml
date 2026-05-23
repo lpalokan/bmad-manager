@@ -32,13 +32,17 @@ jobs:
 
     env:
       # Pinned versions of the bundled tooling. Bumping is a deliberate
-      # commit: edit these two lines, run the workflow, verify the new
-      # installer size in the build artifacts page.
-      #   Node:        https://nodejs.org/dist/  (current LTS)
+      # commit: edit these and verify the new installer size on the
+      # workflow's Artifacts page.
+      #   Node:        https://nodejs.org/dist/ (current LTS)
       #   PortableGit: https://github.com/git-for-windows/git/releases
+      # PortableGit asset naming gotcha: git-for-windows tags as
+      # `v<UPSTREAM>.windows.<N>` but ships the asset as
+      # `PortableGit-<UPSTREAM>.<N>-64-bit.7z.exe`. Both pieces live
+      # below as separate vars so the asset URL is unambiguous.
       NODE_VERSION: "22.11.0"
-      GIT_FOR_WINDOWS_VERSION: "2.47.0"
       GIT_FOR_WINDOWS_TAG: "v2.47.0.windows.1"
+      GIT_FOR_WINDOWS_ASSET_VERSION: "2.47.0.1"
 
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +78,7 @@ jobs:
       - name: Download + extract portable Node
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $url = "https://nodejs.org/dist/v$env:NODE_VERSION/node-v$env:NODE_VERSION-win-x64.zip"
           $zip = Join-Path $env:RUNNER_TEMP "node-portable.zip"
           $stage = Join-Path $env:RUNNER_TEMP "node-portable-extract"
@@ -87,23 +92,39 @@ jobs:
           # under `resources/node-portable/`.
           $inner = Get-ChildItem $stage | Where-Object PSIsContainer | Select-Object -First 1
           Get-ChildItem -Path $inner.FullName | Move-Item -Destination $dest -Force
+          $nodeExe = Join-Path $dest "node.exe"
+          if (-not (Test-Path $nodeExe)) {
+            throw "Node zip extracted but $nodeExe is missing"
+          }
           Write-Host "Bundled Node:"
-          & "$dest/node.exe" --version
+          & $nodeExe --version
 
       - name: Download + extract PortableGit
         shell: pwsh
         run: |
-          $url = "https://github.com/git-for-windows/git/releases/download/$env:GIT_FOR_WINDOWS_TAG/PortableGit-$env:GIT_FOR_WINDOWS_VERSION-64-bit.7z.exe"
+          $ErrorActionPreference = 'Stop'
+          $url = "https://github.com/git-for-windows/git/releases/download/$env:GIT_FOR_WINDOWS_TAG/PortableGit-$env:GIT_FOR_WINDOWS_ASSET_VERSION-64-bit.7z.exe"
           $exe = Join-Path $env:RUNNER_TEMP "portable-git-installer.exe"
           $dest = "$pwd/src-tauri/resources/portable-git"
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Write-Host "Downloading $url"
           Invoke-WebRequest -Uri $url -OutFile $exe
-          # PortableGit is a 7z self-extracting installer. `-y` accepts
-          # the EULA, `-o<dir>` is the extraction target (no space, no
-          # quotes — that's the 7zip CLI grammar).
-          & $exe -y "-o$dest" | Out-Null
+          Write-Host ("Downloaded {0:N0} bytes" -f (Get-Item $exe).Length)
+          # PortableGit ships as a 7z self-extracting installer. Use
+          # Start-Process so the exit code is observable; piping `&` to
+          # Out-Null swallows both stdout and any failure signal. `-y`
+          # accepts the EULA, `-o<dir>` sets the extraction target.
+          $proc = Start-Process -FilePath $exe -ArgumentList "-y", "-o`"$dest`"" -Wait -PassThru -NoNewWindow
+          if ($proc.ExitCode -ne 0) {
+            throw "PortableGit self-extractor exited with code $($proc.ExitCode)"
+          }
+          $gitExe = Join-Path $dest "cmd\git.exe"
+          if (-not (Test-Path $gitExe)) {
+            throw "PortableGit extracted but $gitExe is missing"
+          }
           Write-Host "Bundled Git:"
-          & "$dest/cmd/git.exe" --version
+          & $gitExe --version
+          Write-Host ("Extracted file count: {0}" -f (Get-ChildItem $dest -Recurse -File).Count)
 
       - name: Pre-warm npm cache with bmad-method
         shell: pwsh
@@ -119,6 +140,20 @@ jobs:
 
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
+
+      - name: Resource directory inventory (pre-build sanity check)
+        shell: pwsh
+        run: |
+          foreach ($d in @("node-portable", "portable-git", "npm-cache")) {
+            $path = "src-tauri/resources/$d"
+            if (Test-Path $path) {
+              $count = (Get-ChildItem $path -Recurse -File).Count
+              $bytes = (Get-ChildItem $path -Recurse -File | Measure-Object Length -Sum).Sum
+              Write-Host ("{0,-18} {1,6} files, {2,12:N0} bytes" -f $d, $count, $bytes)
+            } else {
+              Write-Host "$d MISSING"
+            }
+          }
 
       - name: Build Tauri NSIS installer
         run: pnpm tauri build
