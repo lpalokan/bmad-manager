@@ -58,14 +58,14 @@ where
     let mut cmd = Command::new(&shell);
     cmd.args(&args)
         .current_dir(cwd)
-        .env("PATH", &augmented_path)
+        .env("PATH", augmented_path)
         // Point npx at the user-writable cache seeded from the bundled
         // pre-warm at first launch (see `bundled_tooling::seed_*`). On the
         // Linux stub arm this is just a per-user fallback path; on Windows
         // it's `%LOCALAPPDATA%\bmad-manager\npm-cache`. Setting it here
         // means every project-create run picks it up without the user
         // having to configure anything.
-        .env("NPM_CONFIG_CACHE", &npm_cache)
+        .env("NPM_CONFIG_CACHE", npm_cache)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
@@ -74,12 +74,12 @@ where
     // a Tauri GUI flashes a visible console window for every subprocess
     // (npm/npx/node child processes inherit and stack windows). The
     // stdout/stderr pipes still flow back to the output panel either
-    // way; this just keeps the screen quiet.
+    // way; this just keeps the screen quiet. tokio::process::Command
+    // exposes `creation_flags` as an inherent method on Windows, so no
+    // trait import is needed (and importing std's CommandExt here would
+    // trip `unused_imports` under `-D warnings`).
     #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
-    }
+    cmd.creation_flags(0x0800_0000);
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
