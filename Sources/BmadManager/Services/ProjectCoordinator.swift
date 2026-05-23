@@ -98,7 +98,16 @@ final class ProjectCoordinator: ObservableObject {
         NSWorkspace.shared.open(project.url)
     }
 
-    func openInTerminal(project: ProjectItem, command: String) {
+    /// Opens `command` in a new terminal session at the project's path.
+    ///
+    /// `kind` is taken from the caller rather than read off
+    /// `settings.settings.terminalKind` so the coordinator can't drift out
+    /// of sync with the View's `SettingsStore`. The View already binds to
+    /// the `@EnvironmentObject` instance SwiftUI manages, and that
+    /// instance is the one the Picker writes to — passing the kind through
+    /// at call time guarantees we honour what the user just chose, even on
+    /// the very first click after a change.
+    func openInTerminal(project: ProjectItem, command: String, kind: TerminalKind) {
         let trimmed = command.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
             errorMessage = "Command is empty. Set it in Settings."
@@ -108,7 +117,7 @@ final class ProjectCoordinator: ObservableObject {
             try terminalLauncher.open(
                 projectPath: project.url.path,
                 command: trimmed,
-                kind: settings.settings.terminalKind
+                kind: kind
             )
         } catch {
             errorMessage = error.localizedDescription

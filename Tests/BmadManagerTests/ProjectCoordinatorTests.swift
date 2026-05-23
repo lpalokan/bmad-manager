@@ -194,7 +194,7 @@ final class ProjectCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator()
         let project = ProjectItem(url: projectsRoot.appendingPathComponent("terminal-proj"))
 
-        coordinator.openInTerminal(project: project, command: "claude")
+        coordinator.openInTerminal(project: project, command: "claude", kind: .terminal)
 
         XCTAssertEqual(terminal.opens.count, 1)
         XCTAssertEqual(terminal.opens.first?.command, "claude")
@@ -205,7 +205,7 @@ final class ProjectCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator()
         let project = ProjectItem(url: projectsRoot.appendingPathComponent("trim-proj"))
 
-        coordinator.openInTerminal(project: project, command: "  claude  ")
+        coordinator.openInTerminal(project: project, command: "  claude  ", kind: .terminal)
 
         XCTAssertEqual(terminal.opens.count, 1)
         XCTAssertEqual(terminal.opens.first?.command, "claude")
@@ -215,7 +215,7 @@ final class ProjectCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator()
         let project = ProjectItem(url: projectsRoot.appendingPathComponent("empty-cmd"))
 
-        coordinator.openInTerminal(project: project, command: "")
+        coordinator.openInTerminal(project: project, command: "", kind: .terminal)
 
         XCTAssertEqual(terminal.opens.count, 0)
         XCTAssertEqual(coordinator.errorMessage, "Command is empty. Set it in Settings.")
@@ -225,7 +225,7 @@ final class ProjectCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator()
         let project = ProjectItem(url: projectsRoot.appendingPathComponent("ws-only"))
 
-        coordinator.openInTerminal(project: project, command: "   ")
+        coordinator.openInTerminal(project: project, command: "   ", kind: .terminal)
 
         XCTAssertEqual(terminal.opens.count, 0)
         XCTAssertEqual(coordinator.errorMessage, "Command is empty. Set it in Settings.")
@@ -236,10 +236,28 @@ final class ProjectCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator()
         let project = ProjectItem(url: projectsRoot.appendingPathComponent("err-proj"))
 
-        coordinator.openInTerminal(project: project, command: "claude")
+        coordinator.openInTerminal(project: project, command: "claude", kind: .terminal)
 
         XCTAssertNotNil(coordinator.errorMessage)
         XCTAssertEqual(terminal.opens.count, 0)
+    }
+
+    func testOpenInTerminalForwardsKindFromCaller() {
+        // Regression: previously the coordinator read
+        // `settings.settings.terminalKind` from its captured SettingsStore.
+        // Under the App's @StateObject init dance, that reference can drift
+        // out of sync with the View's @EnvironmentObject binding — Picker
+        // writes hit the View's store while the coordinator keeps reading
+        // a stale copy, so iTerm2 selections were ignored until the next
+        // launch. Now the View passes the live kind directly so there's
+        // no captured copy to go stale.
+        settings.settings.terminalKind = .terminal // coordinator-captured value
+        let coordinator = makeCoordinator()
+        let project = ProjectItem(url: projectsRoot.appendingPathComponent("kind-proj"))
+
+        coordinator.openInTerminal(project: project, command: "pi", kind: .iterm2)
+
+        XCTAssertEqual(terminal.opens.first?.kind, .iterm2)
     }
 
     // MARK: - Project to delete state

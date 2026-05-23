@@ -157,9 +157,27 @@ struct ContentView: View {
         List(coordinator.projects) { project in
             ProjectRowView(
                 project: project,
-                onClaude: { coordinator.openInTerminal(project: project, command: settings.settings.claudeCommand) },
-                onOpencode: { coordinator.openInTerminal(project: project, command: settings.settings.opencodeCommand) },
-                onPi: { coordinator.openInTerminal(project: project, command: settings.settings.piCommand) },
+                onClaude: {
+                    coordinator.openInTerminal(
+                        project: project,
+                        command: settings.settings.claudeCommand,
+                        kind: settings.settings.terminalKind
+                    )
+                },
+                onOpencode: {
+                    coordinator.openInTerminal(
+                        project: project,
+                        command: settings.settings.opencodeCommand,
+                        kind: settings.settings.terminalKind
+                    )
+                },
+                onPi: {
+                    coordinator.openInTerminal(
+                        project: project,
+                        command: settings.settings.piCommand,
+                        kind: settings.settings.terminalKind
+                    )
+                },
                 onOpenFolder: { coordinator.openProjectFolder(project) },
                 onDelete: { coordinator.projectToDelete = project }
             )
