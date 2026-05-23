@@ -136,7 +136,28 @@ fn bundled_resource(relative: &str) -> Option<PathBuf> {
         .path()
         .resolve(relative, BaseDirectory::Resource)
         .ok()?;
-    resolved.exists().then_some(resolved)
+    // Tauri's path resolver runs the result through canonicalization,
+    // which on Windows tags the path with the `\\?\` verbatim prefix.
+    // That prefix is valid for raw Win32 file APIs but breaks when the
+    // path is used as a PATH entry, a command name, or inside a batch
+    // file (npx.cmd's `%~dp0` expansion + cmd.exe's `cd /D`). Strip it
+    // before handing the path to anything that goes through cmd.exe.
+    let normalized = strip_verbatim_prefix(&resolved);
+    normalized.exists().then_some(normalized)
+}
+
+/// Strip the Windows verbatim path prefix (`\\?\`) if present, mapping
+/// `\\?\UNC\server\share` back to its native `\\server\share` form
+/// along the way. Returns the input untouched when no prefix is found.
+fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    let as_str = path.as_os_str().to_string_lossy();
+    if let Some(rest) = as_str.strip_prefix(r"\\?\") {
+        if let Some(unc) = rest.strip_prefix("UNC\\") {
+            return PathBuf::from(format!(r"\\{unc}"));
+        }
+        return PathBuf::from(rest);
+    }
+    path.to_path_buf()
 }
 
 /// PATH value injected into spawned children: bundled-Node-bin first,
@@ -167,4 +188,40 @@ pub fn augmented_path() -> OsString {
         combined.push(&inherited);
     }
     combined
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_verbatim_prefix;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn strips_drive_letter_verbatim_prefix() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\C:\Users\Lauri\app\node.exe")),
+            PathBuf::from(r"C:\Users\Lauri\app\node.exe")
+        );
+    }
+
+    #[test]
+    fn is_identity_when_no_verbatim_prefix() {
+        let p = Path::new(r"C:\Users\Lauri\app\node.exe");
+        assert_eq!(strip_verbatim_prefix(p), p.to_path_buf());
+    }
+
+    #[test]
+    fn maps_unc_verbatim_back_to_native_unc() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\UNC\server\share\file.exe")),
+            PathBuf::from(r"\\server\share\file.exe")
+        );
+    }
+
+    #[test]
+    fn handles_path_with_spaces_intact() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\C:\Program Files\App\bin.exe")),
+            PathBuf::from(r"C:\Program Files\App\bin.exe")
+        );
+    }
 }
