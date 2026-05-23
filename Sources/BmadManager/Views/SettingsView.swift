@@ -21,10 +21,53 @@ struct SettingsView: View {
     @State private var piDetected: String? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Settings")
                 .font(.title2).bold()
 
+            ScrollView {
+                form
+                    .padding(.trailing, 4) // breathing room for the scroller
+            }
+
+            Divider()
+
+            HStack {
+                Button("Reset to defaults", role: .destructive) {
+                    showResetConfirm = true
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 620, height: 720)
+        .onAppear {
+            reconcileTerminalSelection()
+            refreshAgentDetection()
+        }
+        .onChange(of: store.settings.claudeCommand) {
+            claudeDetected = PathDetector.detect(store.settings.claudeCommand)
+        }
+        .onChange(of: store.settings.opencodeCommand) {
+            opencodeDetected = PathDetector.detect(store.settings.opencodeCommand)
+        }
+        .onChange(of: store.settings.piCommand) {
+            piDetected = PathDetector.detect(store.settings.piCommand)
+        }
+        .confirmationDialog(
+            "Reset all settings to defaults?",
+            isPresented: $showResetConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Reset", role: .destructive) { store.reset() }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Projects root folder").font(.subheadline).bold()
                 HStack {
@@ -124,40 +167,6 @@ struct SettingsView: View {
                     }
                 }
             }
-
-            Spacer()
-
-            HStack {
-                Button("Reset to defaults", role: .destructive) {
-                    showResetConfirm = true
-                }
-                Spacer()
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(20)
-        .frame(width: 620, height: 720)
-        .onAppear {
-            reconcileTerminalSelection()
-            refreshAgentDetection()
-        }
-        .onChange(of: store.settings.claudeCommand) {
-            claudeDetected = PathDetector.detect(store.settings.claudeCommand)
-        }
-        .onChange(of: store.settings.opencodeCommand) {
-            opencodeDetected = PathDetector.detect(store.settings.opencodeCommand)
-        }
-        .onChange(of: store.settings.piCommand) {
-            piDetected = PathDetector.detect(store.settings.piCommand)
-        }
-        .confirmationDialog(
-            "Reset all settings to defaults?",
-            isPresented: $showResetConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Reset", role: .destructive) { store.reset() }
-            Button("Cancel", role: .cancel) {}
         }
     }
 
