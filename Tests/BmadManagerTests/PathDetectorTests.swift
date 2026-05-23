@@ -82,6 +82,61 @@ final class PathDetectorTests: XCTestCase {
         XCTAssertNil(PathDetector.detect("not-executable", path: tmp.path))
     }
 
+    func testDirectoryWithMatchingNameIsNotReturned() throws {
+        // PATH walk must never resolve a command name to a directory —
+        // the launcher would fail at exec time with an opaque error.
+        // This also pins the regression that the stat-based executable
+        // check (added when isExecutableFile started refusing quarantined
+        // binaries) keeps S_IFREG in the predicate.
+        let trap = tmp.appendingPathComponent("trap")
+        try FileManager.default.createDirectory(at: trap, withIntermediateDirectories: false)
+        XCTAssertNil(PathDetector.detect("trap", path: tmp.path))
+    }
+
+    func testIgnoresPathEntriesThatArentAbsolute() throws {
+        // Regression for the rc-file-echo case: a user's .zshrc prints
+        // banner text to stdout before our PATH-capture printf runs.
+        // Once we split the captured output on ':' those banner lines
+        // appear as fake PATH entries (e.g. " deactivate to do the
+        // opposite\n/Users/.../opencode/bin"). They never start with '/'
+        // so they're not real PATH entries; we skip them and let the
+        // clean entry that comes later win.
+        let exe = tmp.appendingPathComponent("agent")
+        try makeExecutable(at: exe)
+        let junk = "If you want to activate Python virtual environment:source ~/.venv/bin/activate:Say"
+        let combined = "\(junk):\(tmp.path)"
+        XCTAssertEqual(
+            PathDetector.detect("agent", path: combined),
+            exe.path
+        )
+    }
+
+    // MARK: - shell output parsing
+
+    func testParseShellPathOutputExtractsBetweenMarkers() {
+        let raw = """
+        zsh: deactivate to do the opposite
+
+        BMAD_PATH_START
+        /Users/lapa/.opencode/bin:/usr/bin:/bin
+        BMAD_PATH_END
+        """
+        XCTAssertEqual(
+            PathDetector.parseShellPathOutput(raw),
+            "/Users/lapa/.opencode/bin:/usr/bin:/bin"
+        )
+    }
+
+    func testParseShellPathOutputWithoutMarkersReturnsNil() {
+        XCTAssertNil(PathDetector.parseShellPathOutput("just some banner text"))
+    }
+
+    func testParseShellPathOutputWithOnlyStartMarkerReturnsNil() {
+        XCTAssertNil(
+            PathDetector.parseShellPathOutput("BMAD_PATH_START\n/usr/bin")
+        )
+    }
+
     // MARK: - helpers
 
     private func makeExecutable(at url: URL) throws {
