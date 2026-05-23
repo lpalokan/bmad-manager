@@ -37,9 +37,9 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "resources/node-portable/**/*": "node-portable",
-      "resources/portable-git/**/*": "portable-git",
-      "resources/npm-cache/**/*": "npm-cache"
+      "resources/node-portable/": "node-portable/",
+      "resources/portable-git/": "portable-git/",
+      "resources/npm-cache/": "npm-cache/"
     },
     "windows": {
       "nsis": {
