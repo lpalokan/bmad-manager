@@ -159,6 +159,7 @@ struct ContentView: View {
                 project: project,
                 onClaude: { coordinator.openInTerminal(project: project, command: settings.settings.claudeCommand) },
                 onOpencode: { coordinator.openInTerminal(project: project, command: settings.settings.opencodeCommand) },
+                onPi: { coordinator.openInTerminal(project: project, command: settings.settings.piCommand) },
                 onOpenFolder: { coordinator.openProjectFolder(project) },
                 onDelete: { coordinator.projectToDelete = project }
             )

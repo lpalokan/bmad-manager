@@ -52,6 +52,7 @@ struct AppSettings: Codable, Equatable {
     var initCommand: String
     var claudeCommand: String
     var opencodeCommand: String
+    var piCommand: String
     var projectSortOrder: ProjectSortOrder
     var terminalKind: TerminalKind
 
@@ -77,6 +78,7 @@ struct AppSettings: Codable, Equatable {
             initCommand: "npx bmad-method install --yes --modules bmm,bmb,cis --tools claude-code,opencode --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'",
             claudeCommand: "claude",
             opencodeCommand: "opencode",
+            piCommand: "pi",
             projectSortOrder: .nameAscending,
             terminalKind: .terminal
         )
@@ -93,6 +95,7 @@ struct AppSettings: Codable, Equatable {
         case initCommand
         case claudeCommand
         case opencodeCommand
+        case piCommand
         case projectSortOrder
         case terminalKind
     }
@@ -105,6 +108,7 @@ struct AppSettings: Codable, Equatable {
          initCommand: String,
          claudeCommand: String,
          opencodeCommand: String,
+         piCommand: String = "pi",
          projectSortOrder: ProjectSortOrder = .nameAscending,
          terminalKind: TerminalKind = .terminal) {
         self.projectsRoot = projectsRoot
@@ -115,6 +119,7 @@ struct AppSettings: Codable, Equatable {
         self.initCommand = initCommand
         self.claudeCommand = claudeCommand
         self.opencodeCommand = opencodeCommand
+        self.piCommand = piCommand
         self.projectSortOrder = projectSortOrder
         self.terminalKind = terminalKind
     }
@@ -126,6 +131,9 @@ struct AppSettings: Codable, Equatable {
         initCommand      = try c.decode(String.self, forKey: .initCommand)
         claudeCommand    = try c.decode(String.self, forKey: .claudeCommand)
         opencodeCommand  = try c.decode(String.self, forKey: .opencodeCommand)
+        // Pi is a later addition; legacy settings.json files predate it,
+        // so fall back to "pi" rather than failing to load.
+        piCommand        = try c.decodeIfPresent(String.self, forKey: .piCommand) ?? "pi"
         // New in #12 — fall back to the default when reading a legacy file
         // so a freshly upgraded install doesn't fail to load its settings.
         projectSortOrder = try c.decodeIfPresent(ProjectSortOrder.self, forKey: .projectSortOrder) ?? .nameAscending
