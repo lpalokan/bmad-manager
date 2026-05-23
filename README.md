@@ -32,11 +32,17 @@ The UI is intentionally tiny:
 
 ```
 brew install --cask lpalokan/tap/bmad-manager
+xattr -r -d com.apple.quarantine /Applications/bmad-manager.app
 ```
 
-The cask strips macOS's quarantine flag, so the app launches from
-`/Applications` immediately — no right-click → **Open** dance, no paid
-Apple Developer ID required. Updates ship via `brew upgrade`.
+The first command installs the app. The second removes the Gatekeeper
+quarantine attribute Homebrew applies to downloads — without it, the
+first launch needs a right-click → **Open** dance. Homebrew
+[intentionally won't bypass quarantine from inside a cask](https://github.com/Homebrew/brew/issues/20755),
+so this stays as a one-time user step instead of cask magic. Rerun the
+`xattr` command after every `brew upgrade`, since the upgrade reinstalls
+the bundle and quarantine gets reapplied. No paid Apple Developer ID
+required either way.
 
 Manual DMG install below still works if you prefer it.
 
