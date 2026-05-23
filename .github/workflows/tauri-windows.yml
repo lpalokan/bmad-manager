@@ -36,13 +36,15 @@ jobs:
       # workflow's Artifacts page.
       #   Node:        https://nodejs.org/dist/ (current LTS)
       #   PortableGit: https://github.com/git-for-windows/git/releases
-      # PortableGit asset naming gotcha: git-for-windows tags as
-      # `v<UPSTREAM>.windows.<N>` but ships the asset as
-      # `PortableGit-<UPSTREAM>.<N>-64-bit.7z.exe`. Both pieces live
-      # below as separate vars so the asset URL is unambiguous.
+      # PortableGit asset naming note: the tag is
+      # `v<X.Y.Z>.windows.<N>` but the asset is just
+      # `PortableGit-<X.Y.Z>-64-bit.7z.exe` (no `.<N>` suffix). Keep
+      # the tag and the asset version as separate vars so a future
+      # bump that DOES change the asset name (e.g. a `.2` revision)
+      # can edit just the asset var.
       NODE_VERSION: "22.11.0"
       GIT_FOR_WINDOWS_TAG: "v2.47.0.windows.1"
-      GIT_FOR_WINDOWS_ASSET_VERSION: "2.47.0.1"
+      GIT_FOR_WINDOWS_ASSET_VERSION: "2.47.0"
 
     steps:
       - uses: actions/checkout@v4
