@@ -3,6 +3,12 @@ name: release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g., v0.1.1)'
+        required: true
+        type: string
 
 jobs:
   publish:
@@ -10,8 +16,12 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
 
       - name: Build release DMG
         run: ./scripts/build_release.sh
@@ -25,7 +35,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
+          gh release upload "$TAG" \
             dist/bmad-manager.dmg --clobber \
             --repo ${{ github.repository }}
 
@@ -40,7 +50,6 @@ jobs:
         working-directory: homebrew-tap
         run: |
           set -euo pipefail
-          TAG="${{ github.event.release.tag_name }}"
           VERSION="${TAG#v}"
           SHA="${{ steps.sha.outputs.sha256 }}"
           sed -i.bak -E "s/^  version \".*\"$/  version \"${VERSION}\"/" Casks/bmad-manager.rb
