@@ -25,6 +25,8 @@ When working on a feature branch, always `git add -A && git commit` and `git pus
 
 Commits without a recognised prefix are silently ignored by the bot, so a stray `Fix typo` commit will not trigger a release.
 
+Apply the prefix to **both** the PR title and at least one commit on the feature branch. release-please reads whichever ends up on `main`: merge-commit and rebase merges preserve the individual feature-branch commits, while squash merges collapse everything into a single commit whose default message is the PR title. Prefixing both keeps releases triggering regardless of which merge style is used on a given PR.
+
 # Shell command conventions
 
 When giving the user shell commands to run, do not put inline `#` comments in the command blocks (neither trailing nor standalone). The user pastes blocks into zsh and the comments cause confusion. Put any explanation in prose before or after the block instead.
