@@ -61,7 +61,7 @@ final class ProjectCoordinator: ObservableObject {
     /// instance from the one the View's @EnvironmentObject binds to.)
     func refresh(root: String, sortOrder: ProjectSortOrder) {
         projects = projectService.listProjects(in: root, sortedBy: sortOrder)
-        availableContexts = contextService.scanContexts(inProjectsRoot: root)
+        availableContexts = contextService.contexts(in: projects)
     }
 
     /// Creates a new project using the supplied settings snapshot and

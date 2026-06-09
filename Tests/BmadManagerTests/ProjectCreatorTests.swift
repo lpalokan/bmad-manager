@@ -137,17 +137,19 @@ final class ProjectCreatorTests: XCTestCase {
     // MARK: - Context import
 
     /// Builds a source project with a company context under `projectsRoot`
-    /// and returns the scanned `CompanyContext` for it.
+    /// and returns the resolved `CompanyContext` for it.
     private func makeSourceContext(files: [String]) throws -> CompanyContext {
-        let contextDir = projectsRoot
-            .appendingPathComponent("source-project/_bmad-output/company-context", isDirectory: true)
+        let sourceProject = projectsRoot
+            .appendingPathComponent("source-project", isDirectory: true)
+        let contextDir = sourceProject
+            .appendingPathComponent("_bmad-output/company-context", isDirectory: true)
         try FileManager.default.createDirectory(at: contextDir, withIntermediateDirectories: true)
         for file in files {
             try "imported \(file)".write(to: contextDir.appendingPathComponent(file),
                                          atomically: true, encoding: .utf8)
         }
         return try XCTUnwrap(
-            CompanyContextService().scanContexts(inProjectsRoot: projectsRoot.path).first
+            CompanyContextService().context(inProject: sourceProject)
         )
     }
 

@@ -15,6 +15,10 @@ enum TerminalLauncher {
     /// the given command. Triggers a one-time Automation permission prompt
     /// (per target app) on first use.
     static func open(projectPath: String, command: String, kind: TerminalKind = .terminal) throws {
+        // Order is load-bearing: shell-quote the path first, then
+        // appleScript(for:shellLine:) escapes the whole line for
+        // AppleScript. Reversed, the AppleScript backslashes would reach
+        // the shell as literal input.
         let shellLine = "cd \(shellQuote(projectPath)) && \(command)"
         let script = appleScript(for: kind, shellLine: shellLine)
         try runOsascript(script)
@@ -55,20 +59,9 @@ enum TerminalLauncher {
     // MARK: - Process plumbing
 
     private static func runOsascript(_ script: String) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        let errPipe = Pipe()
-        process.standardError = errPipe
-        process.standardOutput = Pipe()
-
-        try process.run()
-        process.waitUntilExit()
-
-        if process.terminationStatus != 0 {
-            let data = errPipe.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: data, encoding: .utf8) ?? "unknown error"
-            throw TerminalLauncherError.scriptFailed(message)
+        let outcome = try Subprocess.run("/usr/bin/osascript", arguments: ["-e", script])
+        if outcome.status != 0 {
+            throw TerminalLauncherError.scriptFailed(outcome.failureMessage)
         }
     }
 

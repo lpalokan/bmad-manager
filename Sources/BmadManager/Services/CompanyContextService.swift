@@ -11,40 +11,32 @@ enum ContextImportError: LocalizedError {
     }
 }
 
-/// Scans projects for company contexts and copies one into a new project.
+/// Resolves company contexts inside projects and copies one into a new
+/// project.
 ///
 /// The resolution order inside each project mirrors the
 /// company-context-bootstrap workflow's own rules: prefer
 /// `_bmad-output/company-context`, fall back to a top-level
 /// `company-context`. A project counts as having a context when at least
 /// one of `CompanyContext.recognizedFileNames` is present there.
+///
+/// Walking the projects folder is deliberately NOT this module's job —
+/// `ProjectService.listProjects` is the one place that knows what counts
+/// as a project folder; callers hand the resulting `ProjectItem`s in.
 struct CompanyContextService {
     private static let contextSubpaths = [
         "_bmad-output/company-context",
         "company-context",
     ]
 
-    /// Lists every context found in the immediate subfolders of the
-    /// projects root, sorted by project name. Missing or unreadable roots
-    /// yield an empty list.
-    func scanContexts(inProjectsRoot rootPath: String) -> [CompanyContext] {
-        let expanded = (rootPath as NSString).expandingTildeInPath
-        let rootURL = URL(fileURLWithPath: expanded, isDirectory: true)
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: rootURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return []
-        }
-        let contexts: [CompanyContext] = entries.compactMap { projectURL in
-            let values = try? projectURL.resourceValues(forKeys: [.isDirectoryKey])
-            guard values?.isDirectory ?? false else { return nil }
-            return context(inProject: projectURL)
-        }
-        return contexts.sorted {
-            $0.projectName.localizedCaseInsensitiveCompare($1.projectName) == .orderedAscending
-        }
+    /// Resolves the context of each given project, sorted by project name
+    /// (the picker's order, independent of the caller's project sort).
+    func contexts(in projects: [ProjectItem]) -> [CompanyContext] {
+        projects
+            .compactMap { context(inProject: $0.url) }
+            .sorted {
+                $0.projectName.localizedCaseInsensitiveCompare($1.projectName) == .orderedAscending
+            }
     }
 
     /// Returns the context found in a single project folder, or nil when

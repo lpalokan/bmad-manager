@@ -96,30 +96,18 @@ enum PathDetector {
     private static func resolveShellPath() -> String {
         let env = ProcessInfo.processInfo.environment
         let shell = env["SHELL"] ?? "/bin/zsh"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: shell)
         // -i (interactive) sources .zshrc; -l (login) sources
         // .zprofile / .zlogin. Between them we get the same PATH a
         // fresh Terminal window sees. The printf is wrapped in
         // BMAD_PATH_START / BMAD_PATH_END markers so we can strip any
         // banner text rc files printed before our line ran.
         let cmd = #"printf '\n\#(pathStartMarker)\n%s\n\#(pathEndMarker)\n' "$PATH""#
-        process.arguments = ["-ilc", cmd]
-        let outPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = Pipe()
-        process.standardInput = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-            let raw = String(data: data, encoding: .utf8) ?? ""
-            if let extracted = parseShellPathOutput(raw), !extracted.isEmpty {
-                return extracted
-            }
-        } catch {
-            // Fall through to whatever the launching environment gave us.
+        if let outcome = try? Subprocess.run(shell, arguments: ["-ilc", cmd]),
+           let extracted = parseShellPathOutput(outcome.stdout),
+           !extracted.isEmpty {
+            return extracted
         }
+        // Fall through to whatever the launching environment gave us.
         return env["PATH"] ?? ""
     }
 

@@ -174,8 +174,9 @@ swift test
 
 Covers `AppSettings`, `ProjectService`, both `ModuleSource` adapters
 (`GitRepoModuleSource`, `LocalZipModuleSource`), `ProjectCreator`
-orchestration via a fake source, `CompanyContextService` scanning and
-import, and the `TerminalLauncher` escaping helpers. Tests are macOS-only (the package platform is `.macOS(.v14)`)
+orchestration via a fake source, `CompanyContextService` resolution and
+import, the shared `Subprocess` runner, and the `TerminalLauncher`
+escaping helpers. Tests are macOS-only (the package platform is `.macOS(.v14)`)
 and require full Xcode (XCTest isn't shipped in the Command Line Tools
 stand-alone install).
 
@@ -189,7 +190,7 @@ Sources/BmadManager/
     Services/                     # SettingsStore, ProjectService,
                                   # CompanyContextService,
                                   # ModuleSource (+ GitRepoModuleSource,
-                                  # LocalZipModuleSource),
+                                  # LocalZipModuleSource), Subprocess,
                                   # CommandRunner, TerminalLauncher
     Views/                        # ContentView, ProjectRowView,
                                   # SettingsView, CommandOutputView
