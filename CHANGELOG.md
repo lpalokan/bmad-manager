@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.3](https://github.com/lpalokan/bmad-manager/compare/v0.1.2...v0.1.3) (2026-06-09)
+
+
+### Features
+
+* seed new projects from an existing project's company context ([8b01679](https://github.com/lpalokan/bmad-manager/commit/8b01679d403d759de3ece1658053e9fff1a24046))
+* seed new projects from an existing project's company context ([64b932d](https://github.com/lpalokan/bmad-manager/commit/64b932d6a290c878be218190440e731d3fdd429a))
+
 ## [0.1.2](https://github.com/lpalokan/bmad-manager/compare/v0.1.1...v0.1.2) (2026-05-23)
 
 
