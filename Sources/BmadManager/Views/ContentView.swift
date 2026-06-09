@@ -11,12 +11,16 @@ struct ContentView: View {
     @EnvironmentObject var coordinator: ProjectCoordinator
 
     @State private var newProjectName: String = ""
+    @State private var selectedContext: CompanyContext? = nil
     @State private var showSettings: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
             header
             createRow
+            if !coordinator.availableContexts.isEmpty {
+                contextRow
+            }
             sortRow
             Divider()
 
@@ -73,6 +77,15 @@ struct ContentView: View {
         .onAppear { refreshProjects() }
         .onChange(of: settings.settings.projectsRoot) { refreshProjects() }
         .onChange(of: settings.settings.projectSortOrder) { refreshProjects() }
+        .onChange(of: coordinator.availableContexts) {
+            // The selected source project may have been deleted or its
+            // context removed since the last scan — fall back to scratch
+            // rather than importing from a stale snapshot.
+            if let selected = selectedContext,
+               !coordinator.availableContexts.contains(selected) {
+                selectedContext = nil
+            }
+        }
     }
 
     private func refreshProjects() {
@@ -132,6 +145,29 @@ struct ContentView: View {
 
     private var canCreate: Bool {
         !coordinator.isCreating && !newProjectName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Shown only when at least one existing project carries a company
+    /// context the new project could be seeded from.
+    private var contextRow: some View {
+        HStack(spacing: 6) {
+            Text("Context")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Picker("Context", selection: $selectedContext) {
+                Text("Start from scratch").tag(nil as CompanyContext?)
+                ForEach(coordinator.availableContexts) { context in
+                    Text(context.displayName).tag(Optional(context))
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
+            .help("Seed the new project's company context from an existing project")
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 8)
     }
 
     private var sortRow: some View {
@@ -220,6 +256,7 @@ struct ContentView: View {
         await coordinator.createProject(
             name: name,
             settings: settings.settings,
+            importContextFrom: selectedContext,
             runCommand: { command, cwd in
                 await commandRunner.run(command: command, cwd: cwd)
             }
@@ -227,6 +264,9 @@ struct ContentView: View {
 
         if coordinator.errorMessage == nil {
             newProjectName = ""
+            // Reset to scratch so the next creation doesn't silently
+            // inherit the previous selection.
+            selectedContext = nil
         }
     }
 

@@ -196,6 +196,83 @@ final class ProjectCoordinatorTests: XCTestCase {
         XCTAssertFalse(settings.settings.moduleZipPath.isEmpty)
     }
 
+    // MARK: - Company contexts
+
+    /// Drops a company context with the given files into an existing or new
+    /// project folder under the projects root.
+    private func seedContext(project: String, files: [String]) throws {
+        let contextDir = projectsRoot
+            .appendingPathComponent("\(project)/_bmad-output/company-context", isDirectory: true)
+        try FileManager.default.createDirectory(at: contextDir, withIntermediateDirectories: true)
+        for file in files {
+            try "from \(project)".write(to: contextDir.appendingPathComponent(file),
+                                        atomically: true, encoding: .utf8)
+        }
+    }
+
+    func testRefreshDiscoversContextsFromExistingProjects() throws {
+        try seedContext(project: "campaign-a", files: ["icp.md", "positioning.md"])
+        try seedContext(project: "campaign-b", files: ["kpis.md"])
+        try FileManager.default.createDirectory(
+            at: projectsRoot.appendingPathComponent("no-context"),
+            withIntermediateDirectories: true)
+
+        let coordinator = makeCoordinator()
+        refresh(coordinator)
+
+        XCTAssertEqual(coordinator.availableContexts.map(\.projectName),
+                       ["campaign-a", "campaign-b"])
+    }
+
+    func testRefreshReturnsNoContextsWhenProjectsHaveNone() async {
+        let coordinator = makeCoordinator()
+        await createProject(coordinator, name: "plain")
+        refresh(coordinator)
+
+        XCTAssertTrue(coordinator.availableContexts.isEmpty)
+    }
+
+    func testCreateProjectImportsSelectedContext() async throws {
+        try seedContext(project: "donor", files: ["icp.md", "brand-voice.md"])
+        let coordinator = makeCoordinator()
+        refresh(coordinator)
+        let context = try XCTUnwrap(coordinator.availableContexts.first)
+
+        await coordinator.createProject(
+            name: "recipient",
+            settings: settings.settings,
+            importContextFrom: context,
+            runCommand: defaultRunCommand
+        )
+
+        XCTAssertNil(coordinator.errorMessage)
+        let destDir = projectsRoot
+            .appendingPathComponent("recipient/_bmad-output/company-context")
+        let icp = try String(
+            contentsOf: destDir.appendingPathComponent("icp.md"), encoding: .utf8)
+        XCTAssertEqual(icp, "from donor")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: destDir.appendingPathComponent("brand-voice.md").path))
+        // The freshly created project now carries a context of its own and
+        // should be offered as a source on the next refresh.
+        XCTAssertTrue(coordinator.availableContexts.contains { $0.projectName == "recipient" })
+    }
+
+    func testCreateProjectWithoutContextStartsFromScratch() async {
+        let coordinator = makeCoordinator()
+
+        await coordinator.createProject(
+            name: "scratch",
+            settings: settings.settings,
+            runCommand: defaultRunCommand
+        )
+
+        XCTAssertNil(coordinator.errorMessage)
+        let destDir = projectsRoot
+            .appendingPathComponent("scratch/_bmad-output/company-context")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destDir.path))
+    }
+
     // MARK: - Delete
 
     func testDeleteProjectRemovesIt() async throws {

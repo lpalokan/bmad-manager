@@ -48,26 +48,16 @@ struct GitRepoModuleSource: ModuleSource {
         args.append(url)
         args.append(dir.path)
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["git"] + args
-        let errPipe = Pipe()
-        process.standardError = errPipe
-        process.standardOutput = Pipe()
-        process.standardInput = FileHandle.nullDevice
-
+        let outcome: Subprocess.Outcome
         do {
-            try process.run()
+            outcome = try Subprocess.run("/usr/bin/env", arguments: ["git"] + args)
         } catch {
             throw GitError.gitNotAvailable(error.localizedDescription)
         }
-        process.waitUntilExit()
 
-        if process.terminationStatus != 0 {
-            let data = errPipe.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: data, encoding: .utf8) ?? "unknown error"
+        if outcome.status != 0 {
             try? FileManager.default.removeItem(at: dir)
-            throw GitError.cloneFailed(message.trimmingCharacters(in: .whitespacesAndNewlines))
+            throw GitError.cloneFailed(outcome.failureMessage)
         }
     }
 }

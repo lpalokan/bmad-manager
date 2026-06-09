@@ -43,26 +43,20 @@ struct LocalZipModuleSource: ModuleSource {
             .appendingPathComponent("bmad-manager-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-        process.arguments = ["-o", "-q", expanded, "-d", tmpDir.path]
-        let errPipe = Pipe()
-        process.standardError = errPipe
-        process.standardOutput = Pipe()
-
+        let outcome: Subprocess.Outcome
         do {
-            try process.run()
+            outcome = try Subprocess.run(
+                "/usr/bin/unzip",
+                arguments: ["-o", "-q", expanded, "-d", tmpDir.path]
+            )
         } catch {
             try? FileManager.default.removeItem(at: tmpDir)
             throw ZipError.extractionFailed(error.localizedDescription)
         }
-        process.waitUntilExit()
 
-        if process.terminationStatus != 0 {
-            let data = errPipe.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: data, encoding: .utf8) ?? "unknown error"
+        if outcome.status != 0 {
             try? FileManager.default.removeItem(at: tmpDir)
-            throw ZipError.extractionFailed(message)
+            throw ZipError.extractionFailed(outcome.failureMessage)
         }
         return tmpDir
     }

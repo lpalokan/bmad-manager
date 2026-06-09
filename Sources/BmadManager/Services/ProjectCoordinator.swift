@@ -14,6 +14,7 @@ final class ProjectCoordinator: ObservableObject {
     // MARK: - Published state
 
     @Published var projects: [ProjectItem] = []
+    @Published var availableContexts: [CompanyContext] = []
     @Published var isCreating: Bool = false
     @Published var errorMessage: String? = nil
     @Published var showOutput: Bool = false
@@ -22,6 +23,7 @@ final class ProjectCoordinator: ObservableObject {
     // MARK: - Dependencies
 
     private let projectService: ProjectService
+    private let contextService: CompanyContextService
     private let projectCreator: ProjectCreator
     private let terminalLauncher: any TerminalLauncherProtocol
 
@@ -38,8 +40,13 @@ final class ProjectCoordinator: ObservableObject {
         self.terminalLauncher = terminalLauncher
 
         let projectService = ProjectService()
+        let contextService = CompanyContextService()
         self.projectService = projectService
-        self.projectCreator = ProjectCreator(projectService: projectService)
+        self.contextService = contextService
+        self.projectCreator = ProjectCreator(
+            projectService: projectService,
+            contextService: contextService
+        )
     }
 
     // MARK: - Actions
@@ -54,6 +61,7 @@ final class ProjectCoordinator: ObservableObject {
     /// instance from the one the View's @EnvironmentObject binds to.)
     func refresh(root: String, sortOrder: ProjectSortOrder) {
         projects = projectService.listProjects(in: root, sortedBy: sortOrder)
+        availableContexts = contextService.contexts(in: projects)
     }
 
     /// Creates a new project using the supplied settings snapshot and
@@ -66,6 +74,7 @@ final class ProjectCoordinator: ObservableObject {
     func createProject(
         name: String,
         settings: AppSettings,
+        importContextFrom context: CompanyContext? = nil,
         runCommand: @escaping (String, URL) async -> Int32
     ) async {
         isCreating = true
@@ -76,6 +85,7 @@ final class ProjectCoordinator: ObservableObject {
             try await projectCreator.create(
                 name: name,
                 settings: settings,
+                importingContextFrom: context,
                 runCommand: runCommand
             )
             errorMessage = nil
