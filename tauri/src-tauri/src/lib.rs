@@ -26,6 +26,7 @@ pub fn run() {
             commands::load_settings,
             commands::save_settings,
             commands::list_projects,
+            commands::list_company_contexts,
             commands::create_project,
             commands::delete_project,
             commands::get_bundled_tooling,

@@ -2,10 +2,12 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::models::{AppSettings, ModuleSourceKind, ProjectItem};
+use crate::models::{AppSettings, CompanyContext, ModuleSourceKind, ProjectItem};
 use crate::platform;
 use crate::services::command_runner::OutputEvent;
-use crate::services::{command_runner, git_source, init_command, project_service, zip_source};
+use crate::services::{
+    command_runner, company_context, git_source, init_command, project_service, zip_source,
+};
 
 #[derive(Debug, Error)]
 pub enum ProjectCreationError {
@@ -17,6 +19,11 @@ pub enum ProjectCreationError {
     Git(#[from] git_source::GitError),
     #[error("Init command exited with code {0}. See the output panel for details.")]
     InitCommandFailed(i32),
+    #[error("Project created, but importing the context from '{source_project}' failed: {reason}")]
+    ContextImportFailed {
+        source_project: String,
+        reason: String,
+    },
 }
 
 /// Full project-creation pipeline: validate name, mkdir under
@@ -26,6 +33,7 @@ pub enum ProjectCreationError {
 pub async fn create_project<F>(
     name: &str,
     settings: &AppSettings,
+    import_context_from: Option<&CompanyContext>,
     mut on_event: F,
 ) -> Result<ProjectItem, ProjectCreationError>
 where
@@ -92,6 +100,26 @@ where
 
     if exit_code != 0 {
         return Err(ProjectCreationError::InitCommandFailed(exit_code));
+    }
+
+    // Seed the company context only after the init command succeeded — a
+    // failed init keeps the project folder for inspection (partial-state
+    // policy) but should not look half-bootstrapped.
+    if let Some(context) = import_context_from {
+        emit_diag(
+            &mut on_event,
+            format!(
+                "importing company context from {:?} ({} files)",
+                context.project_name,
+                context.files.len()
+            ),
+        );
+        company_context::import_context(context, &project_path).map_err(|err| {
+            ProjectCreationError::ContextImportFailed {
+                source_project: context.project_name.clone(),
+                reason: err.to_string(),
+            }
+        })?;
     }
 
     let created_at = std::fs::metadata(&project_path)
