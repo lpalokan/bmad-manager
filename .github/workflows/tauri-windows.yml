@@ -14,7 +14,7 @@ on:
   push:
     branches:
       - "main"
-      - "feature/25-tauri-windows-stage-3"
+      - "claude/windows-port-rebase-sl6iii"
     tags:
       - "windows-v*"
   workflow_dispatch:
