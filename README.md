@@ -22,6 +22,14 @@ The UI is intentionally tiny:
   via a shallow `git clone`. You can switch to a local `.zip` in Settings —
   if you switch to local-zip without one configured, the app pops a file
   picker, remembers your choice, and continues.
+- When other projects already carry a company context
+  (`_bmad-output/company-context/` with the marketing-growth module's
+  recognized files — `icp.md`, `positioning.md`, `brand-voice.md`,
+  `kpis.md`, `tech-stack.md`), a **Context** menu appears under the create
+  row. Pick a source project to copy its context files into the new
+  project right after a successful install, or leave **Start from
+  scratch** selected. Imported files are copied verbatim; run the module's
+  company-context-bootstrap workflow in the new project to adapt them.
 - Each project row shows when it was created and has buttons to open it in
   Claude Code or opencode in a Terminal window, plus a trash button (moves
   to macOS Trash).
@@ -166,8 +174,8 @@ swift test
 
 Covers `AppSettings`, `ProjectService`, both `ModuleSource` adapters
 (`GitRepoModuleSource`, `LocalZipModuleSource`), `ProjectCreator`
-orchestration via a fake source, and the `TerminalLauncher` escaping
-helpers. Tests are macOS-only (the package platform is `.macOS(.v14)`)
+orchestration via a fake source, `CompanyContextService` scanning and
+import, and the `TerminalLauncher` escaping helpers. Tests are macOS-only (the package platform is `.macOS(.v14)`)
 and require full Xcode (XCTest isn't shipped in the Command Line Tools
 stand-alone install).
 
@@ -177,8 +185,9 @@ stand-alone install).
 Package.swift
 Sources/BmadManager/
     BmadManagerApp.swift          # @main App
-    Models/                       # AppSettings, ProjectItem
+    Models/                       # AppSettings, ProjectItem, CompanyContext
     Services/                     # SettingsStore, ProjectService,
+                                  # CompanyContextService,
                                   # ModuleSource (+ GitRepoModuleSource,
                                   # LocalZipModuleSource),
                                   # CommandRunner, TerminalLauncher
@@ -214,6 +223,10 @@ script or call `./scripts/make_icon.sh` directly.
    working directory (so `npx`, Homebrew, nvm, etc. resolve from your shell PATH).
    Output streams into the bottom panel.
 7. Clean up the `/tmp` materialisation directory.
+8. If a source context was selected in the **Context** menu, copy its
+   recognized files into `<project>/_bmad-output/company-context/` (files
+   the init command already created there are never overwritten). This
+   step is skipped when the init command failed.
 
 On failure the partial project folder is kept so you can inspect it; delete it
 from the list with the trash button when you're done.

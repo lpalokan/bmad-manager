@@ -134,6 +134,100 @@ final class ProjectCreatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.path))
     }
 
+    // MARK: - Context import
+
+    /// Builds a source project with a company context under `projectsRoot`
+    /// and returns the scanned `CompanyContext` for it.
+    private func makeSourceContext(files: [String]) throws -> CompanyContext {
+        let contextDir = projectsRoot
+            .appendingPathComponent("source-project/_bmad-output/company-context", isDirectory: true)
+        try FileManager.default.createDirectory(at: contextDir, withIntermediateDirectories: true)
+        for file in files {
+            try "imported \(file)".write(to: contextDir.appendingPathComponent(file),
+                                         atomically: true, encoding: .utf8)
+        }
+        return try XCTUnwrap(
+            CompanyContextService().scanContexts(inProjectsRoot: projectsRoot.path).first
+        )
+    }
+
+    func testCreateImportsSelectedContextAfterInitSucceeds() async throws {
+        let context = try makeSourceContext(files: ["icp.md", "kpis.md"])
+        let settings = makeSettings(initCommand: "true")
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
+
+        let project = try await creator.create(
+            name: "seeded-project",
+            settings: settings,
+            importingContextFrom: context
+        ) { _, _ in 0 }
+
+        let destDir = project.url.appendingPathComponent("_bmad-output/company-context")
+        let icp = try String(
+            contentsOf: destDir.appendingPathComponent("icp.md"), encoding: .utf8)
+        XCTAssertEqual(icp, "imported icp.md")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: destDir.appendingPathComponent("kpis.md").path))
+    }
+
+    func testCreateWithoutContextSelectionDoesNotCreateContextFolder() async throws {
+        let settings = makeSettings(initCommand: "true")
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
+
+        let project = try await creator.create(
+            name: "scratch-project",
+            settings: settings
+        ) { _, _ in 0 }
+
+        let destDir = project.url.appendingPathComponent("_bmad-output/company-context")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destDir.path))
+    }
+
+    func testCreateDoesNotImportContextWhenInitFails() async throws {
+        let context = try makeSourceContext(files: ["icp.md"])
+        let settings = makeSettings(initCommand: "exit 7")
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
+
+        do {
+            try await creator.create(
+                name: "failed-seed",
+                settings: settings,
+                importingContextFrom: context
+            ) { _, _ in 7 }
+            XCTFail("expected throw")
+        } catch ProjectCreationError.initCommandFailed {
+            // expected
+        }
+
+        let destDir = projectsRoot
+            .appendingPathComponent("failed-seed/_bmad-output/company-context")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destDir.path))
+    }
+
+    func testCreateSurfacesContextImportFailureWithSourceProjectName() async throws {
+        let context = try makeSourceContext(files: ["icp.md"])
+        try FileManager.default.removeItem(
+            at: context.directoryURL.appendingPathComponent("icp.md"))
+        let settings = makeSettings(initCommand: "true")
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
+
+        do {
+            try await creator.create(
+                name: "import-fails",
+                settings: settings,
+                importingContextFrom: context
+            ) { _, _ in 0 }
+            XCTFail("expected throw")
+        } catch let error as ProjectCreationError {
+            XCTAssertTrue(error.localizedDescription.contains("source-project"))
+        }
+
+        // Partial-state policy: the project folder is kept so the user can
+        // inspect it (consistent with init-command failures).
+        let projectURL = projectsRoot.appendingPathComponent("import-fails")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.path))
+    }
+
     // MARK: - Factory wiring
 
     func testDefaultFactoryDispatchesByKind() {

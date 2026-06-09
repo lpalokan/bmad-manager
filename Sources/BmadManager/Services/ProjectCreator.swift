@@ -2,24 +2,30 @@ import Foundation
 
 enum ProjectCreationError: LocalizedError {
     case initCommandFailed(Int32)
+    case contextImportFailed(sourceProject: String, reason: String)
 
     var errorDescription: String? {
         switch self {
         case .initCommandFailed(let code):
             return "Init command exited with code \(code). See the output panel for details."
+        case .contextImportFailed(let sourceProject, let reason):
+            return "Project created, but importing the context from '\(sourceProject)' failed: \(reason)"
         }
     }
 }
 
 struct ProjectCreator {
     let projectService: ProjectService
+    let contextService: CompanyContextService
     let moduleSourceFor: (AppSettings) -> ModuleSource
 
     init(
         projectService: ProjectService,
+        contextService: CompanyContextService = CompanyContextService(),
         moduleSourceFor: @escaping (AppSettings) -> ModuleSource = ModuleSourceFactory.make
     ) {
         self.projectService = projectService
+        self.contextService = contextService
         self.moduleSourceFor = moduleSourceFor
     }
 
@@ -27,6 +33,7 @@ struct ProjectCreator {
     func create(
         name: String,
         settings: AppSettings,
+        importingContextFrom context: CompanyContext? = nil,
         runCommand: (String, URL) async -> Int32 = { _, _ in 0 }
     ) async throws -> ProjectItem {
         let projectURL = try projectService.createProjectFolder(name: name, in: settings.projectsRoot)
@@ -41,6 +48,20 @@ struct ProjectCreator {
             let exitCode = await runCommand(command, projectURL)
             if exitCode != 0 {
                 throw ProjectCreationError.initCommandFailed(exitCode)
+            }
+        }
+
+        // Seed the company context only after the init command succeeded —
+        // a failed init keeps the project folder for inspection (partial-
+        // state policy) but should not look half-bootstrapped.
+        if let context {
+            do {
+                try contextService.importContext(context, into: projectURL)
+            } catch {
+                throw ProjectCreationError.contextImportFailed(
+                    sourceProject: context.projectName,
+                    reason: error.localizedDescription
+                )
             }
         }
 
