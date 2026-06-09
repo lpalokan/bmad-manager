@@ -75,9 +75,13 @@ final class CompanyContextServiceTests: XCTestCase {
 
         XCTAssertEqual(contexts.count, 1)
         XCTAssertEqual(contexts.first?.files, ["icp.md"])
+        // Resolve symlinks on both sides: on macOS the scan walks the
+        // real /private/var/... path while NSTemporaryDirectory() hands
+        // the test the /var/... symlink.
         XCTAssertEqual(
-            contexts.first?.directoryURL.path,
-            projectURL.appendingPathComponent("_bmad-output/company-context").path
+            contexts.first?.directoryURL.resolvingSymlinksInPath().path,
+            projectURL.appendingPathComponent("_bmad-output/company-context")
+                .resolvingSymlinksInPath().path
         )
     }
 
