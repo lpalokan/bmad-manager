@@ -1,4 +1,5 @@
-# pnpm 11+ reads settings here. esbuild's postinstall fetches the
-# platform-specific native binary; vite won't build without it.
+# pnpm 10+ reads built-script allowlists from here for single-package
+# repos. esbuild's postinstall fetches the platform-specific native
+# binary; vite won't build without it.
 onlyBuiltDependencies:
   - esbuild

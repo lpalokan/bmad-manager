@@ -40,6 +40,11 @@ export type OutputEvent =
   | { kind: "stderr"; line: string }
   | { kind: "exit"; code: number };
 
+export interface BundledTooling {
+  nodeVersion: string | null;
+  gitVersion: string | null;
+}
+
 export const projectSortOrderOptions: { value: ProjectSortOrder; label: string }[] = [
   { value: "nameAscending", label: "Name (A→Z)" },
   { value: "dateNewestFirst", label: "Date created (newest first)" },

@@ -1,0 +1,191 @@
+name: tauri-windows
+
+# Stage 3 of issue #25: produces a bundled NSIS installer for the Tauri
+# Windows port. Downloads portable Node + PortableGit at build time,
+# pre-warms the bmad-method npm cache, then runs `pnpm tauri build`
+# and uploads the resulting `.exe` as a workflow artifact. Tagging the
+# commit with `windows-v*` (e.g. `windows-v0.1.0`) additionally creates
+# a GitHub Release and attaches the installer.
+#
+# Sibling workflow `tauri-windows-check.yml` covers fmt/clippy/tests
+# on every push; this one is the heavier release pipeline.
+
+on:
+  push:
+    branches:
+      - "main"
+      - "feature/25-tauri-windows-stage-3"
+    tags:
+      - "windows-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: tauri
+
+    env:
+      # Pinned versions of the bundled tooling. Bumping is a deliberate
+      # commit: edit these and verify the new installer size on the
+      # workflow's Artifacts page.
+      #   Node:        https://nodejs.org/dist/ (current LTS)
+      #   PortableGit: https://github.com/git-for-windows/git/releases
+      # PortableGit asset naming note: the tag is
+      # `v<X.Y.Z>.windows.<N>` but the asset is just
+      # `PortableGit-<X.Y.Z>-64-bit.7z.exe` (no `.<N>` suffix). Keep
+      # the tag and the asset version as separate vars so a future
+      # bump that DOES change the asset name (e.g. a `.2` revision)
+      # can edit just the asset var.
+      NODE_VERSION: "22.11.0"
+      GIT_FOR_WINDOWS_TAG: "v2.47.0.windows.1"
+      GIT_FOR_WINDOWS_ASSET_VERSION: "2.47.0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tauri/src-tauri/target
+          key: cargo-release-${{ runner.os }}-${{ hashFiles('tauri/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-release-${{ runner.os }}-
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          # Reads the pinned pnpm version from the `packageManager`
+          # field in tauri/package.json — single source of truth.
+          package_json_file: tauri/package.json
+
+      - name: Install Node.js (for the frontend build)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: tauri/pnpm-lock.yaml
+
+      - name: Download + extract portable Node
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = "https://nodejs.org/dist/v$env:NODE_VERSION/node-v$env:NODE_VERSION-win-x64.zip"
+          $zip = Join-Path $env:RUNNER_TEMP "node-portable.zip"
+          $stage = Join-Path $env:RUNNER_TEMP "node-portable-extract"
+          $dest = "src-tauri/resources/node-portable"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $stage -Force
+          # The official zip contains a single top-level
+          # `node-v{VERSION}-win-x64/` folder. Move its contents up so
+          # the runtime resolver finds `node.exe` / `npx.cmd` directly
+          # under `resources/node-portable/`.
+          $inner = Get-ChildItem $stage | Where-Object PSIsContainer | Select-Object -First 1
+          Get-ChildItem -Path $inner.FullName | Move-Item -Destination $dest -Force
+          $nodeExe = Join-Path $dest "node.exe"
+          if (-not (Test-Path $nodeExe)) {
+            throw "Node zip extracted but $nodeExe is missing"
+          }
+          Write-Host "Bundled Node:"
+          & $nodeExe --version
+
+      - name: Download + extract PortableGit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = "https://github.com/git-for-windows/git/releases/download/$env:GIT_FOR_WINDOWS_TAG/PortableGit-$env:GIT_FOR_WINDOWS_ASSET_VERSION-64-bit.7z.exe"
+          $exe = Join-Path $env:RUNNER_TEMP "portable-git-installer.exe"
+          $dest = "$pwd/src-tauri/resources/portable-git"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $exe
+          Write-Host ("Downloaded {0:N0} bytes" -f (Get-Item $exe).Length)
+          # PortableGit ships as a 7z self-extracting installer. Use
+          # Start-Process so the exit code is observable; piping `&` to
+          # Out-Null swallows both stdout and any failure signal. `-y`
+          # accepts the EULA, `-o<dir>` sets the extraction target.
+          $proc = Start-Process -FilePath $exe -ArgumentList "-y", "-o`"$dest`"" -Wait -PassThru -NoNewWindow
+          if ($proc.ExitCode -ne 0) {
+            throw "PortableGit self-extractor exited with code $($proc.ExitCode)"
+          }
+          $gitExe = Join-Path $dest "cmd\git.exe"
+          if (-not (Test-Path $gitExe)) {
+            throw "PortableGit extracted but $gitExe is missing"
+          }
+          Write-Host "Bundled Git:"
+          & $gitExe --version
+          Write-Host ("Extracted file count: {0}" -f (Get-ChildItem $dest -Recurse -File).Count)
+
+      - name: Pre-warm npm cache with bmad-method
+        shell: pwsh
+        run: |
+          $cacheDir = "$pwd/src-tauri/resources/npm-cache"
+          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+          $env:NPM_CONFIG_CACHE = $cacheDir
+          # Use the bundled npm so it caches against the same registry +
+          # version pin the app will run with at install time.
+          & "$pwd/src-tauri/resources/node-portable/npm.cmd" cache add bmad-method
+          Write-Host "npm cache contents (top level):"
+          Get-ChildItem $cacheDir | Select-Object Name | Format-Table -AutoSize
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Resource directory inventory (pre-build sanity check)
+        shell: pwsh
+        run: |
+          foreach ($d in @("node-portable", "portable-git", "npm-cache")) {
+            $path = "src-tauri/resources/$d"
+            if (Test-Path $path) {
+              $count = (Get-ChildItem $path -Recurse -File).Count
+              $bytes = (Get-ChildItem $path -Recurse -File | Measure-Object Length -Sum).Sum
+              Write-Host ("{0,-18} {1,6} files, {2,12:N0} bytes" -f $d, $count, $bytes)
+            } else {
+              Write-Host "$d MISSING"
+            }
+          }
+
+      - name: Build Tauri NSIS installer
+        run: pnpm tauri build
+
+      - name: Locate installer
+        id: locate
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter "*-setup.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) { throw "no NSIS installer produced" }
+          $sizeMb = [Math]::Round($exe.Length / 1MB, 1)
+          $rename = "BmadManager-windows-x64-${{ github.sha }}.exe"
+          $renamedPath = Join-Path $exe.DirectoryName $rename
+          Copy-Item -Path $exe.FullName -Destination $renamedPath -Force
+          "path=$renamedPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "filename=$rename" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "sizeMb=$sizeMb" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Installer: $rename ($sizeMb MB)"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.locate.outputs.filename }}
+          path: ${{ steps.locate.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/windows-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.locate.outputs.path }}
+          generate_release_notes: true
