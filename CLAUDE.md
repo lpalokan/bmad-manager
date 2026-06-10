@@ -3,9 +3,9 @@
 This repository ships two coexisting trees:
 
 - **Swift macOS app** (`Sources/BmadManager/`, built by `scripts/build_release.sh` into `bmad-manager.app`) — **the actively shipped platform**. New features land here so they reach users on Mac on the next release build.
-- **Tauri Windows port** (`tauri/`) — work-in-progress cross-platform rewrite. Its macOS arm (`tauri/src-tauri/src/platform/macos.rs`) is intentionally `unimplemented!()` until the unification milestone, so it cannot ship on Mac today. Mirror Swift features into the Tauri tree only when both platforms are explicitly in scope, or when the request names Windows specifically.
+- **Tauri Windows port** (`tauri/`) — cross-platform rewrite covering Windows. Its macOS arm (`tauri/src-tauri/src/platform/macos.rs`) is intentionally `unimplemented!()` until the unification milestone, so it cannot ship on Mac today.
 
-When a request is ambiguous about which tree, default to Swift and confirm.
+**Both trees are in scope by default.** Every feature or behaviour change lands in the Swift tree *and* is mirrored into the Tauri tree (Rust backend, Svelte UI, and their BDD suites) in the same task, so the Windows port does not drift behind. Skip the Tauri mirror only when the change is inherently macOS-only (e.g. AppleScript launch glue, Finder integration) or the request explicitly scopes it to one platform — and say so when you skip it.
 
 # GitHub Workflow
 
@@ -53,7 +53,7 @@ Do not write feature/implementation code before its Gherkin scenario exists and 
 
 ## Per-stack BDD layout and commands
 
-The Swift macOS app under `Sources/BmadManager/` is the active platform (see "Active platform" above). New behaviour lands in the Swift tree first with full Gherkin coverage. The Tauri Windows port (`tauri/`) gets the equivalent scenarios when a request explicitly covers Windows or both platforms.
+The Swift macOS app under `Sources/BmadManager/` is the active platform (see "Active platform" above). New behaviour lands in the Swift tree first with full Gherkin coverage, and the Tauri Windows port (`tauri/`) gets the equivalent scenarios in the same task unless the change is platform-specific (see "Active platform").
 
 **Tauri Rust backend** (`tauri/src-tauri/`):
 

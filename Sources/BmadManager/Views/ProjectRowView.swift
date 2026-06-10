@@ -5,6 +5,7 @@ struct ProjectRowView: View {
     let onClaude: () -> Void
     let onOpencode: () -> Void
     let onPi: () -> Void
+    let onCodex: () -> Void
     let onOpenFolder: () -> Void
     let onDelete: () -> Void
 
@@ -30,6 +31,9 @@ struct ProjectRowView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             Button("Pi", action: onPi)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            Button("Codex", action: onCodex)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             Button(action: onOpenFolder) {

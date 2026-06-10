@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var claudeDetected: String? = nil
     @State private var opencodeDetected: String? = nil
     @State private var piDetected: String? = nil
+    @State private var codexDetected: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -55,6 +56,9 @@ struct SettingsView: View {
         }
         .onChange(of: store.settings.piCommand) {
             piDetected = PathDetector.detect(store.settings.piCommand)
+        }
+        .onChange(of: store.settings.codexCommand) {
+            codexDetected = PathDetector.detect(store.settings.codexCommand)
         }
         .confirmationDialog(
             "Reset all settings to defaults?",
@@ -166,6 +170,15 @@ struct SettingsView: View {
                         store.settings.piCommand = picked
                     }
                 }
+                agentRow(
+                    label: "Codex",
+                    text: $store.settings.codexCommand,
+                    detected: codexDetected
+                ) {
+                    if let picked = browseForExecutable(label: "Codex") {
+                        store.settings.codexCommand = picked
+                    }
+                }
             }
         }
     }
@@ -210,6 +223,7 @@ struct SettingsView: View {
         claudeDetected   = PathDetector.detect(store.settings.claudeCommand)
         opencodeDetected = PathDetector.detect(store.settings.opencodeCommand)
         piDetected       = PathDetector.detect(store.settings.piCommand)
+        codexDetected    = PathDetector.detect(store.settings.codexCommand)
     }
 
     @ViewBuilder

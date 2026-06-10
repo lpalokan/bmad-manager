@@ -36,13 +36,14 @@
   // Per-agent PATH-detection results. `null` = unknown / pending,
   // a string = resolved absolute path, `false` = checked and not found.
   type Detection = string | false | null;
-  let detections: Record<"claude" | "opencode" | "pi", Detection> = $state({
+  let detections: Record<"claude" | "opencode" | "pi" | "codex", Detection> = $state({
     claude: null,
     opencode: null,
     pi: null,
+    codex: null,
   });
 
-  async function detect(which: "claude" | "opencode" | "pi", command: string) {
+  async function detect(which: "claude" | "opencode" | "pi" | "codex", command: string) {
     detections[which] = null;
     const trimmed = command.trim();
     if (!trimmed) {
@@ -66,8 +67,14 @@
   $effect(() => {
     detect("pi", draft.piCommand);
   });
+  $effect(() => {
+    detect("codex", draft.codexCommand);
+  });
 
-  async function browseForAgent(which: "claude" | "opencode" | "pi", label: string) {
+  async function browseForAgent(
+    which: "claude" | "opencode" | "pi" | "codex",
+    label: string,
+  ) {
     const picked = await open({
       multiple: false,
       title: `Choose ${label} executable`,
@@ -75,7 +82,8 @@
     if (typeof picked === "string") {
       if (which === "claude") draft.claudeCommand = picked;
       else if (which === "opencode") draft.opencodeCommand = picked;
-      else draft.piCommand = picked;
+      else if (which === "pi") draft.piCommand = picked;
+      else draft.codexCommand = picked;
     }
   }
 
@@ -278,6 +286,24 @@
           </p>
         {:else}
           <p class="hint detected">Detected at <code>{detections.pi}</code></p>
+        {/if}
+      </div>
+      <div>
+        <label class="lbl" for="codex-cmd">Codex command</label>
+        <div class="row">
+          <input id="codex-cmd" type="text" bind:value={draft.codexCommand} />
+          <button type="button" onclick={() => browseForAgent("codex", "Codex")}>
+            Browse…
+          </button>
+        </div>
+        {#if detections.codex === null}
+          <p class="hint">Checking PATH…</p>
+        {:else if detections.codex === false}
+          <p class="hint not-found">
+            Not found on PATH. Use <strong>Browse…</strong> to point at the binary.
+          </p>
+        {:else}
+          <p class="hint detected">Detected at <code>{detections.codex}</code></p>
         {/if}
       </div>
     </section>

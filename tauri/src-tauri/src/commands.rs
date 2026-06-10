@@ -120,6 +120,11 @@ pub fn open_in_pi(project_path: String, state: State<'_, AppState>) -> CmdResult
     open_in_terminal(&project_path, "pi", state)
 }
 
+#[tauri::command]
+pub fn open_in_codex(project_path: String, state: State<'_, AppState>) -> CmdResult<()> {
+    open_in_terminal(&project_path, "codex", state)
+}
+
 /// Returns the absolute path the supplied command resolves to on the
 /// current `PATH`, or `None` if it's not found. The Settings dialog
 /// calls this per coding-agent command so the user knows whether the
@@ -135,6 +140,7 @@ fn open_in_terminal(project_path: &str, which: &str, state: State<'_, AppState>)
         "claude" => settings.claude_command.trim().to_string(),
         "opencode" => settings.opencode_command.trim().to_string(),
         "pi" => settings.pi_command.trim().to_string(),
+        "codex" => settings.codex_command.trim().to_string(),
         _ => unreachable!(),
     };
     if command.is_empty() {

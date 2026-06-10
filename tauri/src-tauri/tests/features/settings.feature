@@ -16,6 +16,8 @@ Feature: AppSettings serialization and defaults
     And the claude command is "claude"
     And the opencode command is "opencode"
     And the pi command is "pi"
+    And the codex command is "codex"
+    And the init command contains "codex"
 
   Scenario: defaults round-trip through JSON
     When I encode the default settings and decode them again
@@ -49,3 +51,12 @@ Feature: AppSettings serialization and defaults
   Scenario: round-trip preserves a customised pi command
     When I round-trip the default settings with pi command "C:\\bin\\pi.exe"
     Then the decoded pi command is "C:\\bin\\pi.exe"
+
+  Scenario: legacy settings without codex command default to "codex"
+    Given a legacy settings JSON without codexCommand
+    When I decode it
+    Then the codex command is "codex"
+
+  Scenario: round-trip preserves a customised codex command
+    When I round-trip the default settings with codex command "C:\\bin\\codex.exe"
+    Then the decoded codex command is "C:\\bin\\codex.exe"
