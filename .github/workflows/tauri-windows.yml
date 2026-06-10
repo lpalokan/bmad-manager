@@ -15,6 +15,7 @@ on:
     branches:
       - "main"
       - "feature/25-tauri-windows-stage-3"
+      - "integration/windows-and-codex"
     tags:
       - "windows-v*"
   workflow_dispatch:
