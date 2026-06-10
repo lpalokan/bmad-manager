@@ -227,6 +227,13 @@ struct ContentView: View {
                         kind: settings.settings.terminalKind
                     )
                 },
+                onCodex: {
+                    coordinator.openInTerminal(
+                        project: project,
+                        command: settings.settings.codexCommand,
+                        kind: settings.settings.terminalKind
+                    )
+                },
                 onOpenFolder: { coordinator.openProjectFolder(project) },
                 onDelete: { coordinator.projectToDelete = project }
             )

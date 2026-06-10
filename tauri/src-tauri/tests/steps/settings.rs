@@ -144,6 +144,21 @@ async fn legacy_without_pi_command(world: &mut TauriWorld) {
     );
 }
 
+#[given("a legacy settings JSON without codexCommand")]
+async fn legacy_without_codex_command(world: &mut TauriWorld) {
+    world.raw_json = Some(
+        r#"{
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode",
+            "piCommand": "pi"
+        }"#
+        .to_string(),
+    );
+}
+
 #[then(regex = r#"^the claude command is "(.+)"$"#)]
 async fn claude_command_is(world: &mut TauriWorld, expected: String) {
     let s = settings_for_assertion(world);
@@ -162,6 +177,12 @@ async fn pi_command_is(world: &mut TauriWorld, expected: String) {
     assert_eq!(s.pi_command, expected);
 }
 
+#[then(regex = r#"^the codex command is "(.+)"$"#)]
+async fn codex_command_is(world: &mut TauriWorld, expected: String) {
+    let s = settings_for_assertion(world);
+    assert_eq!(s.codex_command, expected);
+}
+
 #[when(regex = r#"^I round-trip the default settings with pi command "(.+)"$"#)]
 async fn round_trip_with_pi_command(world: &mut TauriWorld, pi_command: String) {
     let mut original = AppSettings::defaults();
@@ -176,6 +197,22 @@ async fn round_trip_with_pi_command(world: &mut TauriWorld, pi_command: String) 
 async fn decoded_pi_command_is(world: &mut TauriWorld, expected: String) {
     let decoded = world.decoded_settings.as_ref().expect("decoded");
     assert_eq!(decoded.pi_command, expected);
+}
+
+#[when(regex = r#"^I round-trip the default settings with codex command "(.+)"$"#)]
+async fn round_trip_with_codex_command(world: &mut TauriWorld, codex_command: String) {
+    let mut original = AppSettings::defaults();
+    original.codex_command = codex_command;
+    let json = serde_json::to_string(&original).expect("encode");
+    let decoded: AppSettings = serde_json::from_str(&json).expect("decode");
+    world.settings = Some(original);
+    world.decoded_settings = Some(decoded);
+}
+
+#[then(regex = r#"^the decoded codex command is "(.+)"$"#)]
+async fn decoded_codex_command_is(world: &mut TauriWorld, expected: String) {
+    let decoded = world.decoded_settings.as_ref().expect("decoded");
+    assert_eq!(decoded.codex_command, expected);
 }
 
 #[when("I decode it")]

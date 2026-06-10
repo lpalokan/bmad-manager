@@ -6,10 +6,11 @@
     onClaude: () => void;
     onOpencode: () => void;
     onPi: () => void;
+    onCodex: () => void;
     onDelete: () => void;
   }
 
-  let { project, onClaude, onOpencode, onPi, onDelete }: Props = $props();
+  let { project, onClaude, onOpencode, onPi, onCodex, onDelete }: Props = $props();
 
   function relativeCreated(epoch: number | null): string {
     if (epoch === null) return "";
@@ -34,6 +35,7 @@
     <button onclick={onClaude}>Claude Code</button>
     <button onclick={onOpencode}>opencode</button>
     <button onclick={onPi}>Pi</button>
+    <button onclick={onCodex}>Codex</button>
     <button
       class="danger"
       title="Move to Recycle Bin"

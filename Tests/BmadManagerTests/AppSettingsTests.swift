@@ -17,6 +17,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(defaults.claudeCommand, "claude")
         XCTAssertEqual(defaults.opencodeCommand, "opencode")
         XCTAssertEqual(defaults.piCommand, "pi")
+        XCTAssertEqual(defaults.codexCommand, "codex")
         XCTAssertEqual(defaults.projectSortOrder, .nameAscending)
         XCTAssertEqual(defaults.terminalKind, .terminal)
     }
@@ -41,6 +42,30 @@ final class AppSettingsTests: XCTestCase {
         let encoded = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
         XCTAssertEqual(decoded.piCommand, "/opt/pi/bin/pi")
+        XCTAssertEqual(original, decoded)
+    }
+
+    func testDecodesLegacySettingsWithoutCodexCommand() throws {
+        let legacy = """
+        {
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode",
+            "piCommand": "pi"
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertEqual(decoded.codexCommand, "codex")
+    }
+
+    func testCodableRoundTripPreservesCodexCommand() throws {
+        var original = AppSettings.defaults()
+        original.codexCommand = "/opt/codex/bin/codex"
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
+        XCTAssertEqual(decoded.codexCommand, "/opt/codex/bin/codex")
         XCTAssertEqual(original, decoded)
     }
 
@@ -117,6 +142,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(command.contains("claude-code"))
         XCTAssertTrue(command.contains("opencode"))
         XCTAssertTrue(command.contains("pi"))
+        XCTAssertTrue(command.contains("codex"))
         XCTAssertTrue(command.contains("--custom-source"),
                       "marketing-growth module must register via --custom-source")
         XCTAssertTrue(command.contains("--directory"),

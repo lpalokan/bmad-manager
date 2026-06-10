@@ -25,6 +25,7 @@ export interface AppSettings {
   claudeCommand: string;
   opencodeCommand: string;
   piCommand: string;
+  codexCommand: string;
   projectSortOrder: ProjectSortOrder;
   terminalKind: TerminalKind;
 }

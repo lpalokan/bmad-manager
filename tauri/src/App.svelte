@@ -10,6 +10,7 @@
     listProjects,
     loadSettings,
     openInClaude,
+    openInCodex,
     openInOpencode,
     openInPi,
     saveSettings,
@@ -114,6 +115,14 @@
     }
   }
 
+  async function onCodex(project: ProjectItem) {
+    try {
+      await openInCodex(project.path);
+    } catch (err) {
+      errorMessage = `Open in Codex failed: ${err}`;
+    }
+  }
+
   async function changeSort(order: ProjectSortOrder) {
     if (!settings) return;
     settings.projectSortOrder = order;
@@ -215,6 +224,7 @@
             onClaude={() => onClaude(project)}
             onOpencode={() => onOpencode(project)}
             onPi={() => onPi(project)}
+            onCodex={() => onCodex(project)}
             onDelete={() => onDelete(project)}
           />
         {/each}
