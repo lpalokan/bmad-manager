@@ -127,11 +127,13 @@ jobs:
             throw "PortableGit self-extractor exited with code $($proc.ExitCode)"
           }
           # Rebuild a clean tree for the bundle: /XJ /XJD /XJF skip
-          # junctions and symlinks entirely, /R:0 /W:0 give up on
-          # unreadable entries instead of retrying, so only plain
-          # stattable files reach bundle.resources. Exit codes 0-7 are
+          # junctions and symlinks entirely, /XA:S drops MSYS symlink
+          # cookie files (regular files flagged System, e.g. etc\mtab)
+          # that Rust's canonicalize() rejects with os error 1920 inside
+          # tauri-build's resource walk, and /R:0 /W:0 give up on
+          # unreadable entries instead of retrying. Exit codes 0-7 are
           # robocopy success variants; 8+ means real failures.
-          robocopy $raw $dest /E /XJ /XJD /XJF /R:0 /W:0 /NP /NJH /NFL /NDL | Out-Host
+          robocopy $raw $dest /E /XJ /XJD /XJF /XA:S /R:0 /W:0 /NP /NJH /NFL /NDL | Out-Host
           if ($LASTEXITCODE -ge 8) {
             throw "robocopy failed with exit code $LASTEXITCODE"
           }
