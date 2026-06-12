@@ -107,6 +107,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $url = "https://github.com/git-for-windows/git/releases/download/$env:GIT_FOR_WINDOWS_TAG/PortableGit-$env:GIT_FOR_WINDOWS_ASSET_VERSION-64-bit.7z.exe"
           $exe = Join-Path $env:RUNNER_TEMP "portable-git-installer.exe"
+          $raw = Join-Path $env:RUNNER_TEMP "portable-git-raw"
           $dest = "$pwd/src-tauri/resources/portable-git"
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           Write-Host "Downloading $url"
@@ -116,58 +117,34 @@ jobs:
           # Start-Process so the exit code is observable; piping `&` to
           # Out-Null swallows both stdout and any failure signal. `-y`
           # accepts the EULA, `-o<dir>` sets the extraction target.
-          $proc = Start-Process -FilePath $exe -ArgumentList "-y", "-o`"$dest`"" -Wait -PassThru -NoNewWindow
+          # Extract OUTSIDE the bundle tree: the archive contains
+          # Cygwin-style symlinks (etc\mtab -> /proc/mounts) that recent
+          # runner images materialise as stubs Windows cannot stat, and
+          # tauri-build's resource walker aborts on the first such entry
+          # ("os error 1920").
+          $proc = Start-Process -FilePath $exe -ArgumentList "-y", "-o`"$raw`"" -Wait -PassThru -NoNewWindow
           if ($proc.ExitCode -ne 0) {
             throw "PortableGit self-extractor exited with code $($proc.ExitCode)"
           }
+          # Rebuild a clean tree for the bundle: /XJ /XJD /XJF skip
+          # junctions and symlinks entirely, /R:0 /W:0 give up on
+          # unreadable entries instead of retrying, so only plain
+          # stattable files reach bundle.resources. Exit codes 0-7 are
+          # robocopy success variants; 8+ means real failures.
+          robocopy $raw $dest /E /XJ /XJD /XJF /R:0 /W:0 /NP /NJH /NFL /NDL | Out-Host
+          if ($LASTEXITCODE -ge 8) {
+            throw "robocopy failed with exit code $LASTEXITCODE"
+          }
+          $global:LASTEXITCODE = 0
           $gitExe = Join-Path $dest "cmd\git.exe"
           if (-not (Test-Path $gitExe)) {
             throw "PortableGit extracted but $gitExe is missing"
           }
           Write-Host "Bundled Git:"
           & $gitExe --version
-          # PortableGit contains Cygwin-style symlinks (e.g. etc\mtab ->
-          # /proc/mounts). Depending on the runner image's 7-Zip these
-          # extract as stubs that Windows cannot stat, and tauri-build's
-          # resource walker aborts on the first such entry ("os error
-          # 1920"). Git doesn't need them at runtime. Probe every entry
-          # the same way the walker does — open it, following links —
-          # and drop the ones that fail; then re-probe so a regression
-          # fails here with a clear message instead of inside the build.
-          $entries = Get-ChildItem $dest -Recurse -Force
-          $bad = @()
-          foreach ($e in $entries) {
-            $isReparse = [bool]($e.Attributes -band [IO.FileAttributes]::ReparsePoint)
-            if ($e.PSIsContainer) {
-              if ($isReparse) { $bad += $e }
-              continue
-            }
-            $unreadable = $false
-            try {
-              $s = [System.IO.File]::Open($e.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-              $s.Close()
-            } catch {
-              $unreadable = $true
-            }
-            if ($isReparse -or $unreadable) { $bad += $e }
-          }
-          foreach ($e in $bad) {
-            Write-Host ("Removing unbundleable entry: {0}" -f $e.FullName)
-            Remove-Item -LiteralPath $e.FullName -Force -Recurse:$e.PSIsContainer
-          }
-          $still = @()
-          foreach ($e in (Get-ChildItem $dest -Recurse -Force | Where-Object { -not $_.PSIsContainer })) {
-            try {
-              $s = [System.IO.File]::Open($e.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-              $s.Close()
-            } catch {
-              $still += $e.FullName
-            }
-          }
-          if ($still.Count -gt 0) {
-            throw ("Unreadable entries remain after cleanup: {0}" -f ($still -join ', '))
-          }
-          Write-Host ("Removed {0} unbundleable entries" -f $bad.Count)
+          # Keep the bundled etc\ attributes on record so a future stat
+          # failure in the build can be diagnosed from this log.
+          Get-ChildItem (Join-Path $dest 'etc') -Force | Select-Object Name, Attributes | Out-Host
           Write-Host ("Extracted file count: {0}" -f (Get-ChildItem $dest -Recurse -File).Count)
 
       - name: Pre-warm npm cache with bmad-method
