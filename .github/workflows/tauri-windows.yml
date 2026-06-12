@@ -127,18 +127,47 @@ jobs:
           Write-Host "Bundled Git:"
           & $gitExe --version
           # PortableGit contains Cygwin-style symlinks (e.g. etc\mtab ->
-          # /proc/mounts). Depending on the runner image's 7-Zip and
-          # Developer Mode state these extract as real reparse points
-          # whose targets don't exist, and tauri-build's resource walker
-          # aborts on the unreadable entry ("os error 1920"). Git itself
-          # doesn't need them at runtime, so strip every reparse point
-          # before the build.
-          Get-ChildItem $dest -Recurse -Force |
-            Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } |
-            ForEach-Object {
-              Write-Host ("Removing reparse point: {0}" -f $_.FullName)
-              Remove-Item -LiteralPath $_.FullName -Force -Recurse:$false
+          # /proc/mounts). Depending on the runner image's 7-Zip these
+          # extract as stubs that Windows cannot stat, and tauri-build's
+          # resource walker aborts on the first such entry ("os error
+          # 1920"). Git doesn't need them at runtime. Probe every entry
+          # the same way the walker does — open it, following links —
+          # and drop the ones that fail; then re-probe so a regression
+          # fails here with a clear message instead of inside the build.
+          $entries = Get-ChildItem $dest -Recurse -Force
+          $bad = @()
+          foreach ($e in $entries) {
+            $isReparse = [bool]($e.Attributes -band [IO.FileAttributes]::ReparsePoint)
+            if ($e.PSIsContainer) {
+              if ($isReparse) { $bad += $e }
+              continue
             }
+            $unreadable = $false
+            try {
+              $s = [System.IO.File]::Open($e.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+              $s.Close()
+            } catch {
+              $unreadable = $true
+            }
+            if ($isReparse -or $unreadable) { $bad += $e }
+          }
+          foreach ($e in $bad) {
+            Write-Host ("Removing unbundleable entry: {0}" -f $e.FullName)
+            Remove-Item -LiteralPath $e.FullName -Force -Recurse:$e.PSIsContainer
+          }
+          $still = @()
+          foreach ($e in (Get-ChildItem $dest -Recurse -Force | Where-Object { -not $_.PSIsContainer })) {
+            try {
+              $s = [System.IO.File]::Open($e.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+              $s.Close()
+            } catch {
+              $still += $e.FullName
+            }
+          }
+          if ($still.Count -gt 0) {
+            throw ("Unreadable entries remain after cleanup: {0}" -f ($still -join ', '))
+          }
+          Write-Host ("Removed {0} unbundleable entries" -f $bad.Count)
           Write-Host ("Extracted file count: {0}" -f (Get-ChildItem $dest -Recurse -File).Count)
 
       - name: Pre-warm npm cache with bmad-method
