@@ -7,6 +7,7 @@
   import {
     createProject,
     deleteProject,
+    listCompanyContexts,
     listProjects,
     loadSettings,
     openInClaude,
@@ -15,10 +16,13 @@
     openInPi,
     saveSettings,
   } from "./lib/commands";
-  import { projectSortOrderOptions, type AppSettings, type OutputEvent, type ProjectItem, type ProjectSortOrder } from "./lib/types";
+  import { companyContextDisplayName, projectSortOrderOptions, type AppSettings, type CompanyContext, type OutputEvent, type ProjectItem, type ProjectSortOrder } from "./lib/types";
 
   let settings: AppSettings | null = $state(null);
   let projects: ProjectItem[] = $state([]);
+  let contexts: CompanyContext[] = $state([]);
+  // Directory path of the selected seeding source; "" = start from scratch.
+  let selectedContextDir = $state("");
   let newProjectName = $state("");
   let isCreating = $state(false);
   let showSettings = $state(false);
@@ -53,6 +57,16 @@
   async function refresh() {
     try {
       projects = await listProjects();
+      contexts = await listCompanyContexts();
+      // The selected source project may have been deleted or its context
+      // removed since the last scan — fall back to scratch rather than
+      // importing from a stale snapshot.
+      if (
+        selectedContextDir &&
+        !contexts.some((c) => c.directory === selectedContextDir)
+      ) {
+        selectedContextDir = "";
+      }
     } catch (err) {
       errorMessage = `Failed to list projects: ${err}`;
     }
@@ -67,8 +81,13 @@
     lastExitCode = null;
     errorMessage = null;
     try {
-      await createProject(trimmed);
+      const context =
+        contexts.find((c) => c.directory === selectedContextDir) ?? null;
+      await createProject(trimmed, context);
       newProjectName = "";
+      // Reset to scratch so the next creation doesn't silently inherit
+      // the previous selection.
+      selectedContextDir = "";
       await refresh();
     } catch (err) {
       errorMessage = `Create failed: ${err}`;
@@ -186,6 +205,24 @@
       {isCreating ? "Creating…" : "Create new project"}
     </button>
   </section>
+
+  {#if contexts.length > 0}
+    <section class="context-row" data-testid="context-row">
+      <span class="lbl">Context</span>
+      <select
+        bind:value={selectedContextDir}
+        title="Seed the new project's company context from an existing project"
+        disabled={isCreating}
+      >
+        <option value="">Start from scratch</option>
+        {#each contexts as context (context.directory)}
+          <option value={context.directory}>
+            {companyContextDisplayName(context)}
+          </option>
+        {/each}
+      </select>
+    </section>
+  {/if}
 
   <section class="sort-row">
     <span class="lbl">Sort</span>
@@ -326,7 +363,8 @@
     cursor: not-allowed;
   }
 
-  .sort-row {
+  .sort-row,
+  .context-row {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -334,12 +372,14 @@
     flex-shrink: 0;
   }
 
-  .sort-row .lbl {
+  .sort-row .lbl,
+  .context-row .lbl {
     font-size: 11px;
     color: rgba(127, 127, 127, 1);
   }
 
-  .sort-row select {
+  .sort-row select,
+  .context-row select {
     padding: 2px 6px;
     border: 1px solid rgba(127, 127, 127, 0.4);
     border-radius: 4px;

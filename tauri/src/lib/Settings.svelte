@@ -330,6 +330,28 @@
       </div>
     </section>
 
+    <section data-testid="bundled-tooling">
+      <span class="lbl">Bundled tooling</span>
+      <div class="bundled">
+        {#if bundledError}
+          <p class="hint">Couldn't read bundled versions: {bundledError}</p>
+        {:else if bundled}
+          <dl>
+            <dt>Node</dt>
+            <dd>{bundled.nodeVersion ?? "not bundled (uses system node)"}</dd>
+            <dt>Git</dt>
+            <dd>{bundled.gitVersion ?? "not bundled (uses system git)"}</dd>
+          </dl>
+        {:else}
+          <p class="hint">Reading versions…</p>
+        {/if}
+        <p class="hint">
+          Read-only. These ship inside the installer so end users don't
+          need to install Node or Git separately.
+        </p>
+      </div>
+    </section>
+
     {#if saveError}
       <p class="error">Failed to save: {saveError}</p>
     {/if}

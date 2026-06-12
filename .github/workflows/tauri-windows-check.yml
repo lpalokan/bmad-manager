@@ -9,7 +9,7 @@ on:
   push:
     branches:
       - "main"
-      - "feature/25-tauri-windows-stage-3"
+      - "integration/windows-and-codex"
     paths:
       - "tauri/**"
       - ".github/workflows/tauri-windows-check.yml"

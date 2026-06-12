@@ -1,8 +1,9 @@
 # BMad Manager — Tauri (Windows-first)
 
 Cross-platform port of the Swift macOS app under [`Sources/BmadManager/`](../Sources/BmadManager).
-The Tauri tree is the active development target; the Swift app is in
-maintenance mode. Issue [#25](https://github.com/lpalokan/bmad-manager/issues/25)
+The Swift app remains the actively shipped macOS platform; this tree is
+the Windows port (and the eventual unification target — see `CLAUDE.md`).
+Issue [#25](https://github.com/lpalokan/bmad-manager/issues/25)
 tracks the full Windows shipping plan.
 
 **Stage 3** is now landed: the NSIS installer bundles portable Node
@@ -10,7 +11,7 @@ and PortableGit alongside a pre-warmed `bmad-method` npm cache, so
 end users double-click one `.exe` and have a working app with zero
 prerequisite installs. The installer is per-user (no UAC prompt) and
 the `.github/workflows/tauri-windows.yml` release pipeline produces it
-on every push to the Stage 3 branch (and attaches it to a GitHub
+on every push to `main` and the integration branch (and attaches it to a GitHub
 Release on `windows-v*` tag pushes).
 
 ## Layout
@@ -41,14 +42,18 @@ tauri/
       models/
         settings.rs                   AppSettings + enums; legacy decoder
         project_item.rs               ProjectItem
+        company_context.rs            CompanyContext + recognized files
       services/
         settings_store.rs             load/save settings.json
         project_service.rs            validate, create, list, trash
+        company_context.rs            scan/import company contexts
         zip_source.rs                 .zip extract + wrapper-folder
         git_source.rs                 git clone --depth 1
         command_runner.rs             stream stdout/stderr via events
         project_creator.rs            full create pipeline
         init_command.rs               placeholder sub + shell quoting
+        path_detection.rs             resolve agent commands on PATH
+        bundled_tooling.rs            bundled Node/Git versions + cache seed
       platform/                       OS abstraction (issue #25)
         mod.rs                        cfg-based re-exports + AppHandle slot
         windows.rs                    Stage 2 implementations

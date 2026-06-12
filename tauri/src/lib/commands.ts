@@ -2,7 +2,7 @@
 // remember command names or argument-key casing.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, BundledTooling, ProjectItem } from "./types";
+import type { AppSettings, BundledTooling, CompanyContext, ProjectItem } from "./types";
 
 export const loadSettings = (): Promise<AppSettings> =>
   invoke<AppSettings>("load_settings");
@@ -16,8 +16,13 @@ export const saveSettings = (settings: AppSettings): Promise<void> =>
 export const listProjects = (): Promise<ProjectItem[]> =>
   invoke<ProjectItem[]>("list_projects");
 
-export const createProject = (name: string): Promise<ProjectItem> =>
-  invoke<ProjectItem>("create_project", { name });
+export const listCompanyContexts = (): Promise<CompanyContext[]> =>
+  invoke<CompanyContext[]>("list_company_contexts");
+
+export const createProject = (
+  name: string,
+  context: CompanyContext | null = null,
+): Promise<ProjectItem> => invoke<ProjectItem>("create_project", { name, context });
 
 export const deleteProject = (path: string): Promise<void> =>
   invoke("delete_project", { path });

@@ -11,11 +11,13 @@ use serde::{Serialize, Serializer};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 
-use crate::models::{AppSettings, ProjectItem};
+use crate::models::{AppSettings, CompanyContext, ProjectItem};
 use crate::platform;
 use crate::services::bundled_tooling::{self, BundledTooling};
 use crate::services::command_runner::OutputEvent;
-use crate::services::{path_detection, project_creator, project_service, settings_store};
+use crate::services::{
+    company_context, path_detection, project_creator, project_service, settings_store,
+};
 
 pub struct AppState {
     pub settings_path: PathBuf,
@@ -80,6 +82,7 @@ pub fn list_projects(state: State<'_, AppState>) -> CmdResult<Vec<ProjectItem>> 
 #[tauri::command]
 pub async fn create_project(
     name: String,
+    context: Option<CompanyContext>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<ProjectItem> {
@@ -88,9 +91,19 @@ pub async fn create_project(
     let emit = move |event: OutputEvent| {
         let _ = app.emit("project-create-output", event);
     };
-    project_creator::create_project(&name, &settings, emit)
+    project_creator::create_project(&name, &settings, context.as_ref(), emit)
         .await
         .map_err(|e| IpcError(e.to_string()))
+}
+
+/// Scans the projects root for existing company contexts the new-project
+/// "Context" picker can offer as seeding sources.
+#[tauri::command]
+pub fn list_company_contexts(state: State<'_, AppState>) -> CmdResult<Vec<CompanyContext>> {
+    let settings = settings_store::load_or_init(&state.settings_path)?;
+    let root = expand_tilde(&settings.projects_root);
+    let projects = project_service::list_projects(&root, settings.project_sort_order);
+    Ok(company_context::contexts_in(&projects))
 }
 
 #[tauri::command]
