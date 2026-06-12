@@ -126,6 +126,19 @@ jobs:
           }
           Write-Host "Bundled Git:"
           & $gitExe --version
+          # PortableGit contains Cygwin-style symlinks (e.g. etc\mtab ->
+          # /proc/mounts). Depending on the runner image's 7-Zip and
+          # Developer Mode state these extract as real reparse points
+          # whose targets don't exist, and tauri-build's resource walker
+          # aborts on the unreadable entry ("os error 1920"). Git itself
+          # doesn't need them at runtime, so strip every reparse point
+          # before the build.
+          Get-ChildItem $dest -Recurse -Force |
+            Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } |
+            ForEach-Object {
+              Write-Host ("Removing reparse point: {0}" -f $_.FullName)
+              Remove-Item -LiteralPath $_.FullName -Force -Recurse:$false
+            }
           Write-Host ("Extracted file count: {0}" -f (Get-ChildItem $dest -Recurse -File).Count)
 
       - name: Pre-warm npm cache with bmad-method
