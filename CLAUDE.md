@@ -5,7 +5,7 @@ This repository ships two coexisting trees:
 - **Swift macOS app** (`Sources/BmadManager/`, built by `scripts/build_release.sh` into `bmad-manager.app`) — **the actively shipped platform**. New features land here so they reach users on Mac on the next release build.
 - **Tauri Windows port** (`tauri/`) — cross-platform rewrite covering Windows. Its macOS arm (`tauri/src-tauri/src/platform/macos.rs`) is intentionally `unimplemented!()` until the unification milestone, so it cannot ship on Mac today.
 
-**Both trees are in scope by default.** Every feature or behaviour change lands in the Swift tree *and* is mirrored into the Tauri tree (Rust backend, Svelte UI, and their BDD suites) in the same task, so the Windows port does not drift behind. Skip the Tauri mirror only when the change is inherently macOS-only (e.g. AppleScript launch glue, Finder integration) or the request explicitly scopes it to one platform — and say so when you skip it.
+**Features are per-platform — don't port across by default.** Mac users run the Swift app; Windows users run the Tauri port. A change lands in the tree whose platform's users it's for, and only touches both trees when the request explicitly spans both platforms (or names the other one). Say which tree(s) you changed and why.
 
 # GitHub Workflow
 
@@ -53,7 +53,7 @@ Do not write feature/implementation code before its Gherkin scenario exists and 
 
 ## Per-stack BDD layout and commands
 
-The Swift macOS app under `Sources/BmadManager/` is the active platform (see "Active platform" above). New behaviour lands in the Swift tree first with full Gherkin coverage, and the Tauri Windows port (`tauri/`) gets the equivalent scenarios in the same task unless the change is platform-specific (see "Active platform").
+The Swift macOS app under `Sources/BmadManager/` serves Mac users and the Tauri Windows port (`tauri/`) serves Windows users (see "Active platform" above). Write Gherkin coverage in the tree whose platform the change targets; only cover both when the request explicitly spans both platforms.
 
 **Tauri Rust backend** (`tauri/src-tauri/`):
 
