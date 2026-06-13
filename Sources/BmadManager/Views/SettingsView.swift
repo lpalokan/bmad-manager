@@ -155,6 +155,7 @@ struct SettingsView: View {
                     detected: claudeDetected,
                     launchMethod: $store.settings.claudeLaunchMethod,
                     appName: AgentApp.claude.appDisplayName,
+                    appNote: AgentApp.claude.appLaunchNote,
                     appInstalled: claudeAppInstalled
                 ) {
                     if let picked = browseForExecutable(label: "Claude Code") {
@@ -185,6 +186,7 @@ struct SettingsView: View {
                     detected: codexDetected,
                     launchMethod: $store.settings.codexLaunchMethod,
                     appName: AgentApp.codex.appDisplayName,
+                    appNote: AgentApp.codex.appLaunchNote,
                     appInstalled: codexAppInstalled
                 ) {
                     if let picked = browseForExecutable(label: "Codex") {
@@ -247,6 +249,7 @@ struct SettingsView: View {
         detected: String?,
         launchMethod: Binding<AgentLaunchMethod>? = nil,
         appName: String? = nil,
+        appNote: String = "",
         appInstalled: Bool = false,
         browse: @escaping () -> Void
     ) -> some View {
@@ -272,6 +275,7 @@ struct SettingsView: View {
             if let launchMethod {
                 launchMethodControl(
                     appName: appName ?? label,
+                    appNote: appNote,
                     selection: launchMethod,
                     appInstalled: appInstalled
                 )
@@ -285,6 +289,7 @@ struct SettingsView: View {
     @ViewBuilder
     private func launchMethodControl(
         appName: String,
+        appNote: String,
         selection: Binding<AgentLaunchMethod>,
         appInstalled: Bool
     ) -> some View {
@@ -298,7 +303,7 @@ struct SettingsView: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         if appInstalled {
-            Text("\(appName) app detected. Auto and App open it; CLI runs the command above in the terminal.")
+            Text("\(appName) app detected. \(appNote) CLI runs the command above in the terminal.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else {

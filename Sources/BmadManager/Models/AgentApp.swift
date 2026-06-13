@@ -30,4 +30,17 @@ enum AgentApp: String, CaseIterable, Identifiable {
         case .codex:  return "Codex"
         }
     }
+
+    /// One-line note for Settings explaining what launching the app does,
+    /// since the two apps differ in kind: the Codex app is a coding app
+    /// that opens the project, whereas the Claude desktop app is a
+    /// multi-surface app where Code is one tab (alongside Chat and
+    /// Cowork) and the app opens on whichever tab was last used — there's
+    /// no public deep link to force the Code tab.
+    var appLaunchNote: String {
+        switch self {
+        case .claude: return "Opens the Claude desktop app — Code is a tab there, alongside Chat and Cowork."
+        case .codex:  return "Opens the project in the Codex app."
+        }
+    }
 }
