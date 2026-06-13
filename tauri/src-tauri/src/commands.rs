@@ -69,6 +69,16 @@ pub fn save_settings(settings: AppSettings, state: State<'_, AppState>) -> CmdRe
     Ok(())
 }
 
+/// Returns the built-in defaults without touching the persisted file. The
+/// Settings dialog's "Reset to defaults" loads these into its draft so the
+/// user can review (and then Save) a clean configuration — picking up, for
+/// example, agents added to the install `--tools` list since their
+/// settings.json was first written.
+#[tauri::command]
+pub fn default_settings() -> AppSettings {
+    AppSettings::defaults()
+}
+
 #[tauri::command]
 pub fn list_projects(state: State<'_, AppState>) -> CmdResult<Vec<ProjectItem>> {
     let settings = settings_store::load_or_init(&state.settings_path)?;

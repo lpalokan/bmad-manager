@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { detectCommandInPath, getBundledTooling, saveSettings } from "./commands";
+  import { defaultSettings, detectCommandInPath, getBundledTooling, saveSettings } from "./commands";
   import {
     moduleSourceOptions,
     terminalOptions,
@@ -123,7 +123,7 @@
     }
   }
 
-  function resetToDefaults() {
+  async function resetToDefaults() {
     if (
       !confirm(
         "Reset all settings to defaults? Your projects folder and any customised commands will be wiped.",
@@ -131,9 +131,16 @@
     ) {
       return;
     }
-    // The defaults() helper lives in Rust; reload from the IPC instead of
-    // duplicating them here.
-    onClose();
+    // The defaults() helper lives in Rust; load them via the IPC rather than
+    // duplicating them here. We populate the draft (not the persisted file)
+    // so the user can review the restored configuration and Save with "Done"
+    // — or cancel out without having clobbered anything.
+    saveError = null;
+    try {
+      draft = await defaultSettings();
+    } catch (err) {
+      saveError = String(err);
+    }
   }
 </script>
 

@@ -13,6 +13,9 @@ export const getBundledTooling = (): Promise<BundledTooling> =>
 export const saveSettings = (settings: AppSettings): Promise<void> =>
   invoke("save_settings", { settings });
 
+export const defaultSettings = (): Promise<AppSettings> =>
+  invoke<AppSettings>("default_settings");
+
 export const listProjects = (): Promise<ProjectItem[]> =>
   invoke<ProjectItem[]>("list_projects");
 
