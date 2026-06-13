@@ -35,27 +35,52 @@ enum SkillsSyncError: LocalizedError {
     }
 }
 
-/// Clones/updates a private GitHub skills repo into the per-tool `managed/`
-/// skills folder. The `managed/` subfolder is owned entirely by the sync —
-/// it is hard-reset to the remote tip on every run, so hand edits there are
-/// discarded. Personal skills directly under `~/.claude/skills` /
-/// `~/.codex/skills` (NOT under `managed/`) are never touched.
+/// What a reconcile did, for the output panel.
+struct LinkSummary: Equatable {
+    var linked: [String] = []
+    var removed: [String] = []
+    var skipped: [String] = []
+}
+
+/// Clones/updates a private GitHub skills repo into a hidden sibling of the
+/// tool's skills folder, then **symlinks each skill as a direct child** of that
+/// folder so the tool actually discovers it (Claude Code / Codex only scan one
+/// level deep — a skill buried under a subfolder is never found).
 ///
-/// Builders are pure (unit-tested); `sync` takes an injected `runCommand` and
-/// `FileManager` so the clone-vs-update orchestration is testable without a
-/// real git or Keychain.
+/// We only ever create/remove links we own (tracked in a manifest); a name
+/// already taken by a real personal skill directory is skipped, not
+/// overwritten. Personal skills are never touched.
 enum SkillsSyncService {
-    /// `<home>/.claude/skills/managed` (or `.codex`). Pure.
-    static func managedDirectory(for tool: SkillTool, home: URL) -> URL {
+    // MARK: - Paths
+
+    /// The folder the tool scans, e.g. `<home>/.claude/skills`.
+    static func skillsRoot(for tool: SkillTool, home: URL) -> URL {
         home.appendingPathComponent(tool.homeSubdir, isDirectory: true)
             .appendingPathComponent("skills", isDirectory: true)
-            .appendingPathComponent("managed", isDirectory: true)
     }
 
-    /// The `Authorization` header git should send for `token`. Passed via
-    /// `-c http.extraHeader=...` so the token never lands in `.git/config`
-    /// or the remote URL. GitHub accepts any username with the PAT as the
-    /// password; `x-access-token` matches the header GitHub Actions injects.
+    /// Hidden sibling holding the cloned repo, e.g. `<home>/.claude/skills-managed`.
+    static func managedRepoDir(for tool: SkillTool, home: URL) -> URL {
+        home.appendingPathComponent(tool.homeSubdir, isDirectory: true)
+            .appendingPathComponent("skills-managed", isDirectory: true)
+    }
+
+    /// Manifest of the link names we created (so re-syncs clean up only ours).
+    static func linksManifestPath(for tool: SkillTool, home: URL) -> URL {
+        home.appendingPathComponent(tool.homeSubdir, isDirectory: true)
+            .appendingPathComponent(".bmad-skill-links.json")
+    }
+
+    /// The pre-link layout this feature shipped with first (a buried clone under
+    /// `skills/managed`), cleaned up on the next sync.
+    static func legacyManagedDir(for tool: SkillTool, home: URL) -> URL {
+        skillsRoot(for: tool, home: home).appendingPathComponent("managed", isDirectory: true)
+    }
+
+    // MARK: - Git command builders (pure)
+
+    /// The `Authorization` header git should send for `token`, passed via
+    /// `-c http.extraHeader=...` so the token never lands in `.git/config`.
     static func authHeader(token: String) -> String {
         let creds = "x-access-token:\(token)"
         return "AUTHORIZATION: basic \(Data(creds.utf8).base64EncodedString())"
@@ -73,9 +98,7 @@ enum SkillsSyncService {
         ].joined(separator: " ")
     }
 
-    /// Shell command (run with cwd = managed dir) that hard-updates an
-    /// existing clone to the latest tip. `FETCH_HEAD` (not `origin/<branch>`)
-    /// so it works even if the configured branch changed since the clone.
+    /// Shell command (cwd = clone dir) that hard-updates to the latest tip.
     static func updateCommand(branch: String, header: String) -> String {
         let fetch = [
             "git",
@@ -85,16 +108,91 @@ enum SkillsSyncService {
         return "\(fetch) && git reset --hard FETCH_HEAD"
     }
 
-    /// POSIX single-quote quoting (end-quote / escape / re-open) — mirrors
-    /// `TerminalLauncher`'s quoting so interpolated paths/branches reach zsh
-    /// verbatim.
+    /// POSIX single-quote quoting (end-quote / escape / re-open).
     static func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    /// Clone or hard-update the skills repo for `tool`, running git via
-    /// `runCommand` (which streams output into the command panel). Throws on
-    /// missing config or a non-zero git exit.
+    // MARK: - Skill discovery & link reconciliation
+
+    /// Immediate child directories of `repo` containing a `SKILL.md`, sorted.
+    /// Hidden entries (incl. `.git`) are skipped.
+    static func discoverSkills(in repo: URL, fileManager: FileManager = .default) -> [String] {
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: repo,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        var names: [String] = []
+        for entry in entries {
+            let isDir = (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            let hasSkill = fileManager.fileExists(
+                atPath: entry.appendingPathComponent("SKILL.md").path
+            )
+            if isDir && hasSkill { names.append(entry.lastPathComponent) }
+        }
+        return names.sorted()
+    }
+
+    /// Brings `skillsRoot` in sync with the skills in `managedRepo`: removes the
+    /// links we made last time, then links every current skill — skipping any
+    /// name occupied by a real personal skill. Records what we own in `manifest`.
+    @discardableResult
+    static func reconcileLinks(
+        skillsRoot: URL,
+        managedRepo: URL,
+        manifestPath: URL,
+        fileManager: FileManager = .default
+    ) throws -> LinkSummary {
+        try fileManager.createDirectory(at: skillsRoot, withIntermediateDirectories: true)
+
+        let previous = readManifest(manifestPath)
+        let repoSkills = discoverSkills(in: managedRepo, fileManager: fileManager)
+
+        // Remove every link we created last sync (clean slate). Only touch
+        // entries that are actually symlinks — never a real dir.
+        for name in previous {
+            let link = skillsRoot.appendingPathComponent(name)
+            if isSymlink(link, fileManager: fileManager) {
+                try? fileManager.removeItem(at: link)
+            }
+        }
+        let removed = previous.filter { !repoSkills.contains($0) }
+
+        var linked: [String] = []
+        var skipped: [String] = []
+        for name in repoSkills {
+            let link = skillsRoot.appendingPathComponent(name)
+            if entryExists(link, fileManager: fileManager) {
+                // Occupied after clearing our own links. Reclaim a dangling
+                // leftover link (no real skill behind it); otherwise it's a
+                // personal skill — leave it untouched.
+                let hasSkill = fileManager.fileExists(
+                    atPath: link.appendingPathComponent("SKILL.md").path
+                )
+                if isSymlink(link, fileManager: fileManager) && !hasSkill {
+                    try? fileManager.removeItem(at: link)
+                } else {
+                    skipped.append(name)
+                    continue
+                }
+            }
+            try fileManager.createSymbolicLink(
+                at: link,
+                withDestinationURL: managedRepo.appendingPathComponent(name)
+            )
+            linked.append(name)
+        }
+
+        try writeManifest(manifestPath, linked)
+        return LinkSummary(linked: linked, removed: removed, skipped: skipped)
+    }
+
+    // MARK: - Orchestration
+
+    /// Clone or hard-update the skills repo for `tool`, then link its skills
+    /// into the tool's skills folder. Throws on missing config or a non-zero
+    /// git exit. `runCommand` streams git output into the command panel.
     static func sync(
         tool: SkillTool,
         repoURL: String,
@@ -112,33 +210,78 @@ enum SkillsSyncService {
         let trimmedBranch = branch.trimmingCharacters(in: .whitespaces)
         let resolvedBranch = trimmedBranch.isEmpty ? "main" : trimmedBranch
         let header = authHeader(token: trimmedToken)
-        let managed = managedDirectory(for: tool, home: home)
+        let managedRepo = managedRepoDir(for: tool, home: home)
+        let skillsRoot = skillsRoot(for: tool, home: home)
+        let manifest = linksManifestPath(for: tool, home: home)
 
-        var isDir: ObjCBool = false
-        let gitDir = managed.appendingPathComponent(".git", isDirectory: true)
-        let isRepo = fileManager.fileExists(atPath: gitDir.path, isDirectory: &isDir) && isDir.boolValue
-
+        let isRepo = isDirectory(managedRepo.appendingPathComponent(".git"), fileManager: fileManager)
         let exit: Int32
         if isRepo {
-            exit = await runCommand(updateCommand(branch: resolvedBranch, header: header), managed)
+            exit = await runCommand(updateCommand(branch: resolvedBranch, header: header), managedRepo)
         } else {
-            // The managed dir is sync-owned: clear any leftover (non-repo)
-            // contents so the clone has a clean destination, then ensure the
-            // parent exists and clone into it.
-            if fileManager.fileExists(atPath: managed.path) {
-                try fileManager.removeItem(at: managed)
+            if entryExists(managedRepo, fileManager: fileManager) {
+                try fileManager.removeItem(at: managedRepo)
             }
-            let parent = managed.deletingLastPathComponent()
-            try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
+            try fileManager.createDirectory(
+                at: managedRepo.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             let command = cloneCommand(
                 repoURL: trimmedURL,
                 branch: resolvedBranch,
-                dest: managed,
+                dest: managedRepo,
                 header: header
             )
-            exit = await runCommand(command, parent)
+            exit = await runCommand(command, managedRepo.deletingLastPathComponent())
+        }
+        if exit != 0 { throw SkillsSyncError.gitFailed(exit) }
+
+        // Clean up the old buried-clone layout if present (links into it become
+        // dangling and are reclaimed by reconcileLinks).
+        let legacy = legacyManagedDir(for: tool, home: home)
+        if isDirectory(legacy, fileManager: fileManager) {
+            try? fileManager.removeItem(at: legacy)
         }
 
-        if exit != 0 { throw SkillsSyncError.gitFailed(exit) }
+        try reconcileLinks(
+            skillsRoot: skillsRoot,
+            managedRepo: managedRepo,
+            manifestPath: manifest,
+            fileManager: fileManager
+        )
+    }
+
+    // MARK: - Filesystem helpers
+
+    /// True if `url` is a symlink (lstat — does not follow). Real dirs are false.
+    static func isSymlink(_ url: URL, fileManager: FileManager = .default) -> Bool {
+        guard let attrs = try? fileManager.attributesOfItem(atPath: url.path) else { return false }
+        return (attrs[.type] as? FileAttributeType) == .typeSymbolicLink
+    }
+
+    /// True if anything exists at `url` (lstat — a dangling symlink counts).
+    static func entryExists(_ url: URL, fileManager: FileManager = .default) -> Bool {
+        (try? fileManager.attributesOfItem(atPath: url.path)) != nil
+    }
+
+    private static func isDirectory(_ url: URL, fileManager: FileManager) -> Bool {
+        var isDir: ObjCBool = false
+        return fileManager.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+    }
+
+    private struct LinkManifest: Codable {
+        var links: [String]
+    }
+
+    static func readManifest(_ url: URL) -> [String] {
+        guard let data = try? Data(contentsOf: url),
+              let manifest = try? JSONDecoder().decode(LinkManifest.self, from: data)
+        else { return [] }
+        return manifest.links
+    }
+
+    private static func writeManifest(_ url: URL, _ links: [String]) throws {
+        let data = try JSONEncoder().encode(LinkManifest(links: links))
+        try data.write(to: url)
     }
 }

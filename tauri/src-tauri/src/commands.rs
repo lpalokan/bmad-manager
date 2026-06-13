@@ -219,7 +219,6 @@ async fn run_skills_sync(
 ) -> CmdResult<()> {
     let home = dirs::home_dir()
         .ok_or_else(|| IpcError("Could not determine your home directory.".to_string()))?;
-    let managed = skills_sync::managed_dir(&home, tool);
     let git_exe = platform::resolve_git_path();
 
     let emit = move |event: OutputEvent| {
@@ -230,7 +229,8 @@ async fn run_skills_sync(
         &settings.skills_repo_url,
         &settings.skills_repo_branch,
         &token,
-        &managed,
+        &home,
+        tool,
         emit,
     )
     .await

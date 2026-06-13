@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use cucumber::{given, then, when};
 
 use bmad_manager_lib::models::AppSettings;
-use bmad_manager_lib::services::skills_sync::{auth_header, managed_dir, SkillTool};
+use bmad_manager_lib::services::skills_sync::{
+    auth_header, managed_repo_dir, skills_root, SkillTool,
+};
 
 use crate::support::TauriWorld;
 
@@ -15,17 +17,19 @@ fn tool_from(name: &str) -> SkillTool {
     }
 }
 
-#[when(regex = r#"^I compute the managed skills dir for "(.+)" under home "(.+)"$"#)]
-async fn compute_managed_dir(world: &mut TauriWorld, tool: String, home: String) {
-    world.last_managed_dir = Some(managed_dir(Path::new(&home), tool_from(&tool)));
+#[when(regex = r#"^I compute the skills root for "(.+)" under home "(.+)"$"#)]
+async fn compute_skills_root(world: &mut TauriWorld, tool: String, home: String) {
+    world.last_managed_dir = Some(skills_root(Path::new(&home), tool_from(&tool)));
 }
 
-#[then(regex = r#"^the managed skills dir is "(.+)"$"#)]
-async fn managed_dir_is(world: &mut TauriWorld, expected: String) {
-    let got = world
-        .last_managed_dir
-        .as_ref()
-        .expect("managed dir computed");
+#[when(regex = r#"^I compute the managed repo dir for "(.+)" under home "(.+)"$"#)]
+async fn compute_managed_repo(world: &mut TauriWorld, tool: String, home: String) {
+    world.last_managed_dir = Some(managed_repo_dir(Path::new(&home), tool_from(&tool)));
+}
+
+#[then(regex = r#"^the skills path is "(.+)"$"#)]
+async fn skills_path_is(world: &mut TauriWorld, expected: String) {
+    let got = world.last_managed_dir.as_ref().expect("path computed");
     // Compare as paths so the assertion is separator-insensitive on Windows.
     assert_eq!(got, &PathBuf::from(expected));
 }

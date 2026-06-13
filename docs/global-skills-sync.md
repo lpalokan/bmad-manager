@@ -23,21 +23,26 @@ This guide is in two parts:
 
 ## How it works (read this first)
 
-Each sync clones (or hard-updates) the repo into a **`managed/`** subfolder of
-your global skills directory:
+Claude Code and Codex only discover skills **one level deep** — a skill must be
+a direct child of the skills folder (`~/.claude/skills/<skill>/SKILL.md`). So a
+sync does two things: it clones the repo into a **hidden** folder the tool
+doesn't scan, then **links each skill** into the skills folder as a direct child
+(a junction on Windows, a symlink on macOS):
 
-| Tool        | Synced into                         |
-| ----------- | ----------------------------------- |
-| Claude Code | `~/.claude/skills/managed/`         |
-| Codex       | `~/.codex/skills/managed/`          |
+| Tool        | Repo cloned to (hidden)      | Skills linked into                 |
+| ----------- | ---------------------------- | ---------------------------------- |
+| Claude Code | `~/.claude/skills-managed/`  | `~/.claude/skills/<skill>/`        |
+| Codex       | `~/.codex/skills-managed/`   | `~/.codex/skills/<skill>/`         |
 
 Key points:
 
-- The **`managed/` folder is owned by the sync.** Every sync hard-resets it to
-  match the repo exactly, so **any local edits inside `managed/` are
-  discarded.** Treat it as read-only.
-- **Your personal skills are safe.** Anything directly under `~/.claude/skills/`
-  or `~/.codex/skills/` (i.e. *not* inside `managed/`) is never touched.
+- **The managed clone and its links are owned by the sync.** Each sync
+  hard-resets the clone to match the repo and re-links — any local edits to a
+  managed skill are discarded. Treat managed skills as read-only.
+- **Your personal skills are safe.** Real skill folders you created yourself are
+  never modified or removed. If a managed skill's name collides with one of your
+  personal skills, the sync **skips it and tells you** (it never overwrites
+  yours).
 - The two buttons are **independent** — click only the one for the tool you use.
 - The repo is **private**, so a sync authenticates with a read-only **GitHub
   token**, stored securely on the machine (macOS Keychain; Windows: a protected
@@ -225,8 +230,12 @@ The output panel shows git's own error. Common cases:
 
 Other notes:
 
-- **Lost local edits in `managed/`?** Expected — that folder is hard-reset on
-  every sync. Put personal skills *outside* `managed/`.
+- **Lost local edits to a managed skill?** Expected — managed skills are links
+  to the hard-reset clone. Keep your own skills as separate folders (any name a
+  managed skill doesn't use) and they're never touched.
+- **A managed skill didn't appear?** If its name matches a personal skill you
+  already have, the sync skips it (it won't overwrite yours) and says so in the
+  output panel. Rename one side to resolve.
 - **Changing the branch** in Settings and re-syncing switches the managed clone
   to that branch's latest commit.
 - **Rotating a token:** paste the new value and **Save token** again (it

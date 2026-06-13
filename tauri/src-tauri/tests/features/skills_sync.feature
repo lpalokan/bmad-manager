@@ -1,14 +1,14 @@
 Feature: Global skills repository sync
-  The pure helpers behind the "Sync to Claude Code / Codex" buttons —
-  managed-folder resolution, token-safe auth header, and settings persistence.
+  Pure helpers behind the "Sync to Claude Code / Codex" buttons: where the repo
+  is cloned, where skills are linked, token-safe auth, and settings persistence.
 
-  Scenario: managed dir for Claude Code lives under .claude
-    When I compute the managed skills dir for "claude" under home "/home/me"
-    Then the managed skills dir is "/home/me/.claude/skills/managed"
+  Scenario: Claude Code skills live under .claude/skills
+    When I compute the skills root for "claude" under home "/home/me"
+    Then the skills path is "/home/me/.claude/skills"
 
-  Scenario: managed dir for Codex lives under .codex
-    When I compute the managed skills dir for "codex" under home "/home/me"
-    Then the managed skills dir is "/home/me/.codex/skills/managed"
+  Scenario: the cloned repo lives in a hidden sibling, not under skills
+    When I compute the managed repo dir for "codex" under home "/home/me"
+    Then the skills path is "/home/me/.codex/skills-managed"
 
   Scenario: the auth header carries the token without leaking it
     When I build the skills auth header for token "ghp_supersecret"
