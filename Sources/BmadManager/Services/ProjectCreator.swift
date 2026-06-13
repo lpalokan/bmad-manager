@@ -51,6 +51,13 @@ struct ProjectCreator {
             }
         }
 
+        // bmad-method installs BMad's skills for Codex under `.agents/skills`
+        // (which Codex auto-discovers) but emits no Codex `AGENTS.md`, so Codex
+        // can't route BMad menu codes to the right skill. Write that routing
+        // into the project's AGENTS.md. Best-effort: a missing bridge file
+        // shouldn't fail an otherwise-successful project creation.
+        try? AgentsFileWriter.ensureBmadSection(in: projectURL)
+
         // Seed the company context only after the init command succeeded —
         // a failed init keeps the project folder for inspection (partial-
         // state policy) but should not look half-bootstrapped.
