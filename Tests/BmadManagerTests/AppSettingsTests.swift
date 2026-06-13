@@ -266,4 +266,52 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.codexLaunchMethod, .app)
         XCTAssertEqual(original, decoded)
     }
+
+    // MARK: - Skills sync (#40)
+
+    func testDefaultsHaveEmptySkillsRepoOnMainBranch() {
+        let defaults = AppSettings.defaults()
+        XCTAssertEqual(defaults.skillsRepoURL, "")
+        XCTAssertEqual(defaults.skillsRepoBranch, "main")
+    }
+
+    func testDecodesLegacySettingsWithoutSkillsFields() throws {
+        // Settings files written before the skills feature don't carry the
+        // fields — default to an unconfigured repo on `main` so loading
+        // never fails.
+        let legacy = """
+        {
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertEqual(decoded.skillsRepoURL, "")
+        XCTAssertEqual(decoded.skillsRepoBranch, "main")
+    }
+
+    func testCodableRoundTripPreservesSkillsFields() throws {
+        var original = AppSettings.defaults()
+        original.skillsRepoURL = "https://github.com/acme/bmad-skills"
+        original.skillsRepoBranch = "release"
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
+        XCTAssertEqual(decoded.skillsRepoURL, "https://github.com/acme/bmad-skills")
+        XCTAssertEqual(decoded.skillsRepoBranch, "release")
+        XCTAssertEqual(original, decoded)
+    }
+
+    func testSkillsRepoURLUsesPortableJSONKey() throws {
+        // The on-disk key must match the Tauri/Rust side ("skillsRepoUrl")
+        // so settings.json stays portable across platforms.
+        var original = AppSettings.defaults()
+        original.skillsRepoURL = "https://github.com/acme/bmad-skills"
+        let encoded = try JSONEncoder().encode(original)
+        let json = String(data: encoded, encoding: .utf8)!
+        XCTAssertTrue(json.contains("\"skillsRepoUrl\""),
+                      "expected portable camelCase key skillsRepoUrl, got \(json)")
+    }
 }
