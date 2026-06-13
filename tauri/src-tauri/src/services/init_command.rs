@@ -24,6 +24,65 @@ pub fn substitute(
     s
 }
 
+/// Builds the value for the init command's `--custom-source` argument.
+///
+/// `bmad-method`'s custom-source parser only recognises a *local* path when it
+/// starts with `/`, `./`, `../`, or `~` (see `custom-module-manager.js`). A
+/// Windows drive-absolute path like `C:\…\Temp\mod` matches none of those,
+/// falls through every branch, and fails with "Not a valid Git URL or local
+/// path" — so the module is silently never applied. POSIX absolute paths
+/// already start with `/`, so they pass straight through.
+///
+/// On Windows we therefore express the module directory as a forward-slash
+/// path *relative to the project directory* (which is the install's cwd, so
+/// `bmad-method`'s `path.resolve` reconstructs the correct absolute path).
+/// When the module and project live on different drives no lexical relative
+/// path exists, so we fall back to the absolute path — no worse than today.
+pub fn custom_source_arg(module_path: &str, project_path: &str, windows: bool) -> String {
+    if !windows {
+        return module_path.to_string();
+    }
+    relative_path_windows(project_path, module_path).unwrap_or_else(|| module_path.to_string())
+}
+
+/// Lexical (no filesystem access) relative path from `from` to `to`, using
+/// forward slashes and a `./`/`../` prefix. Returns `None` when the two paths
+/// are on different drives. Case-insensitive segment comparison matches
+/// Windows semantics — and survives 8.3 short names (`LAURIP~1`) round-tripping
+/// through `path.resolve` because both ends are treated lexically.
+fn relative_path_windows(from: &str, to: &str) -> Option<String> {
+    let split = |s: &str| -> Vec<String> {
+        s.split(['\\', '/'])
+            .filter(|p| !p.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+    let from_parts = split(from);
+    let to_parts = split(to);
+    if !from_parts.first()?.eq_ignore_ascii_case(to_parts.first()?) {
+        return None; // different drive — no lexical relative path
+    }
+    let mut common = 0;
+    while common < from_parts.len()
+        && common < to_parts.len()
+        && from_parts[common].eq_ignore_ascii_case(&to_parts[common])
+    {
+        common += 1;
+    }
+    let ups = from_parts.len() - common;
+    let mut segments: Vec<String> = vec!["..".to_string(); ups];
+    segments.extend(to_parts[common..].iter().cloned());
+    if segments.is_empty() {
+        return Some("./".to_string());
+    }
+    let joined = segments.join("/");
+    if joined.starts_with("..") {
+        Some(joined)
+    } else {
+        Some(format!("./{joined}"))
+    }
+}
+
 /// POSIX shell quoting using the standard end-quote / escape / re-open
 /// trick for embedded single quotes. Mirrors `TerminalLauncher.shellQuote`
 /// in the Swift app so `cd <quoted>` reaches the same shell verbatim.
@@ -97,5 +156,40 @@ mod tests {
     #[test]
     fn posix_shell_quote_embedded_single_quote() {
         assert_eq!(posix_shell_quote("foo'bar"), "'foo'\\''bar'");
+    }
+
+    #[test]
+    fn custom_source_posix_passes_absolute_path_through() {
+        assert_eq!(
+            custom_source_arg("/var/folders/x/bmad-mod", "/Users/me/Projects/demo", false),
+            "/var/folders/x/bmad-mod"
+        );
+    }
+
+    #[test]
+    fn custom_source_windows_same_drive_becomes_forward_slash_relative() {
+        // Mirrors the real failure: 8.3 temp dir vs long-named project dir.
+        let arg = custom_source_arg(
+            r"C:\Users\LAURIP~1\AppData\Local\Temp\bmad-mod",
+            r"C:\Users\LauriPalokangas\Projects\demo",
+            true,
+        );
+        assert_eq!(arg, "../../../LAURIP~1/AppData/Local/Temp/bmad-mod");
+    }
+
+    #[test]
+    fn custom_source_windows_module_under_project_is_dot_relative() {
+        let arg = custom_source_arg(
+            r"C:\Users\me\Projects\demo\.bmad-src",
+            r"C:\Users\me\Projects\demo",
+            true,
+        );
+        assert_eq!(arg, "./.bmad-src");
+    }
+
+    #[test]
+    fn custom_source_windows_different_drive_falls_back_to_absolute() {
+        let abs = r"D:\Temp\bmad-mod";
+        assert_eq!(custom_source_arg(abs, r"C:\Users\me\Projects\demo", true), abs);
     }
 }

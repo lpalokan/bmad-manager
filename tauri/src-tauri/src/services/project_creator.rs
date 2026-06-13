@@ -82,14 +82,21 @@ where
         ),
     );
 
+    // `bmad-method`'s `--custom-source` rejects Windows drive-absolute paths;
+    // hand it a project-relative path it can resolve instead (no-op on POSIX).
+    let module_arg = init_command::custom_source_arg(
+        &module_root_path.to_string_lossy(),
+        &project_path.to_string_lossy(),
+        cfg!(target_os = "windows"),
+    );
     let command = init_command::substitute(
         &settings.init_command,
         name,
         &project_path.to_string_lossy(),
-        &module_root_path.to_string_lossy(),
+        &module_arg,
         cfg!(target_os = "windows"),
     );
-    emit_diag(&mut on_event, format!("init_command={command}"));
+    emit_diag(&mut on_event, format!("custom_source_arg={module_arg} init_command={command}"));
 
     let exit_code = command_runner::run(&command, &project_path, &mut on_event).await;
     emit_diag(&mut on_event, format!("init_command exit_code={exit_code}"));
