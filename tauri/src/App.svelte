@@ -46,6 +46,11 @@
           lastExitCode = payload.code;
         }
       });
+      // Projects can change on disk while the app is backgrounded — created
+      // in a terminal, deleted in Explorer, or left behind by a partially
+      // failed create. Re-scan whenever the window regains focus so the list
+      // reflects reality without forcing a restart.
+      window.addEventListener("focus", refresh);
     } catch (err) {
       errorMessage = `Failed to load settings: ${err}`;
     }
@@ -53,6 +58,7 @@
 
   onDestroy(() => {
     if (unlisten) unlisten();
+    window.removeEventListener("focus", refresh);
   });
 
   async function refresh() {
@@ -89,11 +95,14 @@
       // Reset to scratch so the next creation doesn't silently inherit
       // the previous selection.
       selectedContextDir = "";
-      await refresh();
     } catch (err) {
       errorMessage = `Create failed: ${err}`;
     } finally {
       isCreating = false;
+      // Refresh regardless of outcome: a create that fails partway (e.g. the
+      // install succeeds but seeding the company context throws) still leaves
+      // the project folder on disk, so it must show up in the list.
+      await refresh();
     }
   }
 
@@ -180,6 +189,15 @@
   <header class="header" data-testid="header">
     <h1>BMad Manager</h1>
     <div class="header-actions">
+      <button
+        class="icon-btn"
+        title="Refresh projects"
+        aria-label="Refresh projects"
+        data-testid="refresh-projects"
+        onclick={refresh}
+      >
+        ⟳
+      </button>
       <button
         class="icon-btn"
         title={showOutput ? "Hide output" : "Show output"}
