@@ -25,6 +25,7 @@ export interface AppSettings {
   claudeCommand: string;
   opencodeCommand: string;
   piCommand: string;
+  codexCommand: string;
   projectSortOrder: ProjectSortOrder;
   terminalKind: TerminalKind;
 }
@@ -35,10 +36,40 @@ export interface ProjectItem {
   createdAt: number | null;
 }
 
+// Mirror of models/company_context.rs — RECOGNIZED_FILE_NAMES.
+export const recognizedContextFileNames = [
+  "icp.md",
+  "positioning.md",
+  "brand-voice.md",
+  "kpis.md",
+  "tech-stack.md",
+] as const;
+
+export interface CompanyContext {
+  projectName: string;
+  directory: string;
+  files: string[];
+}
+
+// Mirror of CompanyContext::display_name() in Rust: the source project
+// name, with a hint appended when the context is missing some of the
+// recognized files.
+export function companyContextDisplayName(context: CompanyContext): string {
+  const total = recognizedContextFileNames.length;
+  return context.files.length === total
+    ? context.projectName
+    : `${context.projectName} (${context.files.length} of ${total} context files)`;
+}
+
 export type OutputEvent =
   | { kind: "stdout"; line: string }
   | { kind: "stderr"; line: string }
   | { kind: "exit"; code: number };
+
+export interface BundledTooling {
+  nodeVersion: string | null;
+  gitVersion: string | null;
+}
 
 export const projectSortOrderOptions: { value: ProjectSortOrder; label: string }[] = [
   { value: "nameAscending", label: "Name (A→Z)" },

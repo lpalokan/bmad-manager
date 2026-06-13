@@ -17,6 +17,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(defaults.claudeCommand, "claude")
         XCTAssertEqual(defaults.opencodeCommand, "opencode")
         XCTAssertEqual(defaults.piCommand, "pi")
+        XCTAssertEqual(defaults.codexCommand, "codex")
         XCTAssertEqual(defaults.projectSortOrder, .nameAscending)
         XCTAssertEqual(defaults.terminalKind, .terminal)
     }
@@ -41,6 +42,30 @@ final class AppSettingsTests: XCTestCase {
         let encoded = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
         XCTAssertEqual(decoded.piCommand, "/opt/pi/bin/pi")
+        XCTAssertEqual(original, decoded)
+    }
+
+    func testDecodesLegacySettingsWithoutCodexCommand() throws {
+        let legacy = """
+        {
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode",
+            "piCommand": "pi"
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertEqual(decoded.codexCommand, "codex")
+    }
+
+    func testCodableRoundTripPreservesCodexCommand() throws {
+        var original = AppSettings.defaults()
+        original.codexCommand = "/opt/codex/bin/codex"
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
+        XCTAssertEqual(decoded.codexCommand, "/opt/codex/bin/codex")
         XCTAssertEqual(original, decoded)
     }
 
@@ -117,6 +142,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(command.contains("claude-code"))
         XCTAssertTrue(command.contains("opencode"))
         XCTAssertTrue(command.contains("pi"))
+        XCTAssertTrue(command.contains("codex"))
         XCTAssertTrue(command.contains("--custom-source"),
                       "marketing-growth module must register via --custom-source")
         XCTAssertTrue(command.contains("--directory"),
@@ -201,6 +227,43 @@ final class AppSettingsTests: XCTestCase {
         let encoded = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
         XCTAssertEqual(decoded.terminalKind, .iterm2)
+        XCTAssertEqual(original, decoded)
+    }
+
+    func testDefaultsPreferAppLaunchForClaudeAndCodex() {
+        let defaults = AppSettings.defaults()
+        XCTAssertEqual(defaults.claudeLaunchMethod, .auto)
+        XCTAssertEqual(defaults.codexLaunchMethod, .auto)
+    }
+
+    func testDecodesLegacySettingsWithoutLaunchMethods() throws {
+        // Settings files written before the App-vs-CLI picker don't carry
+        // the launch-method fields. The decoder must fall back to .auto so
+        // upgrading users get the prefer-app behaviour without a load error.
+        let legacy = """
+        {
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode",
+            "piCommand": "pi",
+            "codexCommand": "codex"
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertEqual(decoded.claudeLaunchMethod, .auto)
+        XCTAssertEqual(decoded.codexLaunchMethod, .auto)
+    }
+
+    func testCodableRoundTripPreservesLaunchMethods() throws {
+        var original = AppSettings.defaults()
+        original.claudeLaunchMethod = .cli
+        original.codexLaunchMethod = .app
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
+        XCTAssertEqual(decoded.claudeLaunchMethod, .cli)
+        XCTAssertEqual(decoded.codexLaunchMethod, .app)
         XCTAssertEqual(original, decoded)
     }
 }

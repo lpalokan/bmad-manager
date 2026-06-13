@@ -18,6 +18,10 @@ pub fn launch_terminal(_path: &Path, _command: &str, _kind: TerminalKind) -> Res
     unimplemented!("platform::stub::launch_terminal — not implemented on this OS")
 }
 
+pub fn open_folder(_path: &Path) -> Result<(), String> {
+    unimplemented!("platform::stub::open_folder — not implemented on this OS")
+}
+
 pub fn settings_dir() -> PathBuf {
     dirs::config_dir()
         .map(|d| d.join("bmad-manager"))
@@ -28,8 +32,24 @@ pub fn resolve_npx_path() -> PathBuf {
     PathBuf::from("npx")
 }
 
+pub fn resolve_node_path() -> PathBuf {
+    PathBuf::from("node")
+}
+
 pub fn resolve_git_path() -> PathBuf {
     PathBuf::from("git")
+}
+
+pub fn resolve_bundled_npm_cache_path() -> Option<PathBuf> {
+    // No bundled resources on non-target platforms; the seeder treats
+    // this as a silent no-op so the unit tests pass on Linux CI.
+    None
+}
+
+pub fn user_npm_cache_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .map(|d| d.join("bmad-manager").join("npm-cache"))
+        .unwrap_or_else(|| PathBuf::from("bmad-manager").join("npm-cache"))
 }
 
 pub fn augmented_path() -> OsString {

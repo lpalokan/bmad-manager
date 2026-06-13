@@ -26,6 +26,7 @@ final class ProjectCoordinator: ObservableObject {
     private let contextService: CompanyContextService
     private let projectCreator: ProjectCreator
     private let terminalLauncher: any TerminalLauncherProtocol
+    private let appLauncher: any AppLauncherProtocol
 
     // MARK: - Init
 
@@ -36,8 +37,10 @@ final class ProjectCoordinator: ObservableObject {
     /// writes to. Capturing them here would re-introduce the
     /// `@StateObject` init-dance drift that caused the Terminal-vs-iTerm2,
     /// projects-root-doesn't-reindex, and empty-output-panel bugs.
-    init(terminalLauncher: any TerminalLauncherProtocol = DefaultTerminalLauncher()) {
+    init(terminalLauncher: any TerminalLauncherProtocol = DefaultTerminalLauncher(),
+         appLauncher: any AppLauncherProtocol = DefaultAppLauncher()) {
         self.terminalLauncher = terminalLauncher
+        self.appLauncher = appLauncher
 
         let projectService = ProjectService()
         let contextService = CompanyContextService()
@@ -136,6 +139,39 @@ final class ProjectCoordinator: ObservableObject {
             )
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Launches `agent` for `project`, honouring the user's per-agent
+    /// [[AgentLaunchMethod]]: open the desktop app or run the CLI in the
+    /// terminal.
+    ///
+    /// `appInstalled` is supplied by the caller (the View queries
+    /// [[AppDetector]] at click time) rather than read here, so the
+    /// coordinator stays free of `NSWorkspace` and the resolution policy
+    /// is unit-testable. `command` and `kind` are threaded through for the
+    /// CLI path for the same no-stale-store reason as `openInTerminal`.
+    func openAgent(
+        project: ProjectItem,
+        agent: AgentApp,
+        method: AgentLaunchMethod,
+        appInstalled: Bool,
+        command: String,
+        kind: TerminalKind
+    ) {
+        switch AgentLaunchResolver.resolve(method: method, appInstalled: appInstalled) {
+        case .app:
+            do {
+                try appLauncher.open(
+                    bundleIdentifier: agent.bundleIdentifier,
+                    projectPath: project.url.path
+                )
+                errorMessage = nil
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        case .cli:
+            openInTerminal(project: project, command: command, kind: kind)
         }
     }
 }

@@ -7,11 +7,11 @@ A small macOS app that creates new project folders pre-configured with the
 [BMad method](https://github.com/bmadcode/bmad-method) for Claude Code and
 opencode, and installs a custom "marketing growth" module on top.
 
-A Windows port via Tauri is in progress under [`tauri/`](tauri/) —
-see [issue #25](https://github.com/lpalokan/bmad-manager/issues/25) for the
-shipping plan. Stages 1 (scaffold) and 2 (Rust ports + Svelte UI) have
-landed on `main`; Stage 3 will bundle Node + PortableGit into a single
-NSIS installer and ship a GitHub Release.
+A Windows port via Tauri lives under [`tauri/`](tauri/) — see
+[issue #25](https://github.com/lpalokan/bmad-manager/issues/25) for the
+shipping plan. All three stages (scaffold, Rust services + Svelte UI,
+bundled Node + PortableGit installer) have landed; the Windows build
+ships as a single double-click `.exe` with Node and Git bundled inside.
 
 The UI is intentionally tiny:
 
@@ -36,7 +36,7 @@ The UI is intentionally tiny:
 - A **Sort** menu above the list reorders projects by name (A→Z) or by
   creation date (newest or oldest first). The choice is persisted.
 
-## Install via Homebrew (recommended)
+## Install via Homebrew (recommended, macOS)
 
 ```
 brew install --cask lpalokan/tap/bmad-manager
@@ -54,7 +54,37 @@ required either way.
 
 Manual DMG install below still works if you prefer it.
 
-## End-user install
+## End-user install (Windows)
+
+You receive **`BmadManager-windows-x64-<sha>.exe`** from the developer (a
+download link to a GitHub Releases asset, or a direct upload of the
+workflow artifact produced by `.github/workflows/tauri-windows.yml`).
+
+1. **Unblock the download.** Right-click the `.exe` → **Properties** →
+   tick **Unblock** at the bottom → **OK**. Windows marks files
+   downloaded from the internet so SmartScreen can warn about them;
+   unblocking up-front skips that warning at install time.
+2. **Run the installer.** Double-click it. The installer is per-user
+   (no UAC prompt, no admin needed) and lands the app under
+   `%LOCALAPPDATA%\Programs\BMad Manager\`.
+3. **First launch.** If SmartScreen still warns (it sometimes does for
+   newly-signed binaries), click **More info → Run anyway**. This is a
+   one-time dismissal — Windows remembers the choice.
+4. **Set your projects folder** in Settings, then type a name and click
+   **Create new project**. The bundled Node and Git mean you don't need
+   to install anything else — `npx bmad-method install` runs inside the
+   app's sandbox using the pre-warmed npm cache.
+
+Settings shows the bundled Node and Git versions under "Bundled tooling"
+so you can answer "what version is this running?" without digging into
+AppData. Configuration is persisted at `%APPDATA%\bmad-manager\settings.json`.
+
+> **Heads-up:** If your Windows machine is managed by corporate IT
+> (Intune / AppLocker / Defender for Endpoint), the unsigned installer
+> may be blocked outright with no override. The colleagues this tool is
+> built for are running personal Windows machines.
+
+## End-user install (macOS, manual DMG)
 
 You receive **`bmad-manager.dmg`** from the developer.
 
@@ -124,22 +154,23 @@ To iterate while developing without producing the DMG:
 swift run
 ```
 
-### Windows build (Tauri, in progress)
+### Windows build (Tauri)
 
-The Windows port lives under [`tauri/`](tauri/) and is being built in three
-stages tracked by [issue #25](https://github.com/lpalokan/bmad-manager/issues/25):
+The Windows port lives under [`tauri/`](tauri/). The CI workflow
+`.github/workflows/tauri-windows.yml` runs on `windows-latest`,
+downloads portable Node and PortableGit at build time, pre-warms the
+`bmad-method` npm cache, runs `pnpm tauri build`, and uploads the NSIS
+installer as a workflow artifact named
+`BmadManager-windows-x64-<sha>.exe`. Tagging a commit with
+`windows-v*` (e.g. `windows-v0.1.0`) additionally publishes a GitHub
+Release with the installer attached.
 
-1. **Stage 1 — scaffold** *(done)*: Tauri + Svelte project, platform module
-   skeleton, BDD harnesses, Windows `cargo check` CI.
-2. **Stage 2 — services + UI** *(current)*: Rust ports of `SettingsStore`,
-   `ProjectService`, both `ModuleSource` adapters, `CommandRunner`,
-   `ProjectCreator`; the full `platform::windows` arm; Svelte UI components
-   driving them via Tauri commands.
-3. **Stage 3 — bundle + release**: portable Node + PortableGit baked into the
-   NSIS installer, pre-warmed `bmad-method` npm cache, GitHub Release workflow.
+To bump the bundled Node or PortableGit version, edit
+`NODE_VERSION` / `GIT_FOR_WINDOWS_VERSION` in
+`.github/workflows/tauri-windows.yml` and re-run the workflow.
 
-See [`tauri/README.md`](tauri/README.md) for prerequisites and developer
-commands. End-user Windows install instructions land with Stage 3.
+See [`tauri/README.md`](tauri/README.md) for the local dev loop on
+Windows or macOS, and for the layout of the Rust + Svelte tree.
 
 ### Signed + notarized releases (optional)
 

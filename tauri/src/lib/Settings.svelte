@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { detectCommandInPath, saveSettings } from "./commands";
+  import { defaultSettings, detectCommandInPath, getBundledTooling, saveSettings } from "./commands";
   import {
     moduleSourceOptions,
     terminalOptions,
     type AppSettings,
+    type BundledTooling,
   } from "./types";
 
   interface Props {
@@ -20,17 +22,28 @@
   let draft: AppSettings = $state({ ...settings });
   let saving = $state(false);
   let saveError: string | null = $state(null);
+  let bundled: BundledTooling | null = $state(null);
+  let bundledError: string | null = $state(null);
+
+  onMount(async () => {
+    try {
+      bundled = await getBundledTooling();
+    } catch (err) {
+      bundledError = String(err);
+    }
+  });
 
   // Per-agent PATH-detection results. `null` = unknown / pending,
   // a string = resolved absolute path, `false` = checked and not found.
   type Detection = string | false | null;
-  let detections: Record<"claude" | "opencode" | "pi", Detection> = $state({
+  let detections: Record<"claude" | "opencode" | "pi" | "codex", Detection> = $state({
     claude: null,
     opencode: null,
     pi: null,
+    codex: null,
   });
 
-  async function detect(which: "claude" | "opencode" | "pi", command: string) {
+  async function detect(which: "claude" | "opencode" | "pi" | "codex", command: string) {
     detections[which] = null;
     const trimmed = command.trim();
     if (!trimmed) {
@@ -54,8 +67,14 @@
   $effect(() => {
     detect("pi", draft.piCommand);
   });
+  $effect(() => {
+    detect("codex", draft.codexCommand);
+  });
 
-  async function browseForAgent(which: "claude" | "opencode" | "pi", label: string) {
+  async function browseForAgent(
+    which: "claude" | "opencode" | "pi" | "codex",
+    label: string,
+  ) {
     const picked = await open({
       multiple: false,
       title: `Choose ${label} executable`,
@@ -63,7 +82,8 @@
     if (typeof picked === "string") {
       if (which === "claude") draft.claudeCommand = picked;
       else if (which === "opencode") draft.opencodeCommand = picked;
-      else draft.piCommand = picked;
+      else if (which === "pi") draft.piCommand = picked;
+      else draft.codexCommand = picked;
     }
   }
 
@@ -103,7 +123,7 @@
     }
   }
 
-  function resetToDefaults() {
+  async function resetToDefaults() {
     if (
       !confirm(
         "Reset all settings to defaults? Your projects folder and any customised commands will be wiped.",
@@ -111,9 +131,16 @@
     ) {
       return;
     }
-    // The defaults() helper lives in Rust; reload from the IPC instead of
-    // duplicating them here.
-    onClose();
+    // The defaults() helper lives in Rust; load them via the IPC rather than
+    // duplicating them here. We populate the draft (not the persisted file)
+    // so the user can review the restored configuration and Save with "Done"
+    // — or cancel out without having clobbered anything.
+    saveError = null;
+    try {
+      draft = await defaultSettings();
+    } catch (err) {
+      saveError = String(err);
+    }
   }
 </script>
 
@@ -267,6 +294,68 @@
         {:else}
           <p class="hint detected">Detected at <code>{detections.pi}</code></p>
         {/if}
+      </div>
+      <div>
+        <label class="lbl" for="codex-cmd">Codex command</label>
+        <div class="row">
+          <input id="codex-cmd" type="text" bind:value={draft.codexCommand} />
+          <button type="button" onclick={() => browseForAgent("codex", "Codex")}>
+            Browse…
+          </button>
+        </div>
+        {#if detections.codex === null}
+          <p class="hint">Checking PATH…</p>
+        {:else if detections.codex === false}
+          <p class="hint not-found">
+            Not found on PATH. Use <strong>Browse…</strong> to point at the binary.
+          </p>
+        {:else}
+          <p class="hint detected">Detected at <code>{detections.codex}</code></p>
+        {/if}
+      </div>
+    </section>
+
+    <section data-testid="bundled-tooling">
+      <span class="lbl">Bundled tooling</span>
+      <div class="bundled">
+        {#if bundledError}
+          <p class="hint">Couldn't read bundled versions: {bundledError}</p>
+        {:else if bundled}
+          <dl>
+            <dt>Node</dt>
+            <dd>{bundled.nodeVersion ?? "not bundled (uses system node)"}</dd>
+            <dt>Git</dt>
+            <dd>{bundled.gitVersion ?? "not bundled (uses system git)"}</dd>
+          </dl>
+        {:else}
+          <p class="hint">Reading versions…</p>
+        {/if}
+        <p class="hint">
+          Read-only. These ship inside the installer so end users don't
+          need to install Node or Git separately.
+        </p>
+      </div>
+    </section>
+
+    <section data-testid="bundled-tooling">
+      <span class="lbl">Bundled tooling</span>
+      <div class="bundled">
+        {#if bundledError}
+          <p class="hint">Couldn't read bundled versions: {bundledError}</p>
+        {:else if bundled}
+          <dl>
+            <dt>Node</dt>
+            <dd>{bundled.nodeVersion ?? "not bundled (uses system node)"}</dd>
+            <dt>Git</dt>
+            <dd>{bundled.gitVersion ?? "not bundled (uses system git)"}</dd>
+          </dl>
+        {:else}
+          <p class="hint">Reading versions…</p>
+        {/if}
+        <p class="hint">
+          Read-only. These ship inside the installer so end users don't
+          need to install Node or Git separately.
+        </p>
       </div>
     </section>
 
@@ -457,5 +546,22 @@
   .reset {
     color: #b91d1d;
     border-color: rgba(180, 30, 30, 0.4);
+  }
+
+  .bundled dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 2px 12px;
+    font-size: 12px;
+  }
+
+  .bundled dt {
+    font-weight: 600;
+  }
+
+  .bundled dd {
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 </style>

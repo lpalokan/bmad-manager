@@ -17,6 +17,10 @@ pub fn launch_terminal(_path: &Path, _command: &str, _kind: TerminalKind) -> Res
     unimplemented!("platform::macos::launch_terminal — future macOS unification milestone")
 }
 
+pub fn open_folder(_path: &Path) -> Result<(), String> {
+    unimplemented!("platform::macos::open_folder — future macOS unification milestone")
+}
+
 pub fn settings_dir() -> PathBuf {
     unimplemented!("platform::macos::settings_dir — future macOS unification milestone")
 }
@@ -25,8 +29,22 @@ pub fn resolve_npx_path() -> PathBuf {
     unimplemented!("platform::macos::resolve_npx_path — future macOS unification milestone")
 }
 
+pub fn resolve_node_path() -> PathBuf {
+    unimplemented!("platform::macos::resolve_node_path — future macOS unification milestone")
+}
+
 pub fn resolve_git_path() -> PathBuf {
     unimplemented!("platform::macos::resolve_git_path — future macOS unification milestone")
+}
+
+pub fn resolve_bundled_npm_cache_path() -> Option<PathBuf> {
+    unimplemented!(
+        "platform::macos::resolve_bundled_npm_cache_path — future macOS unification milestone"
+    )
+}
+
+pub fn user_npm_cache_dir() -> PathBuf {
+    unimplemented!("platform::macos::user_npm_cache_dir — future macOS unification milestone")
 }
 
 pub fn augmented_path() -> OsString {

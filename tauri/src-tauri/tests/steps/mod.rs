@@ -1,4 +1,7 @@
+pub mod bundled_tooling;
+pub mod company_context;
 pub mod init_command;
+pub mod open_folder;
 pub mod path_detection;
 pub mod project_service;
 pub mod settings;

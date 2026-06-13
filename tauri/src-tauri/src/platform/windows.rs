@@ -83,6 +83,17 @@ fn spawn_cmd(path: &Path, command: &str) -> std::io::Result<()> {
         .map(|_| ())
 }
 
+/// Reveal `path` in Windows Explorer. Explorer's exit code is unreliable
+/// (it often returns 1 even on success), so — like the terminal launchers —
+/// we only surface failures to *spawn* the process, not its exit status.
+pub fn open_folder(path: &Path) -> Result<(), String> {
+    Command::new("explorer.exe")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 /// `%APPDATA%\bmad-manager` — the user's roaming config directory.
 pub fn settings_dir() -> PathBuf {
     dirs::config_dir()
@@ -99,10 +110,35 @@ pub fn resolve_npx_path() -> PathBuf {
     bundled_resource("node-portable/npx.cmd").unwrap_or_else(|| PathBuf::from("npx.cmd"))
 }
 
+/// Absolute path to the bundled portable Node's `node.exe`, with the
+/// same dev-friendly fallback to whatever's on `PATH`. Used by the
+/// bundled-tooling version probe in the Settings dialog.
+pub fn resolve_node_path() -> PathBuf {
+    bundled_resource("node-portable/node.exe").unwrap_or_else(|| PathBuf::from("node.exe"))
+}
+
 /// Absolute path to bundled PortableGit's `cmd/git.exe`, with the same
 /// dev-friendly fallback to `git.exe` on `PATH`.
 pub fn resolve_git_path() -> PathBuf {
     bundled_resource("portable-git/cmd/git.exe").unwrap_or_else(|| PathBuf::from("git.exe"))
+}
+
+/// Absolute path to the pre-warmed npm cache shipped inside the
+/// installer's `resources/npm-cache/`. Returns `None` when no handle is
+/// registered yet or when the resource is missing in a dev build —
+/// callers (the startup seeder) treat that as a silent no-op.
+pub fn resolve_bundled_npm_cache_path() -> Option<PathBuf> {
+    bundled_resource("npm-cache")
+}
+
+/// User-writable npm cache location seeded from the bundled cache on
+/// first launch and used as `NPM_CONFIG_CACHE` for every spawned `npx`.
+/// `%LOCALAPPDATA%\bmad-manager\npm-cache` on Windows; a sensible
+/// per-user fallback elsewhere so the unit tests still work.
+pub fn user_npm_cache_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .map(|d| d.join("bmad-manager").join("npm-cache"))
+        .unwrap_or_else(|| PathBuf::from("bmad-manager").join("npm-cache"))
 }
 
 fn bundled_resource(relative: &str) -> Option<PathBuf> {
@@ -111,7 +147,28 @@ fn bundled_resource(relative: &str) -> Option<PathBuf> {
         .path()
         .resolve(relative, BaseDirectory::Resource)
         .ok()?;
-    resolved.exists().then_some(resolved)
+    // Tauri's path resolver runs the result through canonicalization,
+    // which on Windows tags the path with the `\\?\` verbatim prefix.
+    // That prefix is valid for raw Win32 file APIs but breaks when the
+    // path is used as a PATH entry, a command name, or inside a batch
+    // file (npx.cmd's `%~dp0` expansion + cmd.exe's `cd /D`). Strip it
+    // before handing the path to anything that goes through cmd.exe.
+    let normalized = strip_verbatim_prefix(&resolved);
+    normalized.exists().then_some(normalized)
+}
+
+/// Strip the Windows verbatim path prefix (`\\?\`) if present, mapping
+/// `\\?\UNC\server\share` back to its native `\\server\share` form
+/// along the way. Returns the input untouched when no prefix is found.
+fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    let as_str = path.as_os_str().to_string_lossy();
+    if let Some(rest) = as_str.strip_prefix(r"\\?\") {
+        if let Some(unc) = rest.strip_prefix("UNC\\") {
+            return PathBuf::from(format!(r"\\{unc}"));
+        }
+        return PathBuf::from(rest);
+    }
+    path.to_path_buf()
 }
 
 /// PATH value injected into spawned children: bundled-Node-bin first,
@@ -142,4 +199,40 @@ pub fn augmented_path() -> OsString {
         combined.push(&inherited);
     }
     combined
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_verbatim_prefix;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn strips_drive_letter_verbatim_prefix() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\C:\Users\Lauri\app\node.exe")),
+            PathBuf::from(r"C:\Users\Lauri\app\node.exe")
+        );
+    }
+
+    #[test]
+    fn is_identity_when_no_verbatim_prefix() {
+        let p = Path::new(r"C:\Users\Lauri\app\node.exe");
+        assert_eq!(strip_verbatim_prefix(p), p.to_path_buf());
+    }
+
+    #[test]
+    fn maps_unc_verbatim_back_to_native_unc() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\UNC\server\share\file.exe")),
+            PathBuf::from(r"\\server\share\file.exe")
+        );
+    }
+
+    #[test]
+    fn handles_path_with_spaces_intact() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\C:\Program Files\App\bin.exe")),
+            PathBuf::from(r"C:\Program Files\App\bin.exe")
+        );
+    }
 }

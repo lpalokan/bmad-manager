@@ -7,17 +7,23 @@
   import {
     createProject,
     deleteProject,
+    listCompanyContexts,
     listProjects,
     loadSettings,
     openInClaude,
+    openInCodex,
     openInOpencode,
     openInPi,
+    openProjectFolder,
     saveSettings,
   } from "./lib/commands";
-  import { projectSortOrderOptions, type AppSettings, type OutputEvent, type ProjectItem, type ProjectSortOrder } from "./lib/types";
+  import { companyContextDisplayName, projectSortOrderOptions, type AppSettings, type CompanyContext, type OutputEvent, type ProjectItem, type ProjectSortOrder } from "./lib/types";
 
   let settings: AppSettings | null = $state(null);
   let projects: ProjectItem[] = $state([]);
+  let contexts: CompanyContext[] = $state([]);
+  // Directory path of the selected seeding source; "" = start from scratch.
+  let selectedContextDir = $state("");
   let newProjectName = $state("");
   let isCreating = $state(false);
   let showSettings = $state(false);
@@ -40,6 +46,11 @@
           lastExitCode = payload.code;
         }
       });
+      // Projects can change on disk while the app is backgrounded — created
+      // in a terminal, deleted in Explorer, or left behind by a partially
+      // failed create. Re-scan whenever the window regains focus so the list
+      // reflects reality without forcing a restart.
+      window.addEventListener("focus", refresh);
     } catch (err) {
       errorMessage = `Failed to load settings: ${err}`;
     }
@@ -47,11 +58,22 @@
 
   onDestroy(() => {
     if (unlisten) unlisten();
+    window.removeEventListener("focus", refresh);
   });
 
   async function refresh() {
     try {
       projects = await listProjects();
+      contexts = await listCompanyContexts();
+      // The selected source project may have been deleted or its context
+      // removed since the last scan — fall back to scratch rather than
+      // importing from a stale snapshot.
+      if (
+        selectedContextDir &&
+        !contexts.some((c) => c.directory === selectedContextDir)
+      ) {
+        selectedContextDir = "";
+      }
     } catch (err) {
       errorMessage = `Failed to list projects: ${err}`;
     }
@@ -66,13 +88,21 @@
     lastExitCode = null;
     errorMessage = null;
     try {
-      await createProject(trimmed);
+      const context =
+        contexts.find((c) => c.directory === selectedContextDir) ?? null;
+      await createProject(trimmed, context);
       newProjectName = "";
-      await refresh();
+      // Reset to scratch so the next creation doesn't silently inherit
+      // the previous selection.
+      selectedContextDir = "";
     } catch (err) {
       errorMessage = `Create failed: ${err}`;
     } finally {
       isCreating = false;
+      // Refresh regardless of outcome: a create that fails partway (e.g. the
+      // install succeeds but seeding the company context throws) still leaves
+      // the project folder on disk, so it must show up in the list.
+      await refresh();
     }
   }
 
@@ -114,6 +144,22 @@
     }
   }
 
+  async function onCodex(project: ProjectItem) {
+    try {
+      await openInCodex(project.path);
+    } catch (err) {
+      errorMessage = `Open in Codex failed: ${err}`;
+    }
+  }
+
+  async function onOpenFolder(project: ProjectItem) {
+    try {
+      await openProjectFolder(project.path);
+    } catch (err) {
+      errorMessage = `Open folder failed: ${err}`;
+    }
+  }
+
   async function changeSort(order: ProjectSortOrder) {
     if (!settings) return;
     settings.projectSortOrder = order;
@@ -143,6 +189,15 @@
   <header class="header" data-testid="header">
     <h1>BMad Manager</h1>
     <div class="header-actions">
+      <button
+        class="icon-btn"
+        title="Refresh projects"
+        aria-label="Refresh projects"
+        data-testid="refresh-projects"
+        onclick={refresh}
+      >
+        ⟳
+      </button>
       <button
         class="icon-btn"
         title={showOutput ? "Hide output" : "Show output"}
@@ -177,6 +232,24 @@
       {isCreating ? "Creating…" : "Create new project"}
     </button>
   </section>
+
+  {#if contexts.length > 0}
+    <section class="context-row" data-testid="context-row">
+      <span class="lbl">Context</span>
+      <select
+        bind:value={selectedContextDir}
+        title="Seed the new project's company context from an existing project"
+        disabled={isCreating}
+      >
+        <option value="">Start from scratch</option>
+        {#each contexts as context (context.directory)}
+          <option value={context.directory}>
+            {companyContextDisplayName(context)}
+          </option>
+        {/each}
+      </select>
+    </section>
+  {/if}
 
   <section class="sort-row">
     <span class="lbl">Sort</span>
@@ -215,6 +288,8 @@
             onClaude={() => onClaude(project)}
             onOpencode={() => onOpencode(project)}
             onPi={() => onPi(project)}
+            onCodex={() => onCodex(project)}
+            onOpenFolder={() => onOpenFolder(project)}
             onDelete={() => onDelete(project)}
           />
         {/each}
@@ -316,7 +391,8 @@
     cursor: not-allowed;
   }
 
-  .sort-row {
+  .sort-row,
+  .context-row {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -324,12 +400,14 @@
     flex-shrink: 0;
   }
 
-  .sort-row .lbl {
+  .sort-row .lbl,
+  .context-row .lbl {
     font-size: 11px;
     color: rgba(127, 127, 127, 1);
   }
 
-  .sort-row select {
+  .sort-row select,
+  .context-row select {
     padding: 2px 6px;
     border: 1px solid rgba(127, 127, 127, 0.4);
     border-radius: 4px;

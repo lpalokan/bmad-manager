@@ -71,6 +71,22 @@ final class ProjectCreatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: project.url.path))
     }
 
+    func testWritesCodexAgentsFileAfterSuccessfulInit() async throws {
+        let settings = makeSettings(initCommand: "true")
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
+        let project = try await creator.create(
+            name: "codex-project",
+            settings: settings
+        ) { _, _ in 0 }
+
+        let agents = project.url.appendingPathComponent("AGENTS.md")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: agents.path),
+                      "project creation should leave a Codex AGENTS.md behind")
+        let text = try String(contentsOf: agents, encoding: .utf8)
+        XCTAssertTrue(text.contains(".agents/skills"))
+        XCTAssertTrue(text.contains("_bmad/_config/bmad-help.csv"))
+    }
+
     func testPlaceholderSubstitution() async throws {
         let settings = makeSettings(
             initCommand: "echo '{PROJECT_PATH}' > marker.txt && echo '{PROJECT_NAME}' >> marker.txt && echo '{MODULE_PATH}' >> marker.txt"

@@ -53,6 +53,9 @@ struct AppSettings: Codable, Equatable {
     var claudeCommand: String
     var opencodeCommand: String
     var piCommand: String
+    var codexCommand: String
+    var claudeLaunchMethod: AgentLaunchMethod
+    var codexLaunchMethod: AgentLaunchMethod
     var projectSortOrder: ProjectSortOrder
     var terminalKind: TerminalKind
 
@@ -75,10 +78,13 @@ struct AppSettings: Codable, Equatable {
             moduleRepoURL: AppSettings.defaultModuleRepoURL,
             moduleRepoRef: "",
             moduleZipPath: "",
-            initCommand: "npx bmad-method install --yes --modules bmm,bmb,cis --tools claude-code,opencode,pi --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'",
+            initCommand: "npx bmad-method install --yes --modules bmm,bmb,cis --tools claude-code,opencode,pi,codex --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'",
             claudeCommand: "claude",
             opencodeCommand: "opencode",
             piCommand: "pi",
+            codexCommand: "codex",
+            claudeLaunchMethod: .default,
+            codexLaunchMethod: .default,
             projectSortOrder: .nameAscending,
             terminalKind: .terminal
         )
@@ -96,6 +102,9 @@ struct AppSettings: Codable, Equatable {
         case claudeCommand
         case opencodeCommand
         case piCommand
+        case codexCommand
+        case claudeLaunchMethod
+        case codexLaunchMethod
         case projectSortOrder
         case terminalKind
     }
@@ -109,6 +118,9 @@ struct AppSettings: Codable, Equatable {
          claudeCommand: String,
          opencodeCommand: String,
          piCommand: String = "pi",
+         codexCommand: String = "codex",
+         claudeLaunchMethod: AgentLaunchMethod = .default,
+         codexLaunchMethod: AgentLaunchMethod = .default,
          projectSortOrder: ProjectSortOrder = .nameAscending,
          terminalKind: TerminalKind = .terminal) {
         self.projectsRoot = projectsRoot
@@ -120,6 +132,9 @@ struct AppSettings: Codable, Equatable {
         self.claudeCommand = claudeCommand
         self.opencodeCommand = opencodeCommand
         self.piCommand = piCommand
+        self.codexCommand = codexCommand
+        self.claudeLaunchMethod = claudeLaunchMethod
+        self.codexLaunchMethod = codexLaunchMethod
         self.projectSortOrder = projectSortOrder
         self.terminalKind = terminalKind
     }
@@ -131,9 +146,16 @@ struct AppSettings: Codable, Equatable {
         initCommand      = try c.decode(String.self, forKey: .initCommand)
         claudeCommand    = try c.decode(String.self, forKey: .claudeCommand)
         opencodeCommand  = try c.decode(String.self, forKey: .opencodeCommand)
-        // Pi is a later addition; legacy settings.json files predate it,
-        // so fall back to "pi" rather than failing to load.
+        // Pi and Codex are later additions; legacy settings.json files
+        // predate them, so fall back to the bare binary names rather than
+        // failing to load.
         piCommand        = try c.decodeIfPresent(String.self, forKey: .piCommand) ?? "pi"
+        codexCommand     = try c.decodeIfPresent(String.self, forKey: .codexCommand) ?? "codex"
+        // Per-agent App-vs-CLI launch preference. Settings files written
+        // before this picker don't carry the fields — default to .auto so
+        // upgrading users get the prefer-app behaviour without a load error.
+        claudeLaunchMethod = try c.decodeIfPresent(AgentLaunchMethod.self, forKey: .claudeLaunchMethod) ?? .default
+        codexLaunchMethod  = try c.decodeIfPresent(AgentLaunchMethod.self, forKey: .codexLaunchMethod) ?? .default
         // New in #12 — fall back to the default when reading a legacy file
         // so a freshly upgraded install doesn't fail to load its settings.
         projectSortOrder = try c.decodeIfPresent(ProjectSortOrder.self, forKey: .projectSortOrder) ?? .nameAscending

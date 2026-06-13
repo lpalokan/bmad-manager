@@ -207,8 +207,11 @@ struct ContentView: View {
             ProjectRowView(
                 project: project,
                 onClaude: {
-                    coordinator.openInTerminal(
+                    coordinator.openAgent(
                         project: project,
+                        agent: .claude,
+                        method: settings.settings.claudeLaunchMethod,
+                        appInstalled: AppDetector.isInstalled(.claude),
                         command: settings.settings.claudeCommand,
                         kind: settings.settings.terminalKind
                     )
@@ -224,6 +227,16 @@ struct ContentView: View {
                     coordinator.openInTerminal(
                         project: project,
                         command: settings.settings.piCommand,
+                        kind: settings.settings.terminalKind
+                    )
+                },
+                onCodex: {
+                    coordinator.openAgent(
+                        project: project,
+                        agent: .codex,
+                        method: settings.settings.codexLaunchMethod,
+                        appInstalled: AppDetector.isInstalled(.codex),
+                        command: settings.settings.codexCommand,
                         kind: settings.settings.terminalKind
                     )
                 },

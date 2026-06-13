@@ -19,6 +19,13 @@ struct SettingsView: View {
     @State private var claudeDetected: String? = nil
     @State private var opencodeDetected: String? = nil
     @State private var piDetected: String? = nil
+    @State private var codexDetected: String? = nil
+
+    // Whether each agent's desktop app is installed. Drives the App-vs-CLI
+    // launch picker captions and is detected once when the sheet opens,
+    // for the same reason the terminal list is.
+    @State private var claudeAppInstalled: Bool = false
+    @State private var codexAppInstalled: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -55,6 +62,9 @@ struct SettingsView: View {
         }
         .onChange(of: store.settings.piCommand) {
             piDetected = PathDetector.detect(store.settings.piCommand)
+        }
+        .onChange(of: store.settings.codexCommand) {
+            codexDetected = PathDetector.detect(store.settings.codexCommand)
         }
         .confirmationDialog(
             "Reset all settings to defaults?",
@@ -142,7 +152,11 @@ struct SettingsView: View {
                 agentRow(
                     label: "Claude Code",
                     text: $store.settings.claudeCommand,
-                    detected: claudeDetected
+                    detected: claudeDetected,
+                    launchMethod: $store.settings.claudeLaunchMethod,
+                    appName: AgentApp.claude.appDisplayName,
+                    appNote: AgentApp.claude.appLaunchNote,
+                    appInstalled: claudeAppInstalled
                 ) {
                     if let picked = browseForExecutable(label: "Claude Code") {
                         store.settings.claudeCommand = picked
@@ -164,6 +178,19 @@ struct SettingsView: View {
                 ) {
                     if let picked = browseForExecutable(label: "Pi") {
                         store.settings.piCommand = picked
+                    }
+                }
+                agentRow(
+                    label: "Codex",
+                    text: $store.settings.codexCommand,
+                    detected: codexDetected,
+                    launchMethod: $store.settings.codexLaunchMethod,
+                    appName: AgentApp.codex.appDisplayName,
+                    appNote: AgentApp.codex.appLaunchNote,
+                    appInstalled: codexAppInstalled
+                ) {
+                    if let picked = browseForExecutable(label: "Codex") {
+                        store.settings.codexCommand = picked
                     }
                 }
             }
@@ -210,6 +237,9 @@ struct SettingsView: View {
         claudeDetected   = PathDetector.detect(store.settings.claudeCommand)
         opencodeDetected = PathDetector.detect(store.settings.opencodeCommand)
         piDetected       = PathDetector.detect(store.settings.piCommand)
+        codexDetected    = PathDetector.detect(store.settings.codexCommand)
+        claudeAppInstalled = AppDetector.isInstalled(.claude)
+        codexAppInstalled  = AppDetector.isInstalled(.codex)
     }
 
     @ViewBuilder
@@ -217,6 +247,10 @@ struct SettingsView: View {
         label: String,
         text: Binding<String>,
         detected: String?,
+        launchMethod: Binding<AgentLaunchMethod>? = nil,
+        appName: String? = nil,
+        appNote: String = "",
+        appInstalled: Bool = false,
         browse: @escaping () -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -237,6 +271,45 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.red)
             }
+
+            if let launchMethod {
+                launchMethodControl(
+                    appName: appName ?? label,
+                    appNote: appNote,
+                    selection: launchMethod,
+                    appInstalled: appInstalled
+                )
+            }
+        }
+    }
+
+    /// The App-vs-CLI launch picker shown under agents that also ship a
+    /// macOS desktop app (Claude, Codex). `Auto` prefers the app when it's
+    /// installed and otherwise runs the CLI; `App`/`CLI` force one path.
+    @ViewBuilder
+    private func launchMethodControl(
+        appName: String,
+        appNote: String,
+        selection: Binding<AgentLaunchMethod>,
+        appInstalled: Bool
+    ) -> some View {
+        Text("Launch \(appName) with").font(.subheadline).bold()
+            .padding(.top, 2)
+        Picker("Launch \(appName) with", selection: selection) {
+            ForEach(AgentLaunchMethod.allCases) { method in
+                Text(method.displayName).tag(method)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        if appInstalled {
+            Text("\(appName) app detected. \(appNote) CLI runs the command above in the terminal.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            Text("\(appName) app not installed. Auto uses the command above; choose App only once it's installed.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

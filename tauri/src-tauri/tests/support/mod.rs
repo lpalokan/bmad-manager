@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use bmad_manager_lib::models::{AppSettings, ProjectItem};
+use bmad_manager_lib::models::{AppSettings, CompanyContext, ProjectItem};
 use cucumber::World;
 use tempfile::TempDir;
 
@@ -29,6 +29,14 @@ pub struct TauriWorld {
     pub last_path_dir: Option<PathBuf>,
     pub last_executable_path: Option<PathBuf>,
     pub last_detection: Option<Option<PathBuf>>,
+    pub stub_binary: Option<PathBuf>,
+    pub bundled_cache_dir: Option<PathBuf>,
+    pub user_cache_dir: Option<PathBuf>,
+    pub detected_version: Option<Option<String>>,
+    pub seed_outcome: Option<bool>,
+    /// `Some(None)` records a resolution attempt that found nothing.
+    pub resolved_context: Option<Option<CompanyContext>>,
+    pub resolved_contexts: Option<Vec<CompanyContext>>,
 }
 
 impl TauriWorld {
@@ -47,5 +55,34 @@ impl TauriWorld {
         std::fs::create_dir_all(&root).expect("create projects root");
         self.projects_root = Some(root.clone());
         root
+    }
+
+    /// Writes the named context files (with the file name as content so
+    /// copies are verifiable) into `<root>/<project>/<subpath>/`.
+    pub fn seed_context_files(&mut self, project: &str, subpath: &str, files: &[&str]) {
+        let dir = self.ensure_projects_root().join(project).join(subpath);
+        std::fs::create_dir_all(&dir).expect("create context dir");
+        for file in files {
+            std::fs::write(dir.join(file), format!("content of {file}"))
+                .expect("write context file");
+        }
+    }
+
+    /// Builds a minimal module zip fixture (one wrapper folder holding a
+    /// manifest) for scenarios that run the full project-creation pipeline.
+    pub fn build_module_zip(&mut self) -> PathBuf {
+        use std::io::Write as _;
+        let path = self.ensure_tmp().join("module-fixture.zip");
+        let file = std::fs::File::create(&path).expect("create zip fixture");
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file(
+                "module/manifest.yaml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .expect("start zip entry");
+        writer.write_all(b"name: fixture").expect("write zip entry");
+        writer.finish().expect("finish zip");
+        path
     }
 }

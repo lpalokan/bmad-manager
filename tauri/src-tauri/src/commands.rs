@@ -11,10 +11,13 @@ use serde::{Serialize, Serializer};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 
-use crate::models::{AppSettings, ProjectItem};
+use crate::models::{AppSettings, CompanyContext, ProjectItem};
 use crate::platform;
+use crate::services::bundled_tooling::{self, BundledTooling};
 use crate::services::command_runner::OutputEvent;
-use crate::services::{path_detection, project_creator, project_service, settings_store};
+use crate::services::{
+    company_context, path_detection, project_creator, project_service, settings_store,
+};
 
 pub struct AppState {
     pub settings_path: PathBuf,
@@ -66,6 +69,16 @@ pub fn save_settings(settings: AppSettings, state: State<'_, AppState>) -> CmdRe
     Ok(())
 }
 
+/// Returns the built-in defaults without touching the persisted file. The
+/// Settings dialog's "Reset to defaults" loads these into its draft so the
+/// user can review (and then Save) a clean configuration — picking up, for
+/// example, agents added to the install `--tools` list since their
+/// settings.json was first written.
+#[tauri::command]
+pub fn default_settings() -> AppSettings {
+    AppSettings::defaults()
+}
+
 #[tauri::command]
 pub fn list_projects(state: State<'_, AppState>) -> CmdResult<Vec<ProjectItem>> {
     let settings = settings_store::load_or_init(&state.settings_path)?;
@@ -79,6 +92,7 @@ pub fn list_projects(state: State<'_, AppState>) -> CmdResult<Vec<ProjectItem>> 
 #[tauri::command]
 pub async fn create_project(
     name: String,
+    context: Option<CompanyContext>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<ProjectItem> {
@@ -87,9 +101,19 @@ pub async fn create_project(
     let emit = move |event: OutputEvent| {
         let _ = app.emit("project-create-output", event);
     };
-    project_creator::create_project(&name, &settings, emit)
+    project_creator::create_project(&name, &settings, context.as_ref(), emit)
         .await
         .map_err(|e| IpcError(e.to_string()))
+}
+
+/// Scans the projects root for existing company contexts the new-project
+/// "Context" picker can offer as seeding sources.
+#[tauri::command]
+pub fn list_company_contexts(state: State<'_, AppState>) -> CmdResult<Vec<CompanyContext>> {
+    let settings = settings_store::load_or_init(&state.settings_path)?;
+    let root = expand_tilde(&settings.projects_root);
+    let projects = project_service::list_projects(&root, settings.project_sort_order);
+    Ok(company_context::contexts_in(&projects))
 }
 
 #[tauri::command]
@@ -97,6 +121,11 @@ pub fn delete_project(path: String) -> CmdResult<()> {
     let p = PathBuf::from(&path);
     project_service::trash_project(&p).map_err(IpcError)?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_bundled_tooling() -> BundledTooling {
+    bundled_tooling::detect()
 }
 
 #[tauri::command]
@@ -114,6 +143,24 @@ pub fn open_in_pi(project_path: String, state: State<'_, AppState>) -> CmdResult
     open_in_terminal(&project_path, "pi", state)
 }
 
+#[tauri::command]
+pub fn open_in_codex(project_path: String, state: State<'_, AppState>) -> CmdResult<()> {
+    open_in_terminal(&project_path, "codex", state)
+}
+
+/// Reveal a project's folder in the OS file manager (Explorer on Windows).
+/// Guards against a path that's been moved or deleted since the list was
+/// rendered, so the user gets a clear error rather than an empty window.
+#[tauri::command]
+pub fn open_project_folder(project_path: String) -> CmdResult<()> {
+    let path = PathBuf::from(&project_path);
+    if !path.is_dir() {
+        return Err(IpcError(format!("Folder no longer exists: {project_path}")));
+    }
+    platform::open_folder(&path).map_err(IpcError)?;
+    Ok(())
+}
+
 /// Returns the absolute path the supplied command resolves to on the
 /// current `PATH`, or `None` if it's not found. The Settings dialog
 /// calls this per coding-agent command so the user knows whether the
@@ -129,6 +176,7 @@ fn open_in_terminal(project_path: &str, which: &str, state: State<'_, AppState>)
         "claude" => settings.claude_command.trim().to_string(),
         "opencode" => settings.opencode_command.trim().to_string(),
         "pi" => settings.pi_command.trim().to_string(),
+        "codex" => settings.codex_command.trim().to_string(),
         _ => unreachable!(),
     };
     if command.is_empty() {
