@@ -15,15 +15,16 @@ private final class FakeTerminalLauncher: TerminalLauncherProtocol {
     }
 }
 
-/// Records desktop-app launches so tests can assert which bundle would be
-/// opened without actually launching an app via LaunchServices.
+/// Records desktop-app launches so tests can assert which bundle (and on
+/// which project) would be opened without actually launching an app via
+/// LaunchServices.
 private final class FakeAppLauncher: AppLauncherProtocol {
-    private(set) var opens: [String] = []
+    private(set) var opens: [(bundleIdentifier: String, projectPath: String)] = []
     var errorToThrow: Error? = nil
 
-    func open(bundleIdentifier: String) throws {
+    func open(bundleIdentifier: String, projectPath: String) throws {
         if let error = errorToThrow { throw error }
-        opens.append(bundleIdentifier)
+        opens.append((bundleIdentifier, projectPath))
     }
 }
 
@@ -409,7 +410,9 @@ final class ProjectCoordinatorTests: XCTestCase {
             kind: .terminal
         )
 
-        XCTAssertEqual(appLauncher.opens, ["com.anthropic.claudefordesktop"])
+        XCTAssertEqual(appLauncher.opens.count, 1)
+        XCTAssertEqual(appLauncher.opens.first?.bundleIdentifier, "com.anthropic.claudefordesktop")
+        XCTAssertEqual(appLauncher.opens.first?.projectPath, project.url.path)
         XCTAssertEqual(terminal.opens.count, 0)
     }
 
@@ -462,7 +465,9 @@ final class ProjectCoordinatorTests: XCTestCase {
             kind: .terminal
         )
 
-        XCTAssertEqual(appLauncher.opens, ["com.openai.codex"])
+        XCTAssertEqual(appLauncher.opens.count, 1)
+        XCTAssertEqual(appLauncher.opens.first?.bundleIdentifier, "com.openai.codex")
+        XCTAssertEqual(appLauncher.opens.first?.projectPath, project.url.path)
         XCTAssertEqual(terminal.opens.count, 0)
     }
 

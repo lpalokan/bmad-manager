@@ -162,7 +162,10 @@ final class ProjectCoordinator: ObservableObject {
         switch AgentLaunchResolver.resolve(method: method, appInstalled: appInstalled) {
         case .app:
             do {
-                try appLauncher.open(bundleIdentifier: agent.bundleIdentifier)
+                try appLauncher.open(
+                    bundleIdentifier: agent.bundleIdentifier,
+                    projectPath: project.url.path
+                )
                 errorMessage = nil
             } catch {
                 errorMessage = error.localizedDescription
