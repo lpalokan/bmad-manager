@@ -92,6 +92,53 @@ where
         }
     };
 
+    let code = stream_child(&mut child, &mut on_event).await;
+    on_event(OutputEvent::Exit { code });
+    code
+}
+
+/// Spawns `program` directly (no shell) with `args`, streaming sanitized
+/// stdout/stderr lines via `on_event` and returning the exit code (`-1` on
+/// spawn/wait failure). Unlike [`run`], it does NOT emit a final
+/// `OutputEvent::Exit` — callers that chain several invocations (e.g. git
+/// fetch then reset) emit a single Exit themselves.
+///
+/// Used for git operations: the arguments — including a `-c http.extraHeader`
+/// carrying an auth token — must not pass through a shell (quoting) and are
+/// never echoed to the output panel; only the program's own output streams.
+pub async fn run_program<F>(program: &Path, args: &[String], cwd: &Path, mut on_event: F) -> i32
+where
+    F: FnMut(OutputEvent) + Send,
+{
+    let mut cmd = Command::new(program);
+    cmd.args(args)
+        .current_dir(cwd)
+        .env("PATH", platform::augmented_path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdin(Stdio::null());
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000);
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(err) => {
+            on_event(OutputEvent::Stderr {
+                line: format!("Failed to launch {}: {err}", program.display()),
+            });
+            return -1;
+        }
+    };
+    stream_child(&mut child, &mut on_event).await
+}
+
+/// Drains a spawned child's stdout/stderr (each sanitized, one event per
+/// line) through `on_event` and returns its exit code. Does not emit
+/// `OutputEvent::Exit` — the caller owns that.
+async fn stream_child<F>(child: &mut tokio::process::Child, on_event: &mut F) -> i32
+where
+    F: FnMut(OutputEvent) + Send,
+{
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
@@ -125,7 +172,7 @@ where
         on_event(event);
     }
 
-    let exit_code = match child.wait().await {
+    match child.wait().await {
         Ok(status) => status.code().unwrap_or(-1),
         Err(err) => {
             on_event(OutputEvent::Stderr {
@@ -133,9 +180,7 @@ where
             });
             -1
         }
-    };
-    on_event(OutputEvent::Exit { code: exit_code });
-    exit_code
+    }
 }
 
 /// Attaches the shell arguments to `cmd`. On Windows the command string is

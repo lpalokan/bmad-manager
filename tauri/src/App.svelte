@@ -16,6 +16,8 @@
     openInPi,
     openProjectFolder,
     saveSettings,
+    syncSkillsClaude,
+    syncSkillsCodex,
   } from "./lib/commands";
   import { companyContextDisplayName, projectSortOrderOptions, type AppSettings, type CompanyContext, type OutputEvent, type ProjectItem, type ProjectSortOrder } from "./lib/types";
 
@@ -31,21 +33,30 @@
   let outputLines: string[] = $state([]);
   let lastExitCode: number | null = $state(null);
   let errorMessage: string | null = $state(null);
+  let isSyncing = $state(false);
 
   let unlisten: UnlistenFn | null = null;
+  let unlistenSkills: UnlistenFn | null = null;
+
+  function applyOutputEvent(payload: OutputEvent) {
+    if (payload.kind === "stdout" || payload.kind === "stderr") {
+      outputLines = [...outputLines, payload.line];
+    } else if (payload.kind === "exit") {
+      lastExitCode = payload.code;
+    }
+  }
 
   onMount(async () => {
     try {
       settings = await loadSettings();
       await refresh();
-      unlisten = await listen<OutputEvent>("project-create-output", (event) => {
-        const payload = event.payload;
-        if (payload.kind === "stdout" || payload.kind === "stderr") {
-          outputLines = [...outputLines, payload.line];
-        } else if (payload.kind === "exit") {
-          lastExitCode = payload.code;
-        }
-      });
+      unlisten = await listen<OutputEvent>("project-create-output", (event) =>
+        applyOutputEvent(event.payload),
+      );
+      // Skill syncs stream into the same output panel on their own channel.
+      unlistenSkills = await listen<OutputEvent>("skills-sync-output", (event) =>
+        applyOutputEvent(event.payload),
+      );
       // Projects can change on disk while the app is backgrounded — created
       // in a terminal, deleted in Explorer, or left behind by a partially
       // failed create. Re-scan whenever the window regains focus so the list
@@ -58,6 +69,7 @@
 
   onDestroy(() => {
     if (unlisten) unlisten();
+    if (unlistenSkills) unlistenSkills();
     window.removeEventListener("focus", refresh);
   });
 
@@ -103,6 +115,22 @@
       // install succeeds but seeding the company context throws) still leaves
       // the project folder on disk, so it must show up in the list.
       await refresh();
+    }
+  }
+
+  async function onSyncSkills(tool: "claude" | "codex") {
+    if (isSyncing || isCreating) return;
+    isSyncing = true;
+    showOutput = true;
+    outputLines = [];
+    lastExitCode = null;
+    errorMessage = null;
+    try {
+      await (tool === "claude" ? syncSkillsClaude() : syncSkillsCodex());
+    } catch (err) {
+      errorMessage = `Skill sync failed: ${err}`;
+    } finally {
+      isSyncing = false;
     }
   }
 
@@ -297,11 +325,34 @@
     {/if}
   </section>
 
+  <section class="skills-row" data-testid="skills-row">
+    <span class="lbl">Skills</span>
+    <button
+      type="button"
+      data-testid="sync-claude"
+      disabled={isSyncing || isCreating || !settings?.skillsRepoUrl}
+      onclick={() => onSyncSkills("claude")}
+    >
+      Sync to Claude Code
+    </button>
+    <button
+      type="button"
+      data-testid="sync-codex"
+      disabled={isSyncing || isCreating || !settings?.skillsRepoUrl}
+      onclick={() => onSyncSkills("codex")}
+    >
+      Sync to Codex
+    </button>
+    {#if !settings?.skillsRepoUrl}
+      <span class="skills-hint">Set a skills repo URL in Settings ⚙ to enable.</span>
+    {/if}
+  </section>
+
   {#if showOutput}
     <section class="output-panel" data-testid="output-panel">
       <CommandOutput
         lines={outputLines}
-        isRunning={isCreating}
+        isRunning={isCreating || isSyncing}
         {lastExitCode}
       />
     </section>
@@ -392,7 +443,8 @@
   }
 
   .sort-row,
-  .context-row {
+  .context-row,
+  .skills-row {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -400,8 +452,35 @@
     flex-shrink: 0;
   }
 
+  .skills-row {
+    border-top: 1px solid rgba(127, 127, 127, 0.12);
+    padding: 8px 12px;
+  }
+
+  .skills-row button {
+    padding: 4px 10px;
+    border: 1px solid rgba(127, 127, 127, 0.4);
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .skills-row button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .skills-hint {
+    font-size: 11px;
+    color: rgba(127, 127, 127, 1);
+  }
+
   .sort-row .lbl,
-  .context-row .lbl {
+  .context-row .lbl,
+  .skills-row .lbl {
     font-size: 11px;
     color: rgba(127, 127, 127, 1);
   }
