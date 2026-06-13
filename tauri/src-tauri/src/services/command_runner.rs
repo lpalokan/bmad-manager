@@ -56,8 +56,8 @@ where
     });
 
     let mut cmd = Command::new(&shell);
-    cmd.args(&args)
-        .current_dir(cwd)
+    apply_shell_args(&mut cmd, &args, command);
+    cmd.current_dir(cwd)
         .env("PATH", augmented_path)
         // Point npx at the user-writable cache seeded from the bundled
         // pre-warm at first launch (see `bundled_tooling::seed_*`). On the
@@ -134,6 +134,35 @@ where
     exit_code
 }
 
+/// Attaches the shell arguments to `cmd`. On Windows the command string is
+/// handed to `cmd.exe` via `raw_arg` rather than the normal `.args()` path.
+///
+/// `std`/`tokio` escape `.arg()`/`.args()` values using the MSVCRT C-runtime
+/// rules (wrap-in-quotes, escape embedded `"` as `\"`). `cmd.exe` does **not**
+/// understand `\"` — it treats the backslash as literal and the quote as a
+/// toggle — so a substituted `--directory "C:\…\proj"` argument arrives at
+/// `npx` → `node` with the surrounding double-quotes leaked into `argv`. `node`
+/// then resolves the quoted, no-longer-absolute path relative to the cwd,
+/// producing the `…\proj\"C:\…\proj"` ENOENT seen in the install log. Passing
+/// the command verbatim with `raw_arg` lets `cmd.exe` parse the clean embedded
+/// quotes itself, so the path reaches `node` intact. (`_args` already holds
+/// `["/C", command]`; we keep it only for the diagnostic line.)
+#[cfg(target_os = "windows")]
+fn apply_shell_args(cmd: &mut Command, _args: &[String], command: &str) {
+    // `raw_arg` is an inherent method on tokio's `Command` on Windows (no
+    // `CommandExt` import — importing it would trip `unused_imports` under
+    // `-D warnings`, same as the `creation_flags` call above). std inserts a
+    // separating space before each appended arg, so this yields the verbatim
+    // command line `cmd.exe /C <command>`.
+    cmd.raw_arg("/C");
+    cmd.raw_arg(command);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_shell_args(cmd: &mut Command, args: &[String], _command: &str) {
+    cmd.args(args);
+}
+
 fn platform_shell_invocation(command: &str) -> (PathBuf, Vec<String>) {
     #[cfg(target_os = "windows")]
     {
@@ -181,6 +210,39 @@ mod tests {
         assert!(
             lines.iter().any(|l| l.contains("hello-from-test")),
             "expected echo output, got {lines:?}"
+        );
+    }
+
+    // Regression for the install failure where a quoted `--directory
+    // "C:\…\proj"` reached `npx`/`node` with the surrounding double-quotes
+    // leaked into argv (node then resolved the quoted path relative to the
+    // cwd → `…\proj\"C:\…\proj"` ENOENT). We can't spawn npx here, but the
+    // leak is purely a `cmd.exe` quoting problem: a `for %I in ("<path>")`
+    // command exercises the exact same embedded-quote parsing. `%~I` strips
+    // the quotes cmd.exe sees, so a clean round-trip prints the bare path;
+    // a leaked `\"` would split the path or keep the quotes, failing here.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn windows_passes_embedded_quotes_to_cmd_verbatim() {
+        let mut lines: Vec<String> = Vec::new();
+        let mut exit_code: Option<i32> = None;
+        let code = run(
+            r#"for %I in ("C:\Users\Me\My Project\proj") do @echo GOT:[%~I]"#,
+            std::env::temp_dir().as_path(),
+            |event| match event {
+                OutputEvent::Stdout { line } => lines.push(line),
+                OutputEvent::Stderr { line } => lines.push(format!("[err] {line}")),
+                OutputEvent::Exit { code } => exit_code = Some(code),
+            },
+        )
+        .await;
+        assert_eq!(code, 0, "lines={lines:?}");
+        assert_eq!(exit_code, Some(0));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l == r#"GOT:[C:\Users\Me\My Project\proj]"#),
+            "embedded quotes leaked into the path — expected a clean GOT:[…] line, got {lines:?}"
         );
     }
 }
