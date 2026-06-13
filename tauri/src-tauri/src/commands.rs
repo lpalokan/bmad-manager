@@ -138,6 +138,19 @@ pub fn open_in_codex(project_path: String, state: State<'_, AppState>) -> CmdRes
     open_in_terminal(&project_path, "codex", state)
 }
 
+/// Reveal a project's folder in the OS file manager (Explorer on Windows).
+/// Guards against a path that's been moved or deleted since the list was
+/// rendered, so the user gets a clear error rather than an empty window.
+#[tauri::command]
+pub fn open_project_folder(project_path: String) -> CmdResult<()> {
+    let path = PathBuf::from(&project_path);
+    if !path.is_dir() {
+        return Err(IpcError(format!("Folder no longer exists: {project_path}")));
+    }
+    platform::open_folder(&path).map_err(IpcError)?;
+    Ok(())
+}
+
 /// Returns the absolute path the supplied command resolves to on the
 /// current `PATH`, or `None` if it's not found. The Settings dialog
 /// calls this per coding-agent command so the user knows whether the

@@ -83,6 +83,17 @@ fn spawn_cmd(path: &Path, command: &str) -> std::io::Result<()> {
         .map(|_| ())
 }
 
+/// Reveal `path` in Windows Explorer. Explorer's exit code is unreliable
+/// (it often returns 1 even on success), so — like the terminal launchers —
+/// we only surface failures to *spawn* the process, not its exit status.
+pub fn open_folder(path: &Path) -> Result<(), String> {
+    Command::new("explorer.exe")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 /// `%APPDATA%\bmad-manager` — the user's roaming config directory.
 pub fn settings_dir() -> PathBuf {
     dirs::config_dir()

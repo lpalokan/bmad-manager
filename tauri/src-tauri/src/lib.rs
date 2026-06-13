@@ -34,6 +34,7 @@ pub fn run() {
             commands::open_in_opencode,
             commands::open_in_pi,
             commands::open_in_codex,
+            commands::open_project_folder,
             commands::detect_command_in_path,
         ])
         .run(tauri::generate_context!())

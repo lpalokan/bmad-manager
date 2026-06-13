@@ -14,6 +14,7 @@
     openInCodex,
     openInOpencode,
     openInPi,
+    openProjectFolder,
     saveSettings,
   } from "./lib/commands";
   import { companyContextDisplayName, projectSortOrderOptions, type AppSettings, type CompanyContext, type OutputEvent, type ProjectItem, type ProjectSortOrder } from "./lib/types";
@@ -142,6 +143,14 @@
     }
   }
 
+  async function onOpenFolder(project: ProjectItem) {
+    try {
+      await openProjectFolder(project.path);
+    } catch (err) {
+      errorMessage = `Open folder failed: ${err}`;
+    }
+  }
+
   async function changeSort(order: ProjectSortOrder) {
     if (!settings) return;
     settings.projectSortOrder = order;
@@ -262,6 +271,7 @@
             onOpencode={() => onOpencode(project)}
             onPi={() => onPi(project)}
             onCodex={() => onCodex(project)}
+            onOpenFolder={() => onOpenFolder(project)}
             onDelete={() => onDelete(project)}
           />
         {/each}

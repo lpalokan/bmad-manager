@@ -18,6 +18,10 @@ pub fn launch_terminal(_path: &Path, _command: &str, _kind: TerminalKind) -> Res
     unimplemented!("platform::stub::launch_terminal — not implemented on this OS")
 }
 
+pub fn open_folder(_path: &Path) -> Result<(), String> {
+    unimplemented!("platform::stub::open_folder — not implemented on this OS")
+}
+
 pub fn settings_dir() -> PathBuf {
     dirs::config_dir()
         .map(|d| d.join("bmad-manager"))

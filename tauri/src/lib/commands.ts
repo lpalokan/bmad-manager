@@ -39,5 +39,8 @@ export const openInPi = (projectPath: string): Promise<void> =>
 export const openInCodex = (projectPath: string): Promise<void> =>
   invoke("open_in_codex", { projectPath });
 
+export const openProjectFolder = (projectPath: string): Promise<void> =>
+  invoke("open_project_folder", { projectPath });
+
 export const detectCommandInPath = (command: string): Promise<string | null> =>
   invoke<string | null>("detect_command_in_path", { command });
