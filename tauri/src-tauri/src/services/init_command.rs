@@ -190,6 +190,9 @@ mod tests {
     #[test]
     fn custom_source_windows_different_drive_falls_back_to_absolute() {
         let abs = r"D:\Temp\bmad-mod";
-        assert_eq!(custom_source_arg(abs, r"C:\Users\me\Projects\demo", true), abs);
+        assert_eq!(
+            custom_source_arg(abs, r"C:\Users\me\Projects\demo", true),
+            abs
+        );
     }
 }

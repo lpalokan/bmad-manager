@@ -96,7 +96,10 @@ where
         &module_arg,
         cfg!(target_os = "windows"),
     );
-    emit_diag(&mut on_event, format!("custom_source_arg={module_arg} init_command={command}"));
+    emit_diag(
+        &mut on_event,
+        format!("custom_source_arg={module_arg} init_command={command}"),
+    );
 
     let exit_code = command_runner::run(&command, &project_path, &mut on_event).await;
     emit_diag(&mut on_event, format!("init_command exit_code={exit_code}"));
