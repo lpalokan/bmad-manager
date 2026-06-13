@@ -100,35 +100,49 @@ Your colleagues stay completely oblivious to GitHub: no account, no invitation,
 no token of their own. You create **one** read-only token and distribute it; they
 paste it into BMad Manager once.
 
-Don't share *your personal* token — create a dedicated **service account** so the
-token's reach is limited to that account (sharing a personal account's
-credentials also goes against GitHub's terms). One-time setup:
+> **The read-only limit comes from the *token's scope*, not from a collaborator
+> role.** A fine-grained token has its own `Contents: Read-only` permission that
+> is independent of the account's repo access. So this works even on a
+> **personal** repo — where collaborators can only be read **+ write** (there's
+> no read-only collaborator role; those exist only on **organization** repos). A
+> token you scope to read can still only read.
 
-1. **Create a service account.** Sign up a separate GitHub account, e.g.
-   `acme-bmad-bot` (a "machine user" — GitHub's blessed pattern for shared,
-   automated read access).
-2. **Give it read access to the repo.** As yourself, go to the skills repo →
-   **Settings → Collaborators** (or **Teams** in an org) → add the bot account
-   with the **Read** role, and accept the invite from the bot account once.
-3. **Create the token (signed in as the bot account):**
-   - **GitHub → Settings → Developer settings → Personal access tokens →
-     Fine-grained tokens → Generate new token.**
-   - **Resource owner:** the org/user that owns the skills repo.
-   - **Repository access → Only select repositories →** the skills repo.
-   - **Permissions → Repository permissions → Contents → Read-only.** Nothing
-     else.
-   - **Expiration:** pick a window you're willing to rotate on (max ~1 year).
-   - **Generate token** and copy it — GitHub shows it only once.
-4. **Distribute** the token (and the repo URL) to your team over a secure
-   channel — a password manager / secrets vault, not chat.
+**Simplest — personal repo, no extra accounts, no invitations.** You, the repo
+owner, just mint a narrowly-scoped token and share it:
 
-Then send your team **Part 2 → "If your admin gave you a token (Option A)"**.
+1. **GitHub → Settings → Developer settings → Personal access tokens →
+   Fine-grained tokens → Generate new token.**
+2. **Resource owner:** your account (the one that owns the repo).
+3. **Repository access → Only select repositories →** the skills repo.
+4. **Permissions → Repository permissions → Contents → Read-only.** Nothing else.
+5. **Expiration:** pick a window you're willing to rotate on (max ~1 year).
+6. **Generate token** and copy it — GitHub shows it only once.
+7. **Distribute** the token (and the repo URL) over a secure channel — a password
+   manager / secrets vault, not chat.
+
+That's it — the token can only read, even though your account can write to the
+repo.
+
+**Optional hardening — a dedicated service account.** If you'd rather the shared
+token not be tied to your personal identity, create a separate "machine user"
+account (e.g. `acme-bmad-bot`), give it access to the repo, and generate the
+read-only token signed in as the bot:
+
+- On a **personal** repo, add the bot as a collaborator (this grants it
+  read **+ write** at the account level — unavoidable on personal repos), then
+  scope the bot's token to `Contents: Read-only` as above. The distributed token
+  is still read-only.
+- On an **organization** repo, just give the bot (or a team) the **Read** role —
+  genuine least privilege — then mint the read-only token.
+
+Either way, send your team **Part 2 → "If your admin gave you a token
+(Option A)"**.
 
 **What you're trading off:** a shared token is a shared secret. There's **no
 per-person revoke or audit** — to cut access you rotate the token for everyone.
 Because it's **read-only and scoped to one repo**, the worst case if it leaks is
-"someone could read your skills repo." When it expires or leaks, regenerate it on
-the bot account and redistribute; colleagues just paste the new value and Save.
+"someone could read your skills repo." When it expires or leaks, regenerate it and
+redistribute; colleagues just paste the new value and Save.
 
 ---
 
@@ -137,8 +151,16 @@ the bot account and redistribute; colleagues just paste the new value and Save.
 Each colleague authenticates as themselves. More steps for them, but you can
 revoke or audit individuals.
 
-1. **Invite each teammate** to the repo with **Read** access: repo → **Settings
-   → Collaborators** (or **Teams**) → **Add people** → **Read** role.
+> **This option needs an *organization-owned* repo.** Read-only collaborator/team
+> roles only exist on organization repos. On a **personal** repo you can't grant
+> read-only to people — collaborators get read **+ write** — so per-user *least
+> privilege* isn't possible there. GitHub organizations are free; move the skills
+> repo into one (repo → **Settings → Transfer ownership**) if you want this. (If
+> you're staying on a personal repo, use **Option A** instead — its token scope
+> gives you read-only without read-only roles.)
+
+1. **Invite each teammate** to the repo with **Read** access: org repo →
+   **Settings → Collaborators and teams** → **Add** → **Read** role.
 2. Send them **Part 2 → "If you're using your own GitHub account (Option B)"**,
    where they accept the invite and create their own read-only token.
 
