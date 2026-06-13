@@ -24,7 +24,11 @@ struct ProjectRowView: View {
                 }
             }
             Spacer()
+            // Agent launch buttons, ordered alphabetically by label.
             Button("Claude Code", action: onClaude)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            Button("Codex", action: onCodex)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             Button("opencode", action: onOpencode)
@@ -33,20 +37,19 @@ struct ProjectRowView: View {
             Button("Pi", action: onPi)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-            Button("Codex", action: onCodex)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             Button(action: onOpenFolder) {
-                Label("Open Folder", systemImage: "folder.fill")
+                Image(systemName: "folder.fill")
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
             .help("Open project folder in Finder")
+            .accessibilityLabel("Open Folder")
             Button(role: .destructive, action: onDelete) {
                 Image(systemName: "trash")
             }
             .buttonStyle(.borderless)
             .help("Move to Trash")
+            .accessibilityLabel("Move to Trash")
         }
         .padding(.vertical, 2)
     }

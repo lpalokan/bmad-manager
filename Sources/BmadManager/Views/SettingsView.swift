@@ -293,9 +293,9 @@ struct SettingsView: View {
         selection: Binding<AgentLaunchMethod>,
         appInstalled: Bool
     ) -> some View {
-        Text("Launch with").font(.subheadline).bold()
+        Text("Launch \(appName) with").font(.subheadline).bold()
             .padding(.top, 2)
-        Picker("Launch with", selection: selection) {
+        Picker("Launch \(appName) with", selection: selection) {
             ForEach(AgentLaunchMethod.allCases) { method in
                 Text(method.displayName).tag(method)
             }
