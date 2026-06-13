@@ -58,9 +58,7 @@ pub enum SkillsSyncError {
 /// The managed skills directory for `tool` under `home`, e.g.
 /// `<home>/.claude/skills/managed`. Pure — no filesystem access.
 pub fn managed_dir(home: &Path, tool: SkillTool) -> PathBuf {
-    home.join(tool.home_subdir())
-        .join("skills")
-        .join("managed")
+    home.join(tool.home_subdir()).join("skills").join("managed")
 }
 
 /// The `Authorization` header value git should send, carrying `token` as a

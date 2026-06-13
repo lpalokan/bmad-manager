@@ -407,7 +407,10 @@ mod tests {
         original.skills_repo_branch = "release".to_string();
         let json = serde_json::to_string(&original).unwrap();
         let decoded: AppSettings = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded.skills_repo_url, "https://github.com/acme/bmad-skills");
+        assert_eq!(
+            decoded.skills_repo_url,
+            "https://github.com/acme/bmad-skills"
+        );
         assert_eq!(decoded.skills_repo_branch, "release");
         assert_eq!(decoded, original);
     }

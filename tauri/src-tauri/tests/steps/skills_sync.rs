@@ -22,7 +22,10 @@ async fn compute_managed_dir(world: &mut TauriWorld, tool: String, home: String)
 
 #[then(regex = r#"^the managed skills dir is "(.+)"$"#)]
 async fn managed_dir_is(world: &mut TauriWorld, expected: String) {
-    let got = world.last_managed_dir.as_ref().expect("managed dir computed");
+    let got = world
+        .last_managed_dir
+        .as_ref()
+        .expect("managed dir computed");
     // Compare as paths so the assertion is separator-insensitive on Windows.
     assert_eq!(got, &PathBuf::from(expected));
 }
@@ -35,7 +38,10 @@ async fn build_auth_header(world: &mut TauriWorld, token: String) {
 #[then(regex = r#"^the skills auth header starts with "(.+)"$"#)]
 async fn header_starts_with(world: &mut TauriWorld, prefix: String) {
     let h = world.last_string.as_ref().expect("header built");
-    assert!(h.starts_with(&prefix), "header {h:?} should start with {prefix:?}");
+    assert!(
+        h.starts_with(&prefix),
+        "header {h:?} should start with {prefix:?}"
+    );
 }
 
 #[then(regex = r#"^the skills auth header does not contain "(.+)"$"#)]
