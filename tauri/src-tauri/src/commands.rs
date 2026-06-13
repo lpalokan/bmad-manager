@@ -175,7 +175,7 @@ pub fn detect_command_in_path(command: String) -> Option<String> {
 /// settings.json). An empty string clears it.
 #[tauri::command]
 pub fn set_github_token(token: String, state: State<'_, AppState>) -> CmdResult<()> {
-    token_store::save(settings_dir(&state), &token)?;
+    token_store::save(&settings_dir(&state), &token)?;
     Ok(())
 }
 
@@ -184,7 +184,7 @@ pub fn set_github_token(token: String, state: State<'_, AppState>) -> CmdResult<
 /// a "token stored" affordance.
 #[tauri::command]
 pub fn has_github_token(state: State<'_, AppState>) -> bool {
-    token_store::is_set(settings_dir(&state))
+    token_store::is_set(&settings_dir(&state))
 }
 
 /// Sync the configured skills repo into `~/.claude/skills/managed`.
@@ -206,7 +206,7 @@ pub async fn sync_skills_codex(app: AppHandle, state: State<'_, AppState>) -> Cm
 /// across await points).
 fn load_skills_inputs(state: &State<'_, AppState>) -> CmdResult<(AppSettings, String)> {
     let settings = settings_store::load_or_init(&state.settings_path)?;
-    let token = token_store::load(settings_dir(state))?
+    let token = token_store::load(&settings_dir(state))?
         .ok_or_else(|| IpcError("Set a GitHub token in Settings first.".to_string()))?;
     Ok((settings, token))
 }
@@ -237,11 +237,12 @@ async fn run_skills_sync(
     .map_err(|e| IpcError(e.to_string()))
 }
 
-fn settings_dir(state: &State<'_, AppState>) -> &std::path::Path {
+fn settings_dir(state: &State<'_, AppState>) -> PathBuf {
     state
         .settings_path
         .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn open_in_terminal(project_path: &str, which: &str, state: State<'_, AppState>) -> CmdResult<()> {
