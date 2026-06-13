@@ -102,7 +102,9 @@ where
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = reader.next_line().await {
-                let _ = tx.send(OutputEvent::Stdout { line });
+                let _ = tx.send(OutputEvent::Stdout {
+                    line: sanitize_terminal_line(&line),
+                });
             }
         });
     }
@@ -111,7 +113,9 @@ where
         tokio::spawn(async move {
             let mut reader = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = reader.next_line().await {
-                let _ = tx.send(OutputEvent::Stderr { line });
+                let _ = tx.send(OutputEvent::Stderr {
+                    line: sanitize_terminal_line(&line),
+                });
             }
         });
     }
@@ -163,6 +167,71 @@ fn apply_shell_args(cmd: &mut Command, args: &[String], _command: &str) {
     cmd.args(args);
 }
 
+/// Strips ANSI/VT escape sequences from a line of subprocess output so the
+/// plain-text output panel shows readable text instead of raw control codes.
+///
+/// `npx bmad-method` paints its UI with SGR colour codes and drives a spinner
+/// that rewrites a single logical line in place via `ESC[1G` (cursor to
+/// column 1) + `ESC[J` (clear) *without* emitting a newline between frames.
+/// `BufReader::lines()` only breaks on `\n`, so every spinner frame arrives
+/// concatenated into one giant line. We therefore keep only the final frame
+/// (everything after the last column-1 reset / carriage return) and then drop
+/// the remaining escape sequences and stray C0 control bytes.
+pub fn sanitize_terminal_line(raw: &str) -> String {
+    // Drop any line terminator first so a trailing CR isn't mistaken for a
+    // spinner frame boundary (which would blank the line).
+    let raw = raw.trim_end_matches(['\r', '\n']);
+    // Treat the spinner's "cursor to column 1" sequence like a carriage
+    // return so overwritten frames collapse uniformly.
+    let normalised = raw.replace("\u{1b}[1G", "\r");
+    let last_frame = match normalised.rfind('\r') {
+        Some(i) => &normalised[i + 1..],
+        None => normalised.as_str(),
+    };
+    strip_escape_sequences(last_frame)
+}
+
+/// Removes CSI (`ESC[…`) and OSC (`ESC]…`) escape sequences plus leftover C0
+/// control bytes (except tab) from `s`, returning the visible text.
+fn strip_escape_sequences(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\u{1b}' => match chars.peek() {
+                // CSI: ESC [ <0x20-0x3f params/intermediates> <0x40-0x7e final>
+                Some(&'[') => {
+                    chars.next();
+                    while matches!(chars.peek(), Some(&p) if ('\u{20}'..='\u{3f}').contains(&p)) {
+                        chars.next();
+                    }
+                    if matches!(chars.peek(), Some(&p) if ('\u{40}'..='\u{7e}').contains(&p)) {
+                        chars.next();
+                    }
+                }
+                // OSC: ESC ] … terminated by BEL or ESC\.
+                Some(&']') => {
+                    chars.next();
+                    while let Some(&p) = chars.peek() {
+                        chars.next();
+                        if p == '\u{7}' {
+                            break;
+                        }
+                    }
+                }
+                // Lone ESC or other two-char escape — drop the next byte.
+                _ => {
+                    chars.next();
+                }
+            },
+            '\u{7f}' => {}
+            c if (c as u32) < 0x20 && c != '\t' => {}
+            c => out.push(c),
+        }
+    }
+    out.trim_end().to_string()
+}
+
 fn platform_shell_invocation(command: &str) -> (PathBuf, Vec<String>) {
     #[cfg(target_os = "windows")]
     {
@@ -211,6 +280,34 @@ mod tests {
             lines.iter().any(|l| l.contains("hello-from-test")),
             "expected echo output, got {lines:?}"
         );
+    }
+
+    #[test]
+    fn sanitize_strips_sgr_colour_codes() {
+        assert_eq!(
+            sanitize_terminal_line("\u{1b}[34mhello\u{1b}[39m world"),
+            "hello world"
+        );
+    }
+
+    #[test]
+    fn sanitize_leaves_plain_diagnostic_lines_untouched() {
+        let line = "[bmad] init_command exit_code=0";
+        assert_eq!(sanitize_terminal_line(line), line);
+    }
+
+    #[test]
+    fn sanitize_drops_cursor_hide_show_and_clear() {
+        assert_eq!(sanitize_terminal_line("\u{1b}[?25l|\u{1b}[?25h"), "|");
+    }
+
+    #[test]
+    fn sanitize_collapses_spinner_frames_to_final() {
+        // ESC[?25l hides cursor; each frame ends ESC[1G ESC[J then redraws.
+        let raw = "\u{1b}[?25l\u{1b}[34m•\u{1b}[39m  Installing core\
+                   \u{1b}[1G\u{1b}[Jo  Installing core\
+                   \u{1b}[1G\u{1b}[J0  4 module(s) installed";
+        assert_eq!(sanitize_terminal_line(raw), "0  4 module(s) installed");
     }
 
     // Regression for the install failure where a quoted `--directory
