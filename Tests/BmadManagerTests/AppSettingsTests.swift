@@ -229,4 +229,41 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.terminalKind, .iterm2)
         XCTAssertEqual(original, decoded)
     }
+
+    func testDefaultsPreferAppLaunchForClaudeAndCodex() {
+        let defaults = AppSettings.defaults()
+        XCTAssertEqual(defaults.claudeLaunchMethod, .auto)
+        XCTAssertEqual(defaults.codexLaunchMethod, .auto)
+    }
+
+    func testDecodesLegacySettingsWithoutLaunchMethods() throws {
+        // Settings files written before the App-vs-CLI picker don't carry
+        // the launch-method fields. The decoder must fall back to .auto so
+        // upgrading users get the prefer-app behaviour without a load error.
+        let legacy = """
+        {
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode",
+            "piCommand": "pi",
+            "codexCommand": "codex"
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertEqual(decoded.claudeLaunchMethod, .auto)
+        XCTAssertEqual(decoded.codexLaunchMethod, .auto)
+    }
+
+    func testCodableRoundTripPreservesLaunchMethods() throws {
+        var original = AppSettings.defaults()
+        original.claudeLaunchMethod = .cli
+        original.codexLaunchMethod = .app
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
+        XCTAssertEqual(decoded.claudeLaunchMethod, .cli)
+        XCTAssertEqual(decoded.codexLaunchMethod, .app)
+        XCTAssertEqual(original, decoded)
+    }
 }

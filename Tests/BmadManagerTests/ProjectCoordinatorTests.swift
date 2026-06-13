@@ -15,19 +15,33 @@ private final class FakeTerminalLauncher: TerminalLauncherProtocol {
     }
 }
 
-private enum FakeError: Error { case terminalFailed }
+/// Records desktop-app launches so tests can assert which bundle would be
+/// opened without actually launching an app via LaunchServices.
+private final class FakeAppLauncher: AppLauncherProtocol {
+    private(set) var opens: [String] = []
+    var errorToThrow: Error? = nil
+
+    func open(bundleIdentifier: String) throws {
+        if let error = errorToThrow { throw error }
+        opens.append(bundleIdentifier)
+    }
+}
+
+private enum FakeError: Error { case terminalFailed, appFailed }
 
 @MainActor
 final class ProjectCoordinatorTests: XCTestCase {
     private var projectsRoot: URL!
     private var settings: SettingsStore!
     private var terminal: FakeTerminalLauncher!
+    private var appLauncher: FakeAppLauncher!
 
     override func setUp() {
         projectsRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("bmad-manager-coord-test-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: projectsRoot, withIntermediateDirectories: true)
         terminal = FakeTerminalLauncher()
+        appLauncher = FakeAppLauncher()
         // Use an in-memory repository so the test never writes to the
         // real ~/Library/Application Support/.../settings.json — otherwise
         // setting `settings.projectsRoot` here would persist this temp
@@ -45,7 +59,7 @@ final class ProjectCoordinatorTests: XCTestCase {
     private var defaultRunCommand: (String, URL) async -> Int32 = { _, _ in 0 }
 
     private func makeCoordinator() -> ProjectCoordinator {
-        ProjectCoordinator(terminalLauncher: terminal)
+        ProjectCoordinator(terminalLauncher: terminal, appLauncher: appLauncher)
     }
 
     private func createProject(
@@ -378,6 +392,96 @@ final class ProjectCoordinatorTests: XCTestCase {
         coordinator.openInTerminal(project: project, command: "pi", kind: .iterm2)
 
         XCTAssertEqual(terminal.opens.first?.kind, .iterm2)
+    }
+
+    // MARK: - Agent launch (App vs CLI)
+
+    func testOpenAgentAutoLaunchesAppWhenInstalled() {
+        let coordinator = makeCoordinator()
+        let project = ProjectItem(url: projectsRoot.appendingPathComponent("auto-app"))
+
+        coordinator.openAgent(
+            project: project,
+            agent: .claude,
+            method: .auto,
+            appInstalled: true,
+            command: "claude",
+            kind: .terminal
+        )
+
+        XCTAssertEqual(appLauncher.opens, ["com.anthropic.claudefordesktop"])
+        XCTAssertEqual(terminal.opens.count, 0)
+    }
+
+    func testOpenAgentAutoFallsBackToCliWhenAppMissing() {
+        let coordinator = makeCoordinator()
+        let project = ProjectItem(url: projectsRoot.appendingPathComponent("auto-cli"))
+
+        coordinator.openAgent(
+            project: project,
+            agent: .claude,
+            method: .auto,
+            appInstalled: false,
+            command: "claude",
+            kind: .iterm2
+        )
+
+        XCTAssertEqual(appLauncher.opens.count, 0)
+        XCTAssertEqual(terminal.opens.count, 1)
+        XCTAssertEqual(terminal.opens.first?.command, "claude")
+        XCTAssertEqual(terminal.opens.first?.kind, .iterm2)
+    }
+
+    func testOpenAgentCliAlwaysUsesTerminalEvenWhenAppInstalled() {
+        let coordinator = makeCoordinator()
+        let project = ProjectItem(url: projectsRoot.appendingPathComponent("forced-cli"))
+
+        coordinator.openAgent(
+            project: project,
+            agent: .codex,
+            method: .cli,
+            appInstalled: true,
+            command: "codex",
+            kind: .terminal
+        )
+
+        XCTAssertEqual(appLauncher.opens.count, 0)
+        XCTAssertEqual(terminal.opens.first?.command, "codex")
+    }
+
+    func testOpenAgentAppForcedLaunchesAppEvenWhenNotDetected() {
+        let coordinator = makeCoordinator()
+        let project = ProjectItem(url: projectsRoot.appendingPathComponent("forced-app"))
+
+        coordinator.openAgent(
+            project: project,
+            agent: .codex,
+            method: .app,
+            appInstalled: false,
+            command: "codex",
+            kind: .terminal
+        )
+
+        XCTAssertEqual(appLauncher.opens, ["com.openai.codex"])
+        XCTAssertEqual(terminal.opens.count, 0)
+    }
+
+    func testOpenAgentSurfacesAppLaunchError() {
+        appLauncher.errorToThrow = FakeError.appFailed
+        let coordinator = makeCoordinator()
+        let project = ProjectItem(url: projectsRoot.appendingPathComponent("app-err"))
+
+        coordinator.openAgent(
+            project: project,
+            agent: .claude,
+            method: .app,
+            appInstalled: true,
+            command: "claude",
+            kind: .terminal
+        )
+
+        XCTAssertNotNil(coordinator.errorMessage)
+        XCTAssertEqual(terminal.opens.count, 0)
     }
 
     // MARK: - Project to delete state

@@ -54,6 +54,8 @@ struct AppSettings: Codable, Equatable {
     var opencodeCommand: String
     var piCommand: String
     var codexCommand: String
+    var claudeLaunchMethod: AgentLaunchMethod
+    var codexLaunchMethod: AgentLaunchMethod
     var projectSortOrder: ProjectSortOrder
     var terminalKind: TerminalKind
 
@@ -81,6 +83,8 @@ struct AppSettings: Codable, Equatable {
             opencodeCommand: "opencode",
             piCommand: "pi",
             codexCommand: "codex",
+            claudeLaunchMethod: .default,
+            codexLaunchMethod: .default,
             projectSortOrder: .nameAscending,
             terminalKind: .terminal
         )
@@ -99,6 +103,8 @@ struct AppSettings: Codable, Equatable {
         case opencodeCommand
         case piCommand
         case codexCommand
+        case claudeLaunchMethod
+        case codexLaunchMethod
         case projectSortOrder
         case terminalKind
     }
@@ -113,6 +119,8 @@ struct AppSettings: Codable, Equatable {
          opencodeCommand: String,
          piCommand: String = "pi",
          codexCommand: String = "codex",
+         claudeLaunchMethod: AgentLaunchMethod = .default,
+         codexLaunchMethod: AgentLaunchMethod = .default,
          projectSortOrder: ProjectSortOrder = .nameAscending,
          terminalKind: TerminalKind = .terminal) {
         self.projectsRoot = projectsRoot
@@ -125,6 +133,8 @@ struct AppSettings: Codable, Equatable {
         self.opencodeCommand = opencodeCommand
         self.piCommand = piCommand
         self.codexCommand = codexCommand
+        self.claudeLaunchMethod = claudeLaunchMethod
+        self.codexLaunchMethod = codexLaunchMethod
         self.projectSortOrder = projectSortOrder
         self.terminalKind = terminalKind
     }
@@ -141,6 +151,11 @@ struct AppSettings: Codable, Equatable {
         // failing to load.
         piCommand        = try c.decodeIfPresent(String.self, forKey: .piCommand) ?? "pi"
         codexCommand     = try c.decodeIfPresent(String.self, forKey: .codexCommand) ?? "codex"
+        // Per-agent App-vs-CLI launch preference. Settings files written
+        // before this picker don't carry the fields — default to .auto so
+        // upgrading users get the prefer-app behaviour without a load error.
+        claudeLaunchMethod = try c.decodeIfPresent(AgentLaunchMethod.self, forKey: .claudeLaunchMethod) ?? .default
+        codexLaunchMethod  = try c.decodeIfPresent(AgentLaunchMethod.self, forKey: .codexLaunchMethod) ?? .default
         // New in #12 — fall back to the default when reading a legacy file
         // so a freshly upgraded install doesn't fail to load its settings.
         projectSortOrder = try c.decodeIfPresent(ProjectSortOrder.self, forKey: .projectSortOrder) ?? .nameAscending
