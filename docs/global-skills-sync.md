@@ -5,10 +5,18 @@ repository into every project you open — in both **Claude Code** and **Codex**
 This lets one person (the **key user**) maintain an organisation's skills in one
 place, and everyone else sync them down with a single click.
 
-This guide has two parts:
+There are two ways to give your team access, and you pick one:
+
+- **Option A — Shared token (recommended for most teams).** You hand out one
+  read-only token. Your colleagues **never log into GitHub, never accept an
+  invitation, and never create a token** — they only ever use BMad Manager.
+- **Option B — Per-user tokens.** Each colleague has their own GitHub access and
+  token. More setup for them, but you get per-person audit and revocation.
+
+This guide is in two parts:
 
 - **Part 1 — Key user:** create the private skills repo, add your skills, and
-  invite your team.
+  set up authentication (Option A or B).
 - **Part 2 — Team member:** point BMad Manager at the repo and sync.
 
 ---
@@ -31,9 +39,9 @@ Key points:
 - **Your personal skills are safe.** Anything directly under `~/.claude/skills/`
   or `~/.codex/skills/` (i.e. *not* inside `managed/`) is never touched.
 - The two buttons are **independent** — click only the one for the tool you use.
-- The repo is **private**, so each person authenticates with their own
-  read-only **GitHub token**, stored securely on their machine (macOS Keychain;
-  Windows: a protected per-user file) — never in `settings.json`.
+- The repo is **private**, so a sync authenticates with a read-only **GitHub
+  token**, stored securely on the machine (macOS Keychain; Windows: a protected
+  per-user file) — never in `settings.json`.
 
 ---
 
@@ -80,61 +88,95 @@ next time they hit **Sync**.
 > changes, push to a `release` branch and tell your team to set that branch in
 > Settings.
 
-### 3. Invite your team
+### 3. Set up authentication
 
-Give each teammate **read-only** access to the repo:
+Pick **one** of the two options below.
 
-1. Repo → **Settings → Collaborators** (or **Teams**, for an org).
-2. **Add people**, enter their GitHub usernames, and grant the **Read** role.
-3. They'll receive an invitation to accept.
+---
 
-### 4. Tell your team how to authenticate
+#### Option A — Shared token (colleagues never touch GitHub) ★ recommended
 
-Each member needs a **fine-grained personal access token (PAT)** scoped to *just
-this repo* with read-only contents. Share the snippet in
-[Part 2, step 2](#2-create-a-read-only-github-token) below, substituting your
-repo's name.
+Your colleagues stay completely oblivious to GitHub: no account, no invitation,
+no token of their own. You create **one** read-only token and distribute it; they
+paste it into BMad Manager once.
 
-> **Per-user tokens are recommended** so access can be revoked individually and
-> nothing is shared in chat. If you'd rather distribute a single shared token,
-> create one fine-grained PAT yourself (steps below) and send it over a secure
-> channel — but you'll have to rotate it for everyone if it leaks.
+Don't share *your personal* token — create a dedicated **service account** so the
+token's reach is limited to that account (sharing a personal account's
+credentials also goes against GitHub's terms). One-time setup:
+
+1. **Create a service account.** Sign up a separate GitHub account, e.g.
+   `acme-bmad-bot` (a "machine user" — GitHub's blessed pattern for shared,
+   automated read access).
+2. **Give it read access to the repo.** As yourself, go to the skills repo →
+   **Settings → Collaborators** (or **Teams** in an org) → add the bot account
+   with the **Read** role, and accept the invite from the bot account once.
+3. **Create the token (signed in as the bot account):**
+   - **GitHub → Settings → Developer settings → Personal access tokens →
+     Fine-grained tokens → Generate new token.**
+   - **Resource owner:** the org/user that owns the skills repo.
+   - **Repository access → Only select repositories →** the skills repo.
+   - **Permissions → Repository permissions → Contents → Read-only.** Nothing
+     else.
+   - **Expiration:** pick a window you're willing to rotate on (max ~1 year).
+   - **Generate token** and copy it — GitHub shows it only once.
+4. **Distribute** the token (and the repo URL) to your team over a secure
+   channel — a password manager / secrets vault, not chat.
+
+Then send your team **Part 2 → "If your admin gave you a token (Option A)"**.
+
+**What you're trading off:** a shared token is a shared secret. There's **no
+per-person revoke or audit** — to cut access you rotate the token for everyone.
+Because it's **read-only and scoped to one repo**, the worst case if it leaks is
+"someone could read your skills repo." When it expires or leaks, regenerate it on
+the bot account and redistribute; colleagues just paste the new value and Save.
+
+---
+
+#### Option B — Per-user tokens (per-person audit and revocation)
+
+Each colleague authenticates as themselves. More steps for them, but you can
+revoke or audit individuals.
+
+1. **Invite each teammate** to the repo with **Read** access: repo → **Settings
+   → Collaborators** (or **Teams**) → **Add people** → **Read** role.
+2. Send them **Part 2 → "If you're using your own GitHub account (Option B)"**,
+   where they accept the invite and create their own read-only token.
 
 ---
 
 ## Part 2 — Team member: sync the skills
 
-### 1. Accept the invitation
+Use the section that matches what your admin (the key user) set up.
 
-Accept the repo invitation from the key user (check your email or
-`https://github.com/notifications`). You can't sync a repo you can't read.
+### If your admin gave you a token (Option A)
 
-### 2. Create a read-only GitHub token
+You don't need a GitHub account and you don't visit github.com at all.
 
-1. Go to **GitHub → Settings → Developer settings → Personal access tokens →
-   Fine-grained tokens → Generate new token**.
-2. **Token name:** e.g. `bmad-skills read`.
-3. **Expiration:** pick a sensible window (you can regenerate later).
-4. **Resource owner:** the org/user that owns the skills repo.
-5. **Repository access → Only select repositories →** choose the skills repo
-   (e.g. `your-org/bmad-skills`).
-6. **Permissions → Repository permissions → Contents → Read-only.** (That's the
-   only permission needed.)
-7. **Generate token** and copy it — GitHub shows it only once.
-
-### 3. Configure BMad Manager
-
-1. Open **Settings** (the ⚙ icon).
+1. Open BMad Manager → **Settings** (the ⚙ icon).
 2. Under **Global skills repository**:
-   - **Skills repo URL:** the HTTPS URL, e.g.
+   - **Skills repo URL:** the HTTPS URL your admin gave you, e.g.
      `https://github.com/your-org/bmad-skills`
-   - **Branch:** leave as `main` unless the key user told you otherwise.
-   - **GitHub token 🔒:** paste your token and click **Save token**.
-     - macOS stores it in your **Keychain**; Windows in a protected per-user
-       file. It is **never** written to `settings.json`.
-3. Click **Done**.
+   - **Branch:** leave as `main` unless told otherwise.
+   - **GitHub token 🔒:** paste the token your admin gave you and click
+     **Save token**. (macOS stores it in your Keychain; Windows in a protected
+     per-user file — never in `settings.json`.)
+3. Click **Done**, then jump to [Sync](#sync).
 
-### 4. Sync
+### If you're using your own GitHub account (Option B)
+
+1. **Accept the invitation** from the key user (check your email or
+   `https://github.com/notifications`). You can't sync a repo you can't read.
+2. **Create a read-only token:**
+   - **GitHub → Settings → Developer settings → Personal access tokens →
+     Fine-grained tokens → Generate new token.**
+   - **Resource owner:** the org/user that owns the skills repo.
+   - **Repository access → Only select repositories →** the skills repo.
+   - **Permissions → Repository permissions → Contents → Read-only.**
+   - **Generate token** and copy it.
+3. In BMad Manager → **Settings → Global skills repository**, enter the repo URL
+   and branch, paste your token, **Save token**, **Done**.
+
+### Sync
 
 On the main window, in the **Skills** row, click:
 
@@ -153,10 +195,10 @@ The output panel shows git's own error. Common cases:
 
 | Message                                  | Cause / fix                                                                 |
 | ---------------------------------------- | --------------------------------------------------------------------------- |
-| `Set a GitHub token in Settings first.`  | No token stored — add one in Settings (Part 2, step 3).                      |
+| `Set a GitHub token in Settings first.`  | No token stored — add one in Settings.                                       |
 | `Set a skills repo URL in Settings first.` | The Skills repo URL field is empty.                                       |
-| `Authentication failed` / `403`          | Token is wrong, expired, or lacks **Contents: Read** on this repo. Regenerate it and check the repository scope. |
-| `Repository not found` / `404`           | URL typo, or you haven't been granted read access — ask the key user.       |
+| `Authentication failed` / `403`          | Token is wrong, expired, or lacks **Contents: Read** on this repo. Ask your admin for a fresh token (Option A) or regenerate your own (Option B). |
+| `Repository not found` / `404`           | URL typo, or the token can't read the repo — confirm the URL with your admin. |
 | `Remote branch <x> not found`            | The branch in Settings doesn't exist on the repo. Confirm it with the key user (usually `main`). |
 
 Other notes:
@@ -165,5 +207,5 @@ Other notes:
   every sync. Put personal skills *outside* `managed/`.
 - **Changing the branch** in Settings and re-syncing switches the managed clone
   to that branch's latest commit.
-- **Rotating a token:** generate a new one, paste it, and **Save token** again
-  (this overwrites the old one). **Clear** removes it entirely.
+- **Rotating a token:** paste the new value and **Save token** again (it
+  overwrites the old one). **Clear** removes it entirely.
