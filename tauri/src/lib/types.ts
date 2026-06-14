@@ -80,6 +80,41 @@ export function companyContextDisplayName(context: CompanyContext): string {
   return `${base} ${marker}`;
 }
 
+// --- Contribution (propose additions as a PR) ---
+
+// Mirror of contribution::ContributableSkill.
+export interface ContributableSkill {
+  name: string;
+  directory: string;
+  tool: string;
+}
+
+// Mirror of commands::ContributableItems.
+export interface ContributableItems {
+  skills: ContributableSkill[];
+  contexts: CompanyContext[];
+}
+
+// Mirror of contribution::ContributionRequest.
+export interface ContributionRequest {
+  skills: { name: string; directory: string }[];
+  contexts: { targetName: string; directory: string; files: string[] }[];
+  title?: string | null;
+}
+
+// Mirror of contribution::ContributionResult.
+export interface ContributionResult {
+  url: string;
+  number: number;
+}
+
+// Mirror of commands::RepoAccessReport.
+export interface RepoAccessReport {
+  login: string;
+  repoFullName: string;
+  canPush: boolean;
+}
+
 export type OutputEvent =
   | { kind: "stdout"; line: string }
   | { kind: "stderr"; line: string }

@@ -2,7 +2,16 @@
 // remember command names or argument-key casing.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, BundledTooling, CompanyContext, ProjectItem } from "./types";
+import type {
+  AppSettings,
+  BundledTooling,
+  CompanyContext,
+  ContributableItems,
+  ContributionRequest,
+  ContributionResult,
+  ProjectItem,
+  RepoAccessReport,
+} from "./types";
 
 export const loadSettings = (): Promise<AppSettings> =>
   invoke<AppSettings>("load_settings");
@@ -64,3 +73,22 @@ export const syncSkillsCodex = (): Promise<void> =>
 // No-op when the repo URL/token isn't configured.
 export const syncSkillsRepo = (): Promise<void> =>
   invoke("sync_skills_repo");
+
+// --- Contribution ---
+
+export const listContributableItems = (): Promise<ContributableItems> =>
+  invoke<ContributableItems>("list_contributable_items");
+
+export const setContributorToken = (token: string): Promise<void> =>
+  invoke("set_contributor_token", { token });
+
+export const hasContributorToken = (): Promise<boolean> =>
+  invoke<boolean>("has_contributor_token");
+
+export const testRepoAccess = (): Promise<RepoAccessReport> =>
+  invoke<RepoAccessReport>("test_repo_access");
+
+export const submitContribution = (
+  request: ContributionRequest,
+): Promise<ContributionResult> =>
+  invoke<ContributionResult>("submit_contribution", { request });

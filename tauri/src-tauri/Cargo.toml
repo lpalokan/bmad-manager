@@ -27,6 +27,10 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 trash = "5"
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "sync"] }
+# Used by the contribution flow to talk to the GitHub REST API. reqwest is
+# already in the tree via tauri, so this adds no new TLS stack — only the
+# `json` helper. Async client (commands are already async on tokio).
+reqwest = { version = "0.13", default-features = false, features = ["json", "charset", "http2", "default-tls"] }
 
 # Windows-only: the skills-repo token lives in Windows Credential Manager via
 # keyring. Scoped to the Windows target so the Linux/CI build never pulls in a

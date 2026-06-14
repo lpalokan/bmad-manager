@@ -5,9 +5,12 @@
     defaultSettings,
     detectCommandInPath,
     getBundledTooling,
+    hasContributorToken,
     hasGithubToken,
     saveSettings,
+    setContributorToken,
     setGithubToken,
+    testRepoAccess,
   } from "./commands";
   import {
     moduleSourceOptions,
@@ -41,6 +44,16 @@
   let tokenSaving = $state(false);
   let tokenError: string | null = $state(null);
 
+  // Optional contributor (read-write) token, kept separate so syncing can stay
+  // least-privilege. Falls back to the sync token when unset.
+  let contributorToken = $state("");
+  let contributorStored = $state(false);
+  let contributorSaving = $state(false);
+  let contributorError: string | null = $state(null);
+  let testing = $state(false);
+  let testResult: string | null = $state(null);
+  let testOk = $state(false);
+
   onMount(async () => {
     try {
       bundled = await getBundledTooling();
@@ -52,7 +65,57 @@
     } catch {
       tokenStored = false;
     }
+    try {
+      contributorStored = await hasContributorToken();
+    } catch {
+      contributorStored = false;
+    }
   });
+
+  async function saveContributorToken() {
+    contributorSaving = true;
+    contributorError = null;
+    try {
+      await setContributorToken(contributorToken);
+      contributorStored = contributorToken.trim().length > 0;
+      contributorToken = "";
+    } catch (err) {
+      contributorError = String(err);
+    } finally {
+      contributorSaving = false;
+    }
+  }
+
+  async function clearContributorToken() {
+    contributorSaving = true;
+    contributorError = null;
+    try {
+      await setContributorToken("");
+      contributorStored = false;
+      contributorToken = "";
+    } catch (err) {
+      contributorError = String(err);
+    } finally {
+      contributorSaving = false;
+    }
+  }
+
+  async function runTestAccess() {
+    testing = true;
+    testResult = null;
+    try {
+      const report = await testRepoAccess();
+      testOk = report.canPush;
+      testResult = report.canPush
+        ? `@${report.login} can push to ${report.repoFullName} — ready to contribute.`
+        : `@${report.login} can read ${report.repoFullName} but the token lacks write access — contributions will fail.`;
+    } catch (err) {
+      testOk = false;
+      testResult = String(err);
+    } finally {
+      testing = false;
+    }
+  }
 
   async function saveToken() {
     tokenSaving = true;
@@ -417,6 +480,56 @@
         <p class="hint">
           Create a fine-grained PAT with read-only Contents access to the
           skills repo, then paste it here.
+        </p>
+      {/if}
+
+      <label class="lbl sub" for="contributor-token">
+        Contributor token 🔒 (optional)
+      </label>
+      <div class="row">
+        <input
+          id="contributor-token"
+          type="password"
+          autocomplete="off"
+          placeholder={contributorStored ? "•••••••• (stored)" : "Fine-grained read-write PAT"}
+          bind:value={contributorToken}
+        />
+        <button
+          type="button"
+          disabled={contributorSaving || contributorToken.trim().length === 0}
+          onclick={saveContributorToken}
+        >
+          {contributorSaving ? "Saving…" : "Save token"}
+        </button>
+        {#if contributorStored}
+          <button
+            type="button"
+            disabled={contributorSaving}
+            onclick={clearContributorToken}
+          >
+            Clear
+          </button>
+        {/if}
+        <button
+          type="button"
+          data-testid="test-repo-access"
+          disabled={testing || !draft.skillsRepoUrl}
+          onclick={runTestAccess}
+        >
+          {testing ? "Testing…" : "Test access"}
+        </button>
+      </div>
+      {#if contributorError}
+        <p class="hint not-found">Token error: {contributorError}</p>
+      {:else if testResult}
+        <p class="hint {testOk ? 'detected' : 'not-found'}">{testResult}</p>
+      {:else}
+        <p class="hint">
+          To contribute skills/contexts as pull requests, add a fine-grained
+          PAT with <strong>Contents: Read and write</strong> and
+          <strong>Pull requests: Read and write</strong> scoped to the skills
+          repo. Leave empty to reuse the read-only token above (contributions
+          will then fail until a write token is set).
         </p>
       {/if}
     </section>

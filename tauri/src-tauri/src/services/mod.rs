@@ -1,7 +1,9 @@
 pub mod bundled_tooling;
 pub mod command_runner;
 pub mod company_context;
+pub mod contribution;
 pub mod git_source;
+pub mod github_client;
 pub mod init_command;
 pub mod path_detection;
 pub mod project_creator;

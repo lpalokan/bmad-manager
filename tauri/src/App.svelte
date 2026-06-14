@@ -2,6 +2,7 @@
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { onDestroy, onMount } from "svelte";
   import CommandOutput from "./lib/CommandOutput.svelte";
+  import Contribute from "./lib/Contribute.svelte";
   import ProjectRow from "./lib/ProjectRow.svelte";
   import Settings from "./lib/Settings.svelte";
   import {
@@ -30,6 +31,7 @@
   let newProjectName = $state("");
   let isCreating = $state(false);
   let showSettings = $state(false);
+  let showContribute = $state(false);
   let showOutput = $state(false);
   let outputLines: string[] = $state([]);
   let lastExitCode: number | null = $state(null);
@@ -358,6 +360,14 @@
     >
       Sync to Codex
     </button>
+    <button
+      type="button"
+      data-testid="contribute"
+      disabled={!settings?.skillsRepoUrl}
+      onclick={() => (showContribute = true)}
+    >
+      Contribute…
+    </button>
     {#if !settings?.skillsRepoUrl}
       <span class="skills-hint">Set a skills repo URL in Settings ⚙ to enable.</span>
     {/if}
@@ -379,6 +389,10 @@
       onClose={() => (showSettings = false)}
       onSaved={settingsSaved}
     />
+  {/if}
+
+  {#if showContribute}
+    <Contribute onClose={() => (showContribute = false)} />
   {/if}
 </main>
 

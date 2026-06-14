@@ -23,32 +23,70 @@ pub use crate::platform::SecretError as TokenError;
 /// the legacy on-disk location.
 const ACCOUNT: &str = "skills-repo-token";
 
-/// Reads the stored token, or `None` if unset/empty.
+/// Logical credential name for the optional contributor (read-write) token,
+/// kept separate from the read-only sync token so syncing can stay
+/// least-privilege while contributing uses a higher-scope token.
+const CONTRIBUTOR_ACCOUNT: &str = "skills-repo-contributor-token";
+
+/// Reads the stored sync token, or `None` if unset/empty.
 pub fn load(settings_dir: &Path) -> Result<Option<String>, TokenError> {
-    let value = platform::secret_get(settings_dir, ACCOUNT)?;
+    load_account(settings_dir, ACCOUNT)
+}
+
+/// True if a non-empty sync token is stored. The raw value is never returned to
+/// the frontend — only whether one exists.
+pub fn is_set(settings_dir: &Path) -> bool {
+    matches!(load(settings_dir), Ok(Some(_)))
+}
+
+/// Stores the sync `token`. An empty/whitespace token clears any stored value.
+pub fn save(settings_dir: &Path, token: &str) -> Result<(), TokenError> {
+    save_account(settings_dir, ACCOUNT, token)
+}
+
+/// Removes the stored sync token if present.
+pub fn clear(settings_dir: &Path) -> Result<(), TokenError> {
+    platform::secret_delete(settings_dir, ACCOUNT)
+}
+
+/// Reads the contributor token, or `None` if unset/empty.
+pub fn load_contributor(settings_dir: &Path) -> Result<Option<String>, TokenError> {
+    load_account(settings_dir, CONTRIBUTOR_ACCOUNT)
+}
+
+/// True if a non-empty contributor token is stored.
+pub fn is_contributor_set(settings_dir: &Path) -> bool {
+    matches!(load_contributor(settings_dir), Ok(Some(_)))
+}
+
+/// Stores the contributor `token`. An empty/whitespace token clears it.
+pub fn save_contributor(settings_dir: &Path, token: &str) -> Result<(), TokenError> {
+    save_account(settings_dir, CONTRIBUTOR_ACCOUNT, token)
+}
+
+/// The token the contribution flow should use: the contributor token when set,
+/// otherwise the read-only sync token (which won't have write scope, surfacing
+/// a clear permission error rather than a silent failure).
+pub fn load_for_contribution(settings_dir: &Path) -> Result<Option<String>, TokenError> {
+    match load_contributor(settings_dir)? {
+        Some(token) => Ok(Some(token)),
+        None => load(settings_dir),
+    }
+}
+
+fn load_account(settings_dir: &Path, account: &str) -> Result<Option<String>, TokenError> {
+    let value = platform::secret_get(settings_dir, account)?;
     Ok(value
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty()))
 }
 
-/// True if a non-empty token is stored. The raw value is never returned to the
-/// frontend — only whether one exists.
-pub fn is_set(settings_dir: &Path) -> bool {
-    matches!(load(settings_dir), Ok(Some(_)))
-}
-
-/// Stores `token`. An empty/whitespace token clears any stored value.
-pub fn save(settings_dir: &Path, token: &str) -> Result<(), TokenError> {
+fn save_account(settings_dir: &Path, account: &str, token: &str) -> Result<(), TokenError> {
     let trimmed = token.trim();
     if trimmed.is_empty() {
-        return clear(settings_dir);
+        return platform::secret_delete(settings_dir, account);
     }
-    platform::secret_set(settings_dir, ACCOUNT, trimmed)
-}
-
-/// Removes the stored token if present.
-pub fn clear(settings_dir: &Path) -> Result<(), TokenError> {
-    platform::secret_delete(settings_dir, ACCOUNT)
+    platform::secret_set(settings_dir, account, trimmed)
 }
 
 #[cfg(test)]

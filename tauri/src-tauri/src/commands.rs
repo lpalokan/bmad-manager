@@ -15,9 +15,11 @@ use crate::models::{AppSettings, CompanyContext, ProjectItem};
 use crate::platform;
 use crate::services::bundled_tooling::{self, BundledTooling};
 use crate::services::command_runner::OutputEvent;
+use crate::services::github_client::GitHubClient;
 use crate::services::skills_sync::{self, SkillTool};
 use crate::services::{
-    company_context, path_detection, project_creator, project_service, settings_store, token_store,
+    company_context, contribution, github_client, path_detection, project_creator, project_service,
+    settings_store, token_store,
 };
 
 pub struct AppState {
@@ -245,6 +247,127 @@ pub async fn sync_skills_repo(app: AppHandle, state: State<'_, AppState>) -> Cmd
     .await?;
     run_skills_sync(app, settings, token, SkillTool::Codex).await?;
     Ok(())
+}
+
+// --- Contribution (propose additions as a PR) ------------------------------
+
+/// Items the contribution sheet can offer: the user's own (non-managed) skills
+/// and their project contexts.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContributableItems {
+    pub skills: Vec<contribution::ContributableSkill>,
+    pub contexts: Vec<CompanyContext>,
+}
+
+/// Read-side report for the Settings "Test access" button.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoAccessReport {
+    pub login: String,
+    pub repo_full_name: String,
+    pub can_push: bool,
+}
+
+/// Lists the personal skills + project contexts the user can contribute.
+#[tauri::command]
+pub fn list_contributable_items(state: State<'_, AppState>) -> CmdResult<ContributableItems> {
+    let settings = settings_store::load_or_init(&state.settings_path)?;
+    let root = expand_tilde(&settings.projects_root);
+    let projects = project_service::list_projects(&root, settings.project_sort_order);
+    let contexts = company_context::contexts_in(&projects);
+    let skills = dirs::home_dir()
+        .map(|home| contribution::enumerate_personal_skills(&home))
+        .unwrap_or_default();
+    Ok(ContributableItems { skills, contexts })
+}
+
+/// Stores the optional contributor (read-write) token in the OS secure store —
+/// never in settings.json. An empty string clears it.
+#[tauri::command]
+pub fn set_contributor_token(token: String, state: State<'_, AppState>) -> CmdResult<()> {
+    token_store::save_contributor(&settings_dir(&state), &token)?;
+    Ok(())
+}
+
+/// Whether a contributor token is stored (presence only, never the value).
+#[tauri::command]
+pub fn has_contributor_token(state: State<'_, AppState>) -> bool {
+    token_store::is_contributor_set(&settings_dir(&state))
+}
+
+/// Verifies the contributor token can read the configured repo, reporting the
+/// authenticated login and whether the token's access includes push.
+#[tauri::command]
+pub async fn test_repo_access(state: State<'_, AppState>) -> CmdResult<RepoAccessReport> {
+    let settings = settings_store::load_or_init(&state.settings_path)?;
+    let (owner, repo) =
+        contribution::parse_owner_repo(&settings.skills_repo_url).ok_or_else(|| {
+            IpcError("Set a valid github.com skills repo URL in Settings first.".into())
+        })?;
+    let token = token_store::load_for_contribution(&settings_dir(&state))?
+        .ok_or_else(|| IpcError("Set a contributor GitHub token in Settings first.".into()))?;
+    let client = github_client::ReqwestGitHubClient::new(token);
+    let access = client
+        .repo_access(&owner, &repo)
+        .await
+        .map_err(|e| IpcError(e.to_string()))?;
+    Ok(RepoAccessReport {
+        login: access.login,
+        repo_full_name: access.repo_full_name,
+        can_push: access.can_push,
+    })
+}
+
+/// Opens a pull request adding the selected skills/contexts to the shared repo.
+/// Progress streams on the `skills-sync-output` channel.
+#[tauri::command]
+pub async fn submit_contribution(
+    request: contribution::ContributionRequest,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<contribution::ContributionResult> {
+    let settings = settings_store::load_or_init(&state.settings_path)?;
+    let (owner, repo) =
+        contribution::parse_owner_repo(&settings.skills_repo_url).ok_or_else(|| {
+            IpcError(if settings.skills_repo_url.trim().is_empty() {
+                contribution::ContributionError::NoRepoUrl.to_string()
+            } else {
+                contribution::ContributionError::BadRepoUrl(settings.skills_repo_url.clone())
+                    .to_string()
+            })
+        })?;
+    let token = token_store::load_for_contribution(&settings_dir(&state))?
+        .ok_or_else(|| IpcError(contribution::ContributionError::NoToken.to_string()))?;
+
+    let _ = app.emit(
+        "skills-sync-output",
+        OutputEvent::Stderr {
+            line: format!("[bmad] preparing pull request to {owner}/{repo}…"),
+        },
+    );
+    let client = github_client::ReqwestGitHubClient::new(token);
+    let timestamp = current_timestamp();
+    let result = contribution::submit_contribution(&client, &owner, &repo, &request, &timestamp)
+        .await
+        .map_err(|e| IpcError(e.to_string()))?;
+    let _ = app.emit(
+        "skills-sync-output",
+        OutputEvent::Stderr {
+            line: format!("[bmad] opened PR #{}: {}", result.number, result.url),
+        },
+    );
+    Ok(result)
+}
+
+/// Epoch-seconds string used to make contribution branch names unique.
+fn current_timestamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+        .to_string()
 }
 
 /// Loads the settings + token a sync needs, synchronously (touches `State`,

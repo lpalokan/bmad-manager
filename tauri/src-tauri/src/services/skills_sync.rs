@@ -215,8 +215,10 @@ fn write_manifest(path: &Path, links: &[String]) -> Result<(), SkillsSyncError> 
 
 /// True if `p` exists and is a link/junction (reparse point on Windows, symlink
 /// on Unix) rather than a real directory. `is_symlink()` misreports Windows
-/// junctions, so we test the reparse-point attribute directly.
-fn is_link(p: &Path) -> bool {
+/// junctions, so we test the reparse-point attribute directly. `pub(crate)` so
+/// the contribution flow can tell personal skills (real dirs) from managed
+/// links.
+pub(crate) fn is_link(p: &Path) -> bool {
     match std::fs::symlink_metadata(p) {
         Ok(md) => {
             #[cfg(windows)]
@@ -438,9 +440,9 @@ where
     Ok(())
 }
 
-/// Minimal standard-base64 encoder (no external crate). Only `auth_header`
-/// needs it.
-fn base64_encode(input: &[u8]) -> String {
+/// Minimal standard-base64 encoder (no external crate). Used by `auth_header`
+/// and the contribution flow (encoding blob contents for the GitHub API).
+pub(crate) fn base64_encode(input: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     for chunk in input.chunks(3) {

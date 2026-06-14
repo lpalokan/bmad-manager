@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var newProjectName: String = ""
     @State private var selectedContext: CompanyContext? = nil
     @State private var showSettings: Bool = false
+    @State private var showContribute: Bool = false
     @State private var isSyncingSkills: Bool = false
 
     /// Reads the skills-repo token from the Keychain at click time. Kept here
@@ -51,6 +52,15 @@ struct ContentView: View {
                 // Re-sync after Settings closes: a newly configured skills
                 // repo (or token) should pull contexts/skills right away.
                 .onDisappear { refreshAll() }
+        }
+        .sheet(isPresented: $showContribute) {
+            ContributeView(
+                settings: settings.settings,
+                // GitHub-sourced contexts are already in the repo; only offer
+                // the user's own project contexts.
+                projectContexts: coordinator.availableContexts.filter { $0.source == .project },
+                onClose: { showContribute = false }
+            )
         }
         .alert(
             "Error",
@@ -242,6 +252,10 @@ struct ContentView: View {
                 Task { await syncSkills(.codex) }
             }
             .disabled(isSyncingSkills || coordinator.isCreating || noRepo)
+            Button("Contribute…") {
+                showContribute = true
+            }
+            .disabled(coordinator.isCreating || noRepo)
             if isSyncingSkills {
                 ProgressView().controlSize(.small)
             }

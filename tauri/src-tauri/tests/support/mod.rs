@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use bmad_manager_lib::models::{AppSettings, CompanyContext, ProjectItem};
+use bmad_manager_lib::services::contribution::{ContributableSkill, PreparedFile};
 use cucumber::World;
 use tempfile::TempDir;
 
@@ -41,6 +42,11 @@ pub struct TauriWorld {
     /// Isolated directory used as the token store's `settings_dir` scope so
     /// secure-token scenarios never touch the real per-user credential store.
     pub token_scope: Option<PathBuf>,
+    /// Fake home dir for contribution scenarios (holds `.claude/skills/…`).
+    pub contrib_home: Option<PathBuf>,
+    pub contributable_skills: Option<Vec<ContributableSkill>>,
+    pub prepared_files: Option<Vec<PreparedFile>>,
+    pub parsed_owner_repo: Option<Option<(String, String)>>,
 }
 
 impl TauriWorld {
@@ -99,6 +105,17 @@ impl TauriWorld {
             std::fs::write(dir.join(file), format!("content of {file}"))
                 .expect("write skills repo context file");
         }
+    }
+
+    /// Fake home directory for contribution scenarios.
+    pub fn ensure_contrib_home(&mut self) -> PathBuf {
+        if let Some(home) = &self.contrib_home {
+            return home.clone();
+        }
+        let home = self.ensure_tmp().to_path_buf().join("contrib-home");
+        std::fs::create_dir_all(&home).expect("create contrib home");
+        self.contrib_home = Some(home.clone());
+        home
     }
 
     /// Builds a minimal module zip fixture (one wrapper folder holding a
