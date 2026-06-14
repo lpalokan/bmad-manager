@@ -17,7 +17,7 @@ use std::path::Path;
 use thiserror::Error;
 
 use crate::models::company_context::RECOGNIZED_FILE_NAMES;
-use crate::models::{CompanyContext, ProjectItem};
+use crate::models::{CompanyContext, ContextSource, ProjectItem};
 
 const CONTEXT_SUBPATHS: [&str; 2] = ["_bmad-output/company-context", "company-context"];
 
@@ -56,10 +56,48 @@ pub fn context_in_project(project_path: &Path) -> Option<CompanyContext> {
                 project_name,
                 directory: dir,
                 files: present,
+                source: ContextSource::Project,
             });
         }
     }
     None
+}
+
+/// Resolves the contexts published in the shared skills repo's top-level
+/// `context/` folder (a sibling of the `skills/` folder). Each immediate
+/// subdirectory holding at least one recognized file is offered as a seeding
+/// source, tagged `Github`. Sorted by name (lowercased).
+pub fn github_contexts_in(repo_root: &Path) -> Vec<CompanyContext> {
+    let context_root = repo_root.join("context");
+    let mut contexts = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&context_root) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            let dir = entry.path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let present: Vec<String> = RECOGNIZED_FILE_NAMES
+                .iter()
+                .filter(|file| dir.join(file).is_file())
+                .map(|file| file.to_string())
+                .collect();
+            if present.is_empty() {
+                continue;
+            }
+            contexts.push(CompanyContext {
+                project_name: name,
+                directory: dir,
+                files: present,
+                source: ContextSource::Github,
+            });
+        }
+    }
+    contexts.sort_by_key(|c| c.project_name.to_lowercase());
+    contexts
 }
 
 /// Copies the context's recognized files into

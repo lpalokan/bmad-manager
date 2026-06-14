@@ -18,6 +18,7 @@
     saveSettings,
     syncSkillsClaude,
     syncSkillsCodex,
+    syncSkillsRepo,
   } from "./lib/commands";
   import { companyContextDisplayName, projectSortOrderOptions, type AppSettings, type CompanyContext, type OutputEvent, type ProjectItem, type ProjectSortOrder } from "./lib/types";
 
@@ -49,7 +50,6 @@
   onMount(async () => {
     try {
       settings = await loadSettings();
-      await refresh();
       unlisten = await listen<OutputEvent>("project-create-output", (event) =>
         applyOutputEvent(event.payload),
       );
@@ -62,10 +62,25 @@
       // failed create. Re-scan whenever the window regains focus so the list
       // reflects reality without forcing a restart.
       window.addEventListener("focus", refresh);
+      // Show the local list immediately, then pull the shared skills repo
+      // (skills + context/) and re-list so GitHub contexts appear.
+      await refresh();
+      await autoSync();
     } catch (err) {
       errorMessage = `Failed to load settings: ${err}`;
     }
   });
+
+  // Auto-sync the shared skills repo, then re-list so the repo's context/
+  // folder shows up. Listeners (above) capture the streamed git output.
+  async function autoSync() {
+    try {
+      await syncSkillsRepo();
+    } catch (err) {
+      errorMessage = `Skill sync failed: ${err}`;
+    }
+    await refresh();
+  }
 
   onDestroy(() => {
     if (unlisten) unlisten();
@@ -219,10 +234,10 @@
     <div class="header-actions">
       <button
         class="icon-btn"
-        title="Refresh projects"
+        title="Refresh projects and sync the skills repo"
         aria-label="Refresh projects"
         data-testid="refresh-projects"
-        onclick={refresh}
+        onclick={autoSync}
       >
         ⟳
       </button>

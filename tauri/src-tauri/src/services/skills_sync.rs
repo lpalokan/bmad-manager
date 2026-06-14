@@ -148,6 +148,19 @@ pub fn redacted_summary(repo_url: &str, branch: &str, updating: bool) -> String 
 
 // --- Skill discovery & link reconciliation ---------------------------------
 
+/// Where skills live inside the cloned repo: the top-level `skills/` folder
+/// when present (the layout shared with the sibling `context/` folder), else
+/// the repo root — backward-compatible with repos that keep skills directly
+/// at the top level. Pure.
+pub fn skills_source_dir(repo: &Path) -> PathBuf {
+    let sub = repo.join("skills");
+    if sub.is_dir() {
+        sub
+    } else {
+        repo.to_path_buf()
+    }
+}
+
 /// Immediate child directories of `repo` that contain a `SKILL.md`, sorted.
 /// Dotfolders (incl. `.git`) are ignored. Pure (reads the filesystem).
 pub fn discover_skills(repo: &Path) -> Vec<String> {
@@ -265,8 +278,9 @@ pub fn reconcile_links(
 ) -> Result<LinkSummary, SkillsSyncError> {
     std::fs::create_dir_all(skills_root).map_err(|e| io_err(skills_root, e))?;
 
+    let source = skills_source_dir(managed_repo);
     let previous = read_manifest(manifest_path);
-    let repo_skills = discover_skills(managed_repo);
+    let repo_skills = discover_skills(&source);
 
     // Remove every link we created on the last sync (clean slate). Only touch
     // entries that are actually links — never a real dir the user may have put
@@ -299,7 +313,7 @@ pub fn reconcile_links(
                 continue;
             }
         }
-        create_link(&link, &managed_repo.join(name)).map_err(|e| io_err(&link, e))?;
+        create_link(&link, &source.join(name)).map_err(|e| io_err(&link, e))?;
         linked.push(name.clone());
     }
 
@@ -524,6 +538,38 @@ mod tests {
         std::fs::create_dir_all(repo.join("not-a-skill")).unwrap(); // no SKILL.md
         std::fs::write(repo.join("README.md"), "x").unwrap();
         assert_eq!(discover_skills(repo), vec!["alpha", "beta"]);
+    }
+
+    #[test]
+    fn skills_source_dir_prefers_the_skills_subfolder() {
+        let tmp = TempDir::new().unwrap();
+        let repo = tmp.path();
+        make_skill(&repo.join("skills"), "alpha");
+        assert_eq!(skills_source_dir(repo), repo.join("skills"));
+    }
+
+    #[test]
+    fn skills_source_dir_falls_back_to_repo_root() {
+        let tmp = TempDir::new().unwrap();
+        let repo = tmp.path();
+        make_skill(repo, "alpha");
+        assert_eq!(skills_source_dir(repo), repo);
+    }
+
+    #[test]
+    fn reconcile_links_discovers_skills_under_the_skills_subfolder() {
+        let tmp = TempDir::new().unwrap();
+        let skills = tmp.path().join("skills");
+        let repo = tmp.path().join("skills-managed");
+        let manifest = tmp.path().join("links.json");
+        // New layout: skills under <repo>/skills, contexts under <repo>/context.
+        make_skill(&repo.join("skills"), "alpha");
+        make_skill(&repo.join("skills"), "beta");
+        std::fs::create_dir_all(repo.join("context/acme")).unwrap();
+
+        let summary = reconcile_links(&skills, &repo, &manifest).unwrap();
+        assert_eq!(summary.linked, vec!["alpha", "beta"]);
+        assert!(skills.join("alpha/SKILL.md").is_file());
     }
 
     #[test]

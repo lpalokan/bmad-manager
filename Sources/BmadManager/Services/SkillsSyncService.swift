@@ -115,6 +115,19 @@ enum SkillsSyncService {
 
     // MARK: - Skill discovery & link reconciliation
 
+    /// Where skills live inside the cloned repo: the top-level `skills/`
+    /// folder when present (the layout shared with the sibling `context/`
+    /// folder), else the repo root — backward-compatible with repos that
+    /// keep skills directly at the top level.
+    static func skillsSourceDir(in repo: URL, fileManager: FileManager = .default) -> URL {
+        let sub = repo.appendingPathComponent("skills", isDirectory: true)
+        var isDir: ObjCBool = false
+        if fileManager.fileExists(atPath: sub.path, isDirectory: &isDir), isDir.boolValue {
+            return sub
+        }
+        return repo
+    }
+
     /// Immediate child directories of `repo` containing a `SKILL.md`, sorted.
     /// Hidden entries (incl. `.git`) are skipped.
     static func discoverSkills(in repo: URL, fileManager: FileManager = .default) -> [String] {
@@ -146,8 +159,9 @@ enum SkillsSyncService {
     ) throws -> LinkSummary {
         try fileManager.createDirectory(at: skillsRoot, withIntermediateDirectories: true)
 
+        let source = skillsSourceDir(in: managedRepo, fileManager: fileManager)
         let previous = readManifest(manifestPath)
-        let repoSkills = discoverSkills(in: managedRepo, fileManager: fileManager)
+        let repoSkills = discoverSkills(in: source, fileManager: fileManager)
 
         // Remove every link we created last sync (clean slate). Only touch
         // entries that are actually symlinks — never a real dir.
@@ -179,7 +193,7 @@ enum SkillsSyncService {
             }
             try fileManager.createSymbolicLink(
                 at: link,
-                withDestinationURL: managedRepo.appendingPathComponent(name)
+                withDestinationURL: source.appendingPathComponent(name)
             )
             linked.append(name)
         }

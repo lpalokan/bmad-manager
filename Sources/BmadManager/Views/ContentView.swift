@@ -48,7 +48,9 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(settings)
-                .onDisappear { refreshProjects() }
+                // Re-sync after Settings closes: a newly configured skills
+                // repo (or token) should pull contexts/skills right away.
+                .onDisappear { refreshAll() }
         }
         .alert(
             "Error",
@@ -82,7 +84,7 @@ struct ContentView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .onAppear { refreshProjects() }
+        .onAppear { refreshAll() }
         .onChange(of: settings.settings.projectsRoot) { refreshProjects() }
         .onChange(of: settings.settings.projectSortOrder) { refreshProjects() }
         .onChange(of: coordinator.availableContexts) {
@@ -103,11 +105,37 @@ struct ContentView: View {
         )
     }
 
+    /// Refreshes the local list immediately, then auto-syncs the shared
+    /// skills repo (skills + `context/`) in the background and refreshes
+    /// again so freshly-pulled GitHub contexts appear.
+    private func refreshAll() {
+        refreshProjects()
+        Task { await autoSyncRepo() }
+    }
+
+    private func autoSyncRepo() async {
+        await coordinator.syncSkillsRepo(
+            settings: settings.settings,
+            token: tokenStore.loadToken(),
+            runCommand: { command, cwd in
+                await commandRunner.run(command: command, cwd: cwd)
+            }
+        )
+    }
+
     private var header: some View {
         HStack {
             Text("BMad Manager")
                 .font(.headline)
             Spacer()
+            Button {
+                refreshAll()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .help("Refresh projects and sync the skills repo")
+            .buttonStyle(.plain)
+
             Button {
                 coordinator.showOutput.toggle()
             } label: {

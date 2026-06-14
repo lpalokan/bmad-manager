@@ -85,6 +85,22 @@ impl TauriWorld {
         }
     }
 
+    /// Root of a fake skills-repo clone under the scenario's tempdir.
+    pub fn skills_repo_root(&mut self) -> PathBuf {
+        self.ensure_tmp().to_path_buf().join("skills-repo")
+    }
+
+    /// Seeds `<skills-repo>/context/<name>/` with the named files (file name
+    /// as content) so skills-repo context discovery has something to find.
+    pub fn seed_skills_repo_context(&mut self, name: &str, files: &[&str]) {
+        let dir = self.skills_repo_root().join("context").join(name);
+        std::fs::create_dir_all(&dir).expect("create skills repo context dir");
+        for file in files {
+            std::fs::write(dir.join(file), format!("content of {file}"))
+                .expect("write skills repo context file");
+        }
+    }
+
     /// Builds a minimal module zip fixture (one wrapper folder holding a
     /// manifest) for scenarios that run the full project-creation pipeline.
     pub fn build_module_zip(&mut self) -> PathBuf {

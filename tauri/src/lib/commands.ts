@@ -59,3 +59,8 @@ export const syncSkillsClaude = (): Promise<void> =>
 
 export const syncSkillsCodex = (): Promise<void> =>
   invoke("sync_skills_codex");
+
+// Auto-sync both tools from the shared skills repo (skills + context/).
+// No-op when the repo URL/token isn't configured.
+export const syncSkillsRepo = (): Promise<void> =>
+  invoke("sync_skills_repo");

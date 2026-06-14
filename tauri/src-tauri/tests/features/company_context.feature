@@ -47,15 +47,34 @@ Feature: Company context discovery and import
 
   # --- Display ---
 
-  Scenario: display name is just the project name when the context is complete
+  Scenario: display name is the project name with a folder marker when complete
     Given a project "acme" with context files "icp.md, positioning.md, brand-voice.md, kpis.md, tech-stack.md" under "_bmad-output/company-context"
     When I resolve the context of project "acme"
-    Then the context display name is "acme"
+    Then the context display name is "acme 📂"
 
   Scenario: display name flags a partial context
     Given a project "acme" with context files "icp.md, kpis.md" under "_bmad-output/company-context"
     When I resolve the context of project "acme"
-    Then the context display name is "acme (2 of 5 context files)"
+    Then the context display name is "acme (2 of 5 context files) 📂"
+
+  # --- Skills repo (GitHub) contexts ---
+
+  Scenario: discovers contexts published in the skills repo context folder
+    Given a skills repo context "globex" with files "positioning.md"
+    And a skills repo context "acme" with files "icp.md, kpis.md"
+    When I resolve the skills repo contexts
+    Then the resolved context project names are exactly "acme, globex"
+    And the resolved contexts all come from the skills repo
+
+  Scenario: a github context display name carries the github marker
+    Given a skills repo context "acme" with files "icp.md, positioning.md, brand-voice.md, kpis.md, tech-stack.md"
+    When I resolve the skills repo contexts
+    Then the github context "acme" display name is "acme 🐙"
+
+  Scenario: ignores a skills repo context folder without recognized files
+    Given a skills repo context "notes" with files "readme.md"
+    When I resolve the skills repo contexts
+    Then no skills repo contexts are found
 
   # --- Import ---
 

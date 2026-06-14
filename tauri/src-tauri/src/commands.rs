@@ -107,14 +107,34 @@ pub async fn create_project(
         .map_err(|e| IpcError(e.to_string()))
 }
 
-/// Scans the projects root for existing company contexts the new-project
-/// "Context" picker can offer as seeding sources.
+/// Scans for company contexts the new-project "Context" picker can offer as
+/// seeding sources: the shared skills repo's `context/` folder first (tagged
+/// GitHub), then the projects root (tagged Project).
 #[tauri::command]
 pub fn list_company_contexts(state: State<'_, AppState>) -> CmdResult<Vec<CompanyContext>> {
     let settings = settings_store::load_or_init(&state.settings_path)?;
     let root = expand_tilde(&settings.projects_root);
     let projects = project_service::list_projects(&root, settings.project_sort_order);
-    Ok(company_context::contexts_in(&projects))
+    let mut contexts = github_contexts_from_repo();
+    contexts.extend(company_context::contexts_in(&projects));
+    Ok(contexts)
+}
+
+/// Reads contexts from the skills repo clone (`context/` folder alongside
+/// `skills/`). Both tools clone the same repo into their own hidden dir, so
+/// we use whichever clone is present.
+fn github_contexts_from_repo() -> Vec<CompanyContext> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
+    for tool in [SkillTool::ClaudeCode, SkillTool::Codex] {
+        let repo = skills_sync::managed_repo_dir(&home, tool);
+        let contexts = company_context::github_contexts_in(&repo);
+        if !contexts.is_empty() {
+            return contexts;
+        }
+    }
+    Vec::new()
 }
 
 #[tauri::command]
@@ -200,6 +220,31 @@ pub async fn sync_skills_claude(app: AppHandle, state: State<'_, AppState>) -> C
 pub async fn sync_skills_codex(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     let (settings, token) = load_skills_inputs(&state)?;
     run_skills_sync(app, settings, token, SkillTool::Codex).await
+}
+
+/// Auto-syncs the shared skills repo into every tool's skills folder, then
+/// the frontend re-lists contexts so the repo's `context/` folder shows up.
+/// Driven by app startup and the Refresh button. A no-op (Ok) when the repo
+/// URL or token isn't configured — a fresh install shouldn't error. Git
+/// output streams on the same `skills-sync-output` channel as the manual sync.
+#[tauri::command]
+pub async fn sync_skills_repo(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    let settings = settings_store::load_or_init(&state.settings_path)?;
+    if settings.skills_repo_url.trim().is_empty() {
+        return Ok(());
+    }
+    let Some(token) = token_store::load(&settings_dir(&state))? else {
+        return Ok(());
+    };
+    run_skills_sync(
+        app.clone(),
+        settings.clone(),
+        token.clone(),
+        SkillTool::ClaudeCode,
+    )
+    .await?;
+    run_skills_sync(app, settings, token, SkillTool::Codex).await?;
+    Ok(())
 }
 
 /// Loads the settings + token a sync needs, synchronously (touches `State`,

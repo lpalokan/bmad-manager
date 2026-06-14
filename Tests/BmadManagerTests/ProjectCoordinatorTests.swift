@@ -288,6 +288,110 @@ final class ProjectCoordinatorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: destDir.path))
     }
 
+    // MARK: - GitHub repo contexts & auto-sync
+
+    /// A throwaway home dir whose `.claude/skills-managed` clone we can seed.
+    private func makeHome() -> URL {
+        let home = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("bmad-coord-home-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        return home
+    }
+
+    /// Seeds `<home>/.claude/skills-managed/{.git, context/<name>/<files>}`,
+    /// simulating a clone the auto-sync's git "update" path can no-op over.
+    private func seedManagedRepo(home: URL, context name: String, files: [String]) throws {
+        let repo = SkillsSyncService.managedRepoDir(for: .claudeCode, home: home)
+        try FileManager.default.createDirectory(
+            at: repo.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        let dir = repo.appendingPathComponent("context/\(name)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for file in files {
+            try "from \(name)".write(to: dir.appendingPathComponent(file),
+                                     atomically: true, encoding: .utf8)
+        }
+    }
+
+    func testRefreshMergesGithubContextsBeforeProjectContexts() throws {
+        let home = makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try seedManagedRepo(home: home, context: "shared-acme", files: ["icp.md"])
+        try seedContext(project: "campaign-a", files: ["icp.md"])
+
+        let coordinator = makeCoordinator()
+        coordinator.refresh(
+            root: settings.settings.projectsRoot,
+            sortOrder: .nameAscending,
+            home: home
+        )
+
+        XCTAssertEqual(coordinator.availableContexts.map(\.projectName),
+                       ["shared-acme", "campaign-a"])
+        XCTAssertEqual(coordinator.availableContexts.first?.source, .github)
+        XCTAssertEqual(coordinator.availableContexts.last?.source, .project)
+    }
+
+    func testSyncSkillsRepoIsSilentNoOpWhenUnconfigured() async {
+        let home = makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        settings.settings.skillsRepoURL = ""
+
+        var ran = false
+        let coordinator = makeCoordinator()
+        await coordinator.syncSkillsRepo(
+            settings: settings.settings,
+            token: nil,
+            home: home,
+            runCommand: { _, _ in ran = true; return 0 }
+        )
+
+        XCTAssertFalse(ran, "no git should run without a repo URL/token")
+        XCTAssertNil(coordinator.errorMessage)
+    }
+
+    func testSyncSkillsRepoSyncsBothToolsThenDiscoversGithubContexts() async throws {
+        let home = makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        settings.settings.skillsRepoURL = "https://github.com/acme/skills"
+        // Pre-seed both tools' clones with a .git so sync takes the
+        // fetch/reset path and our fake runCommand can just succeed.
+        try seedManagedRepo(home: home, context: "shared-acme", files: ["icp.md", "kpis.md"])
+        let codexRepo = SkillsSyncService.managedRepoDir(for: .codex, home: home)
+        try FileManager.default.createDirectory(
+            at: codexRepo.appendingPathComponent(".git"), withIntermediateDirectories: true)
+
+        var calls = 0
+        let coordinator = makeCoordinator()
+        await coordinator.syncSkillsRepo(
+            settings: settings.settings,
+            token: "ghp_token",
+            home: home,
+            runCommand: { _, _ in calls += 1; return 0 }
+        )
+
+        XCTAssertGreaterThanOrEqual(calls, 2, "git should run for both tools")
+        XCTAssertNil(coordinator.errorMessage)
+        XCTAssertEqual(coordinator.availableContexts.map(\.projectName), ["shared-acme"])
+        XCTAssertEqual(coordinator.availableContexts.first?.source, .github)
+    }
+
+    func testSyncSkillsRepoSurfacesGitFailure() async {
+        let home = makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        settings.settings.skillsRepoURL = "https://github.com/acme/skills"
+
+        let coordinator = makeCoordinator()
+        await coordinator.syncSkillsRepo(
+            settings: settings.settings,
+            token: "ghp_token",
+            home: home,
+            runCommand: { _, _ in 128 }
+        )
+
+        XCTAssertNotNil(coordinator.errorMessage)
+        XCTAssertTrue(coordinator.errorMessage?.contains("128") ?? false)
+    }
+
     // MARK: - Delete
 
     func testDeleteProjectRemovesIt() async throws {

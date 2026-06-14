@@ -41,6 +41,7 @@ pub fn run() {
             commands::has_github_token,
             commands::sync_skills_claude,
             commands::sync_skills_codex,
+            commands::sync_skills_repo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
