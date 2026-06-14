@@ -47,3 +47,15 @@ export const openProjectFolder = (projectPath: string): Promise<void> =>
 
 export const detectCommandInPath = (command: string): Promise<string | null> =>
   invoke<string | null>("detect_command_in_path", { command });
+
+export const setGithubToken = (token: string): Promise<void> =>
+  invoke("set_github_token", { token });
+
+export const hasGithubToken = (): Promise<boolean> =>
+  invoke<boolean>("has_github_token");
+
+export const syncSkillsClaude = (): Promise<void> =>
+  invoke("sync_skills_claude");
+
+export const syncSkillsCodex = (): Promise<void> =>
+  invoke("sync_skills_codex");

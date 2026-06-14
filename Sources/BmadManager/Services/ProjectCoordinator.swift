@@ -174,4 +174,37 @@ final class ProjectCoordinator: ObservableObject {
             openInTerminal(project: project, command: command, kind: kind)
         }
     }
+
+    /// Syncs the configured skills repo into `tool`'s global `managed/`
+    /// folder. `token` comes from the Keychain (read by the View at click
+    /// time) and `runCommand` streams git output into the command panel —
+    /// both passed in so the coordinator stays free of Keychain/Process and
+    /// the policy is testable. Errors (no token/URL, git failure) surface via
+    /// `errorMessage`; git's own output appears in the panel.
+    func syncSkills(
+        tool: SkillTool,
+        settings: AppSettings,
+        token: String?,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        runCommand: @escaping (String, URL) async -> Int32
+    ) async {
+        showOutput = true
+        guard let token, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = SkillsSyncError.noToken.localizedDescription
+            return
+        }
+        do {
+            try await SkillsSyncService.sync(
+                tool: tool,
+                repoURL: settings.skillsRepoURL,
+                branch: settings.skillsRepoBranch,
+                token: token,
+                home: home,
+                runCommand: runCommand
+            )
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }

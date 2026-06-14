@@ -37,6 +37,10 @@ pub fn run() {
             commands::open_in_codex,
             commands::open_project_folder,
             commands::detect_command_in_path,
+            commands::set_github_token,
+            commands::has_github_token,
+            commands::sync_skills_claude,
+            commands::sync_skills_codex,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

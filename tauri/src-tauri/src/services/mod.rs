@@ -7,4 +7,6 @@ pub mod path_detection;
 pub mod project_creator;
 pub mod project_service;
 pub mod settings_store;
+pub mod skills_sync;
+pub mod token_store;
 pub mod zip_source;

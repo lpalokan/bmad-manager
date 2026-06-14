@@ -5,5 +5,6 @@ pub mod open_folder;
 pub mod path_detection;
 pub mod project_service;
 pub mod settings;
+pub mod skills_sync;
 pub mod smoke;
 pub mod zip_source;

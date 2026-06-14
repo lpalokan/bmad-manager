@@ -1,7 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { defaultSettings, detectCommandInPath, getBundledTooling, saveSettings } from "./commands";
+  import {
+    defaultSettings,
+    detectCommandInPath,
+    getBundledTooling,
+    hasGithubToken,
+    saveSettings,
+    setGithubToken,
+  } from "./commands";
   import {
     moduleSourceOptions,
     terminalOptions,
@@ -25,13 +32,54 @@
   let bundled: BundledTooling | null = $state(null);
   let bundledError: string | null = $state(null);
 
+  // GitHub skills-repo token. Stored in the OS credential store (Tauri:
+  // protected file) — never in settings.json — so it's handled separately
+  // from `draft`. We only learn whether one is stored, never its value.
+  let githubToken = $state("");
+  let tokenStored = $state(false);
+  let tokenSaving = $state(false);
+  let tokenError: string | null = $state(null);
+
   onMount(async () => {
     try {
       bundled = await getBundledTooling();
     } catch (err) {
       bundledError = String(err);
     }
+    try {
+      tokenStored = await hasGithubToken();
+    } catch {
+      tokenStored = false;
+    }
   });
+
+  async function saveToken() {
+    tokenSaving = true;
+    tokenError = null;
+    try {
+      await setGithubToken(githubToken);
+      tokenStored = githubToken.trim().length > 0;
+      githubToken = "";
+    } catch (err) {
+      tokenError = String(err);
+    } finally {
+      tokenSaving = false;
+    }
+  }
+
+  async function clearToken() {
+    tokenSaving = true;
+    tokenError = null;
+    try {
+      await setGithubToken("");
+      tokenStored = false;
+      githubToken = "";
+    } catch (err) {
+      tokenError = String(err);
+    } finally {
+      tokenSaving = false;
+    }
+  }
 
   // Per-agent PATH-detection results. `null` = unknown / pending,
   // a string = resolved absolute path, `false` = checked and not found.
@@ -315,6 +363,63 @@
       </div>
     </section>
 
+    <section data-testid="skills-settings">
+      <span class="lbl">Global skills repository</span>
+      <p class="hint">
+        Sync a private GitHub skills repo into your global Claude Code / Codex
+        skills folders from the main window. The token is stored in your OS
+        credential store, never in settings.json.
+      </p>
+      <label class="lbl sub" for="skills-repo-url">Skills repo URL</label>
+      <input
+        id="skills-repo-url"
+        type="text"
+        placeholder="https://github.com/your-org/bmad-skills"
+        bind:value={draft.skillsRepoUrl}
+      />
+      <label class="lbl sub" for="skills-repo-branch">Branch</label>
+      <input
+        id="skills-repo-branch"
+        type="text"
+        placeholder="main"
+        bind:value={draft.skillsRepoBranch}
+      />
+      <label class="lbl sub" for="skills-token">
+        GitHub token 🔒
+      </label>
+      <div class="row">
+        <input
+          id="skills-token"
+          type="password"
+          autocomplete="off"
+          placeholder={tokenStored ? "•••••••• (stored)" : "Fine-grained read-only PAT"}
+          bind:value={githubToken}
+        />
+        <button
+          type="button"
+          disabled={tokenSaving || githubToken.trim().length === 0}
+          onclick={saveToken}
+        >
+          {tokenSaving ? "Saving…" : "Save token"}
+        </button>
+        {#if tokenStored}
+          <button type="button" disabled={tokenSaving} onclick={clearToken}>
+            Clear
+          </button>
+        {/if}
+      </div>
+      {#if tokenError}
+        <p class="hint not-found">Token error: {tokenError}</p>
+      {:else if tokenStored}
+        <p class="hint detected">A token is stored for this machine.</p>
+      {:else}
+        <p class="hint">
+          Create a fine-grained PAT with read-only Contents access to the
+          skills repo, then paste it here.
+        </p>
+      {/if}
+    </section>
+
     <section data-testid="bundled-tooling">
       <span class="lbl">Bundled tooling</span>
       <div class="bundled">
@@ -421,6 +526,12 @@
   .lbl {
     font-size: 12px;
     font-weight: 600;
+  }
+
+  .lbl.sub {
+    font-weight: 500;
+    margin-top: 4px;
+    opacity: 0.85;
   }
 
   .row {

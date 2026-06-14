@@ -85,6 +85,10 @@ impl TerminalKind {
 
 pub const DEFAULT_MODULE_REPO_URL: &str = "https://github.com/lpalokan/bmad-marketing-growth";
 
+/// Default branch a skills repo is synced from when the user hasn't overridden
+/// it. Most orgs track `main`.
+pub const DEFAULT_SKILLS_REPO_BRANCH: &str = "main";
+
 /// User-visible app settings. Persisted as JSON under
 /// `platform::settings_dir()/settings.json`.
 ///
@@ -107,6 +111,13 @@ pub struct AppSettings {
     pub codex_command: String,
     pub project_sort_order: ProjectSortOrder,
     pub terminal_kind: TerminalKind,
+    /// HTTPS URL of the private skills repo synced into the global
+    /// `~/.claude/skills/managed` and `~/.codex/skills/managed` folders.
+    /// Empty until the user configures it. The matching read-only token is
+    /// kept in the OS credential store, never here.
+    pub skills_repo_url: String,
+    /// Branch the skills repo is synced from (defaults to `main`).
+    pub skills_repo_branch: String,
 }
 
 impl AppSettings {
@@ -128,6 +139,8 @@ impl AppSettings {
             codex_command: "codex".to_string(),
             project_sort_order: ProjectSortOrder::NameAscending,
             terminal_kind: TerminalKind::default_for_platform(),
+            skills_repo_url: String::new(),
+            skills_repo_branch: DEFAULT_SKILLS_REPO_BRANCH.to_string(),
         }
     }
 }
@@ -173,6 +186,10 @@ impl<'de> Deserialize<'de> for AppSettings {
             project_sort_order: Option<ProjectSortOrder>,
             #[serde(default)]
             terminal_kind: Option<TerminalKind>,
+            #[serde(default)]
+            skills_repo_url: Option<String>,
+            #[serde(default)]
+            skills_repo_branch: Option<String>,
         }
 
         let raw = Raw::deserialize(deserializer)?;
@@ -207,6 +224,10 @@ impl<'de> Deserialize<'de> for AppSettings {
             terminal_kind: raw
                 .terminal_kind
                 .unwrap_or_else(TerminalKind::default_for_platform),
+            skills_repo_url: raw.skills_repo_url.unwrap_or_default(),
+            skills_repo_branch: raw
+                .skills_repo_branch
+                .unwrap_or_else(|| DEFAULT_SKILLS_REPO_BRANCH.to_string()),
         })
     }
 }
@@ -349,9 +370,48 @@ mod tests {
             codex_command: "codex".to_string(),
             project_sort_order: ProjectSortOrder::DateNewestFirst,
             terminal_kind: TerminalKind::WindowsTerminal,
+            skills_repo_url: "https://github.com/my-org/skills".to_string(),
+            skills_repo_branch: "main".to_string(),
         };
         let json = serde_json::to_string(&original).unwrap();
         let decoded: AppSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn defaults_skills_repo_is_empty_on_main_branch() {
+        let d = AppSettings::defaults();
+        assert_eq!(d.skills_repo_url, "");
+        assert_eq!(d.skills_repo_branch, "main");
+    }
+
+    #[test]
+    fn legacy_without_skills_fields_defaults_branch_to_main() {
+        // A settings.json written before the skills feature existed.
+        let legacy = r#"{
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }"#;
+        let decoded: AppSettings = serde_json::from_str(legacy).unwrap();
+        assert_eq!(decoded.skills_repo_url, "");
+        assert_eq!(decoded.skills_repo_branch, "main");
+    }
+
+    #[test]
+    fn round_trip_preserves_skills_fields() {
+        let mut original = AppSettings::defaults();
+        original.skills_repo_url = "https://github.com/acme/bmad-skills".to_string();
+        original.skills_repo_branch = "release".to_string();
+        let json = serde_json::to_string(&original).unwrap();
+        let decoded: AppSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            decoded.skills_repo_url,
+            "https://github.com/acme/bmad-skills"
+        );
+        assert_eq!(decoded.skills_repo_branch, "release");
         assert_eq!(decoded, original);
     }
 }

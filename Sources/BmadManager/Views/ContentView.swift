@@ -13,6 +13,11 @@ struct ContentView: View {
     @State private var newProjectName: String = ""
     @State private var selectedContext: CompanyContext? = nil
     @State private var showSettings: Bool = false
+    @State private var isSyncingSkills: Bool = false
+
+    /// Reads the skills-repo token from the Keychain at click time. Kept here
+    /// (not in the coordinator) so the coordinator stays Keychain-free.
+    private let tokenStore: any TokenStore = KeychainTokenStore()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +34,9 @@ struct ContentView: View {
             } else {
                 projectList
             }
+
+            Divider()
+            skillsRow
 
             if coordinator.showOutput || commandRunner.isRunning {
                 Divider()
@@ -189,6 +197,37 @@ struct ContentView: View {
         .padding(.bottom, 4)
     }
 
+    /// "Sync to Claude Code / Codex" buttons. Independent — a user clicks
+    /// only the one for their tool. Disabled until a skills repo URL is set.
+    private var skillsRow: some View {
+        let noRepo = settings.settings.skillsRepoURL
+            .trimmingCharacters(in: .whitespaces).isEmpty
+        return HStack(spacing: 6) {
+            Text("Skills")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Sync to Claude Code") {
+                Task { await syncSkills(.claudeCode) }
+            }
+            .disabled(isSyncingSkills || coordinator.isCreating || noRepo)
+            Button("Sync to Codex") {
+                Task { await syncSkills(.codex) }
+            }
+            .disabled(isSyncingSkills || coordinator.isCreating || noRepo)
+            if isSyncingSkills {
+                ProgressView().controlSize(.small)
+            }
+            if noRepo {
+                Text("Set a skills repo URL in Settings to enable.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 4)
+    }
+
     private var emptyState: some View {
         VStack(spacing: 4) {
             Spacer()
@@ -281,6 +320,20 @@ struct ContentView: View {
             // inherit the previous selection.
             selectedContext = nil
         }
+    }
+
+    private func syncSkills(_ tool: SkillTool) async {
+        guard !isSyncingSkills else { return }
+        isSyncingSkills = true
+        defer { isSyncingSkills = false }
+        await coordinator.syncSkills(
+            tool: tool,
+            settings: settings.settings,
+            token: tokenStore.loadToken(),
+            runCommand: { command, cwd in
+                await commandRunner.run(command: command, cwd: cwd)
+            }
+        )
     }
 
     private func promptForModuleZip() -> URL? {

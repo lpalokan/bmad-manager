@@ -27,6 +27,14 @@ struct SettingsView: View {
     @State private var claudeAppInstalled: Bool = false
     @State private var codexAppInstalled: Bool = false
 
+    // Skills-repo GitHub token. Stored in the Keychain — never in
+    // settings.json — so it's handled outside `store.settings`. We only
+    // track whether one is stored, never display its value.
+    @State private var skillsToken: String = ""
+    @State private var skillsTokenStored: Bool = false
+    @State private var skillsTokenError: String? = nil
+    private let tokenStore: any TokenStore = KeychainTokenStore()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Settings")
@@ -53,6 +61,7 @@ struct SettingsView: View {
         .onAppear {
             reconcileTerminalSelection()
             refreshAgentDetection()
+            skillsTokenStored = tokenStore.loadToken() != nil
         }
         .onChange(of: store.settings.claudeCommand) {
             claudeDetected = PathDetector.detect(store.settings.claudeCommand)
@@ -194,6 +203,74 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            skillsSection
+        }
+    }
+
+    /// Configuration for the global skill sync: the private skills repo URL,
+    /// its branch, and the read-only GitHub token (kept in the Keychain).
+    private var skillsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Global skills repository").font(.subheadline).bold()
+            Text("Sync a private skills repo into your global Claude Code / Codex skills folders from the main window. The token is stored in your Keychain, never in settings.json.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            TextField("https://github.com/your-org/bmad-skills",
+                      text: $store.settings.skillsRepoURL)
+                .textFieldStyle(.roundedBorder)
+            TextField("Branch (default: main)", text: $store.settings.skillsRepoBranch)
+                .textFieldStyle(.roundedBorder)
+
+            Text("GitHub token 🔒").font(.subheadline)
+            HStack {
+                SecureField(
+                    skillsTokenStored ? "•••••••• (stored)" : "Fine-grained read-only PAT",
+                    text: $skillsToken
+                )
+                .textFieldStyle(.roundedBorder)
+                Button("Save token") { saveSkillsToken() }
+                    .disabled(skillsToken.trimmingCharacters(in: .whitespaces).isEmpty)
+                if skillsTokenStored {
+                    Button("Clear") { clearSkillsToken() }
+                }
+            }
+            if let error = skillsTokenError {
+                Text("Token error: \(error)")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if skillsTokenStored {
+                Text("A token is stored in your Keychain.")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            } else {
+                Text("Create a fine-grained PAT with read-only Contents access to the skills repo, then paste it here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func saveSkillsToken() {
+        do {
+            try tokenStore.saveToken(skillsToken)
+            skillsTokenStored = !skillsToken.trimmingCharacters(in: .whitespaces).isEmpty
+            skillsToken = ""
+            skillsTokenError = nil
+        } catch {
+            skillsTokenError = error.localizedDescription
+        }
+    }
+
+    private func clearSkillsToken() {
+        do {
+            try tokenStore.clearToken()
+            skillsTokenStored = false
+            skillsToken = ""
+            skillsTokenError = nil
+        } catch {
+            skillsTokenError = error.localizedDescription
         }
     }
 

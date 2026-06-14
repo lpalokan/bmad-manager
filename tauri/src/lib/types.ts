@@ -28,6 +28,8 @@ export interface AppSettings {
   codexCommand: string;
   projectSortOrder: ProjectSortOrder;
   terminalKind: TerminalKind;
+  skillsRepoUrl: string;
+  skillsRepoBranch: string;
 }
 
 export interface ProjectItem {

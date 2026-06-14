@@ -15,8 +15,9 @@ use crate::models::{AppSettings, CompanyContext, ProjectItem};
 use crate::platform;
 use crate::services::bundled_tooling::{self, BundledTooling};
 use crate::services::command_runner::OutputEvent;
+use crate::services::skills_sync::{self, SkillTool};
 use crate::services::{
-    company_context, path_detection, project_creator, project_service, settings_store,
+    company_context, path_detection, project_creator, project_service, settings_store, token_store,
 };
 
 pub struct AppState {
@@ -168,6 +169,80 @@ pub fn open_project_folder(project_path: String) -> CmdResult<()> {
 #[tauri::command]
 pub fn detect_command_in_path(command: String) -> Option<String> {
     path_detection::detect_command_in_path(&command, None).map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Stores the skills-repo GitHub token in the protected token file (never in
+/// settings.json). An empty string clears it.
+#[tauri::command]
+pub fn set_github_token(token: String, state: State<'_, AppState>) -> CmdResult<()> {
+    token_store::save(&settings_dir(&state), &token)?;
+    Ok(())
+}
+
+/// Whether a skills-repo token is currently stored. The raw token is never
+/// returned to the frontend — only its presence, so the Settings UI can show
+/// a "token stored" affordance.
+#[tauri::command]
+pub fn has_github_token(state: State<'_, AppState>) -> bool {
+    token_store::is_set(&settings_dir(&state))
+}
+
+/// Sync the configured skills repo into `~/.claude/skills/managed`.
+#[tauri::command]
+pub async fn sync_skills_claude(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    let (settings, token) = load_skills_inputs(&state)?;
+    run_skills_sync(app, settings, token, SkillTool::ClaudeCode).await
+}
+
+/// Sync the configured skills repo into `~/.codex/skills/managed`.
+#[tauri::command]
+pub async fn sync_skills_codex(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    let (settings, token) = load_skills_inputs(&state)?;
+    run_skills_sync(app, settings, token, SkillTool::Codex).await
+}
+
+/// Loads the settings + token a sync needs, synchronously (touches `State`,
+/// so it must finish before any `.await` — `State` references aren't held
+/// across await points).
+fn load_skills_inputs(state: &State<'_, AppState>) -> CmdResult<(AppSettings, String)> {
+    let settings = settings_store::load_or_init(&state.settings_path)?;
+    let token = token_store::load(&settings_dir(state))?
+        .ok_or_else(|| IpcError("Set a GitHub token in Settings first.".to_string()))?;
+    Ok((settings, token))
+}
+
+async fn run_skills_sync(
+    app: AppHandle,
+    settings: AppSettings,
+    token: String,
+    tool: SkillTool,
+) -> CmdResult<()> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| IpcError("Could not determine your home directory.".to_string()))?;
+    let git_exe = platform::resolve_git_path();
+
+    let emit = move |event: OutputEvent| {
+        let _ = app.emit("skills-sync-output", event);
+    };
+    skills_sync::sync(
+        &git_exe,
+        &settings.skills_repo_url,
+        &settings.skills_repo_branch,
+        &token,
+        &home,
+        tool,
+        emit,
+    )
+    .await
+    .map_err(|e| IpcError(e.to_string()))
+}
+
+fn settings_dir(state: &State<'_, AppState>) -> PathBuf {
+    state
+        .settings_path
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn open_in_terminal(project_path: &str, which: &str, state: State<'_, AppState>) -> CmdResult<()> {

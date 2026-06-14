@@ -58,8 +58,16 @@ struct AppSettings: Codable, Equatable {
     var codexLaunchMethod: AgentLaunchMethod
     var projectSortOrder: ProjectSortOrder
     var terminalKind: TerminalKind
+    /// HTTPS URL of the private skills repo synced into the global
+    /// `~/.claude/skills/managed` and `~/.codex/skills/managed` folders.
+    /// Empty until configured. The read-only token lives in the Keychain,
+    /// never here.
+    var skillsRepoURL: String
+    /// Branch the skills repo is synced from (defaults to `main`).
+    var skillsRepoBranch: String
 
     static let defaultModuleRepoURL = "https://github.com/lpalokan/bmad-marketing-growth"
+    static let defaultSkillsRepoBranch = "main"
 
     static func defaults() -> AppSettings {
         // Headless BMad install per docs.bmad-method.org/how-to/install-bmad
@@ -86,7 +94,9 @@ struct AppSettings: Codable, Equatable {
             claudeLaunchMethod: .default,
             codexLaunchMethod: .default,
             projectSortOrder: .nameAscending,
-            terminalKind: .terminal
+            terminalKind: .terminal,
+            skillsRepoURL: "",
+            skillsRepoBranch: AppSettings.defaultSkillsRepoBranch
         )
     }
 
@@ -107,6 +117,10 @@ struct AppSettings: Codable, Equatable {
         case codexLaunchMethod
         case projectSortOrder
         case terminalKind
+        // Explicit raw value so the on-disk key matches the Tauri/Rust side
+        // (`skillsRepoUrl`), keeping settings.json portable across platforms.
+        case skillsRepoURL = "skillsRepoUrl"
+        case skillsRepoBranch
     }
 
     init(projectsRoot: String,
@@ -122,7 +136,9 @@ struct AppSettings: Codable, Equatable {
          claudeLaunchMethod: AgentLaunchMethod = .default,
          codexLaunchMethod: AgentLaunchMethod = .default,
          projectSortOrder: ProjectSortOrder = .nameAscending,
-         terminalKind: TerminalKind = .terminal) {
+         terminalKind: TerminalKind = .terminal,
+         skillsRepoURL: String = "",
+         skillsRepoBranch: String = AppSettings.defaultSkillsRepoBranch) {
         self.projectsRoot = projectsRoot
         self.moduleSourceKind = moduleSourceKind
         self.moduleRepoURL = moduleRepoURL
@@ -137,6 +153,8 @@ struct AppSettings: Codable, Equatable {
         self.codexLaunchMethod = codexLaunchMethod
         self.projectSortOrder = projectSortOrder
         self.terminalKind = terminalKind
+        self.skillsRepoURL = skillsRepoURL
+        self.skillsRepoBranch = skillsRepoBranch
     }
 
     init(from decoder: Decoder) throws {
@@ -175,5 +193,11 @@ struct AppSettings: Codable, Equatable {
         // Legacy settings.json files predate the terminal picker — default
         // to Terminal.app so upgrades keep the previous behaviour.
         terminalKind = try c.decodeIfPresent(TerminalKind.self, forKey: .terminalKind) ?? .terminal
+
+        // Skills sync (#40) — legacy files predate these; default to an
+        // unconfigured repo on `main` so loading never fails.
+        skillsRepoURL = try c.decodeIfPresent(String.self, forKey: .skillsRepoURL) ?? ""
+        skillsRepoBranch = try c.decodeIfPresent(String.self, forKey: .skillsRepoBranch)
+            ?? AppSettings.defaultSkillsRepoBranch
     }
 }

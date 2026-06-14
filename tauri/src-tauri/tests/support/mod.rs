@@ -37,6 +37,7 @@ pub struct TauriWorld {
     /// `Some(None)` records a resolution attempt that found nothing.
     pub resolved_context: Option<Option<CompanyContext>>,
     pub resolved_contexts: Option<Vec<CompanyContext>>,
+    pub last_managed_dir: Option<PathBuf>,
 }
 
 impl TauriWorld {
