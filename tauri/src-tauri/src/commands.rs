@@ -171,8 +171,9 @@ pub fn detect_command_in_path(command: String) -> Option<String> {
     path_detection::detect_command_in_path(&command, None).map(|p| p.to_string_lossy().into_owned())
 }
 
-/// Stores the skills-repo GitHub token in the protected token file (never in
-/// settings.json). An empty string clears it.
+/// Stores the skills-repo GitHub token in the OS secure credential store
+/// (Windows Credential Manager; a protected per-user file on the dev/CI
+/// fallback) — never in settings.json. An empty string clears it.
 #[tauri::command]
 pub fn set_github_token(token: String, state: State<'_, AppState>) -> CmdResult<()> {
     token_store::save(&settings_dir(&state), &token)?;

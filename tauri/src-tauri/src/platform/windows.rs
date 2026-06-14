@@ -16,6 +16,7 @@ use std::process::{Command, Stdio};
 use tauri::path::BaseDirectory;
 use tauri::Manager;
 
+use super::SecretError;
 use crate::models::TerminalKind;
 
 /// Run `command` under `cmd /C` with the augmented PATH. Synchronous;
@@ -201,6 +202,44 @@ pub fn augmented_path() -> OsString {
     combined
 }
 
+// --- Secure-credential store (Windows Credential Manager) -------------------
+//
+// The skills-repo token is stored as a Generic credential via `keyring`,
+// keyed by an app/account service name plus the per-user `scope` (settings
+// dir). Production passes one stable scope, so there is a single credential
+// per user; tests pass a temp scope so they never touch the real one. No
+// plaintext token file is ever written on Windows.
+
+fn entry(scope: &Path, account: &str) -> Result<keyring::Entry, SecretError> {
+    let service = format!("BMad Manager ({account})");
+    keyring::Entry::new(&service, &scope.to_string_lossy())
+        .map_err(|e| SecretError::Backend(e.to_string()))
+}
+
+/// Read the stored secret, or `None` when no credential exists.
+pub fn secret_get(scope: &Path, account: &str) -> Result<Option<String>, SecretError> {
+    match entry(scope, account)?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(SecretError::Backend(e.to_string())),
+    }
+}
+
+/// Store `secret`, replacing any existing credential.
+pub fn secret_set(scope: &Path, account: &str, secret: &str) -> Result<(), SecretError> {
+    entry(scope, account)?
+        .set_password(secret)
+        .map_err(|e| SecretError::Backend(e.to_string()))
+}
+
+/// Remove the credential if present; a missing credential is success.
+pub fn secret_delete(scope: &Path, account: &str) -> Result<(), SecretError> {
+    match entry(scope, account)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(SecretError::Backend(e.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::strip_verbatim_prefix;
@@ -234,5 +273,36 @@ mod tests {
             strip_verbatim_prefix(Path::new(r"\\?\C:\Program Files\App\bin.exe")),
             PathBuf::from(r"C:\Program Files\App\bin.exe")
         );
+    }
+}
+
+// Exercises the real Windows Credential Manager, so it only runs on a Windows
+// host (this whole module is `#[cfg(target_os = "windows")]`). Uses a unique
+// per-run scope + a dedicated test account so it never touches the real
+// skills-repo credential, and cleans up after itself.
+#[cfg(test)]
+mod secret_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn token_round_trips_through_credential_manager_without_writing_a_file() {
+        let tmp = TempDir::new().unwrap();
+        let scope = tmp.path();
+        let account = "skills-repo-token-test";
+
+        secret_delete(scope, account).unwrap();
+        assert_eq!(secret_get(scope, account).unwrap(), None);
+
+        secret_set(scope, account, "ghp_secret").unwrap();
+        assert_eq!(
+            secret_get(scope, account).unwrap(),
+            Some("ghp_secret".to_string())
+        );
+        // The Windows arm keeps the token in Credential Manager, never on disk.
+        assert!(!scope.join(account).exists());
+
+        secret_delete(scope, account).unwrap();
+        assert_eq!(secret_get(scope, account).unwrap(), None);
     }
 }

@@ -38,6 +38,9 @@ pub struct TauriWorld {
     pub resolved_context: Option<Option<CompanyContext>>,
     pub resolved_contexts: Option<Vec<CompanyContext>>,
     pub last_managed_dir: Option<PathBuf>,
+    /// Isolated directory used as the token store's `settings_dir` scope so
+    /// secure-token scenarios never touch the real per-user credential store.
+    pub token_scope: Option<PathBuf>,
 }
 
 impl TauriWorld {
@@ -46,6 +49,19 @@ impl TauriWorld {
             self.tmp = Some(TempDir::new().expect("tempdir"));
         }
         self.tmp.as_ref().unwrap().path()
+    }
+
+    /// A dedicated, isolated directory acting as the token store's
+    /// `settings_dir` scope for the secure-token scenarios. Created once per
+    /// scenario so assertions about on-disk fallback files are deterministic.
+    pub fn ensure_token_scope(&mut self) -> PathBuf {
+        if let Some(scope) = &self.token_scope {
+            return scope.clone();
+        }
+        let scope = self.ensure_tmp().to_path_buf().join("token-store");
+        std::fs::create_dir_all(&scope).expect("create token scope");
+        self.token_scope = Some(scope.clone());
+        scope
     }
 
     pub fn ensure_projects_root(&mut self) -> PathBuf {

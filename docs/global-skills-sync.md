@@ -45,8 +45,8 @@ Key points:
   yours).
 - The two buttons are **independent** — click only the one for the tool you use.
 - The repo is **private**, so a sync authenticates with a read-only **GitHub
-  token**, stored securely on the machine (macOS Keychain; Windows: a protected
-  per-user file) — never in `settings.json`.
+  token**, stored securely on the machine (macOS Keychain; Windows Credential
+  Manager) — never in `settings.json`.
 
 ---
 
@@ -185,8 +185,8 @@ You don't need a GitHub account and you don't visit github.com at all.
      `https://github.com/your-org/bmad-skills`
    - **Branch:** leave as `main` unless told otherwise.
    - **GitHub token 🔒:** paste the token your admin gave you and click
-     **Save token**. (macOS stores it in your Keychain; Windows in a protected
-     per-user file — never in `settings.json`.)
+     **Save token**. (macOS stores it in your Keychain; Windows in Credential
+     Manager — never in `settings.json`.)
 3. Click **Done**, then jump to [Sync](#sync).
 
 ### If you're using your own GitHub account (Option B)
