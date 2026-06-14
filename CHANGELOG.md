@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.4](https://github.com/lpalokan/bmad-manager/compare/v0.1.3...v0.1.4) (2026-06-14)
+
+
+### Features
+
+* **windows:** store skills-repo token in Windows Credential Manager ([67d7349](https://github.com/lpalokan/bmad-manager/commit/67d7349829155465b636d8f150b1b0b0142f370b))
+* **windows:** store skills-repo token in Windows Credential Manager ([955976e](https://github.com/lpalokan/bmad-manager/commit/955976e9b6a060074cee2f9dd09858d853008098))
+
 ## [0.1.3](https://github.com/lpalokan/bmad-manager/compare/v0.1.2...v0.1.3) (2026-06-14)
 
 
