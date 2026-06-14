@@ -32,9 +32,10 @@
   let bundled: BundledTooling | null = $state(null);
   let bundledError: string | null = $state(null);
 
-  // GitHub skills-repo token. Stored in the OS credential store (Tauri:
-  // protected file) — never in settings.json — so it's handled separately
-  // from `draft`. We only learn whether one is stored, never its value.
+  // GitHub skills-repo token. Stored in the OS credential store (Windows
+  // Credential Manager; a protected per-user file on the dev/CI fallback) —
+  // never in settings.json — so it's handled separately from `draft`. We only
+  // learn whether one is stored, never its value.
   let githubToken = $state("");
   let tokenStored = $state(false);
   let tokenSaving = $state(false);

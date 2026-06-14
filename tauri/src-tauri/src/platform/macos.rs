@@ -50,3 +50,15 @@ pub fn user_npm_cache_dir() -> PathBuf {
 pub fn augmented_path() -> OsString {
     unimplemented!("platform::macos::augmented_path — future macOS unification milestone")
 }
+
+pub fn secret_get(_scope: &Path, _account: &str) -> Result<Option<String>, super::SecretError> {
+    unimplemented!("platform::macos::secret_get — future macOS unification milestone")
+}
+
+pub fn secret_set(_scope: &Path, _account: &str, _secret: &str) -> Result<(), super::SecretError> {
+    unimplemented!("platform::macos::secret_set — future macOS unification milestone")
+}
+
+pub fn secret_delete(_scope: &Path, _account: &str) -> Result<(), super::SecretError> {
+    unimplemented!("platform::macos::secret_delete — future macOS unification milestone")
+}

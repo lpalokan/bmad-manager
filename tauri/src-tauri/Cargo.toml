@@ -28,6 +28,12 @@ trash = "5"
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "sync"] }
 
+# Windows-only: the skills-repo token lives in Windows Credential Manager via
+# keyring. Scoped to the Windows target so the Linux/CI build never pulls in a
+# secret-service/libsecret backend — the platform stub uses a file fallback there.
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+
 [dev-dependencies]
 cucumber = "0.21"
 tempfile = "3"
