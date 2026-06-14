@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.1.3](https://github.com/lpalokan/bmad-manager/compare/v0.1.2...v0.1.3) (2026-06-14)
+
+
+### Features
+
+* add Codex to the enabled coding-agent harnesses ([11ab3fc](https://github.com/lpalokan/bmad-manager/commit/11ab3fc642d6cf7fcfc97c9538b0d00f5e1ac74a))
+* add Open Folder button to the Tauri project rows ([0bd39f6](https://github.com/lpalokan/bmad-manager/commit/0bd39f6271938651f11e7feafb02ffb5f408bb2d))
+* alphabetise project-row agent buttons (Tauri) ([f4efc5d](https://github.com/lpalokan/bmad-manager/commit/f4efc5d485957b32228a1f06be4ac51684a32235))
+* App-vs-CLI launch for Claude & Codex (consolidates Windows+Codex port) ([a82f221](https://github.com/lpalokan/bmad-manager/commit/a82f221b27516ef9c13791ebb0c37fa31fc90f4b))
+* choose CLI or desktop app when launching Claude and Codex ([14780aa](https://github.com/lpalokan/bmad-manager/commit/14780aa34ce1245cb509cf97e4949e20b160aefb)), closes [#41](https://github.com/lpalokan/bmad-manager/issues/41)
+* global skill sync into Claude Code and Codex (Mac + Windows) ([c8a2da0](https://github.com/lpalokan/bmad-manager/commit/c8a2da0b9ff8f21d53cf46a3dfeb7126986cb66a))
+* global skill sync into Claude Code and Codex (Swift/macOS) ([34894ad](https://github.com/lpalokan/bmad-manager/commit/34894adcceea02b145850c469200edd1248dd9f6))
+* global skill sync into Claude Code and Codex (Tauri/Windows) ([4258dc5](https://github.com/lpalokan/bmad-manager/commit/4258dc5d5436800b4e108da9b06007bf79d8fb81))
+* open the project folder when launching an agent's desktop app ([f9093bc](https://github.com/lpalokan/bmad-manager/commit/f9093bc25e11974a186564dacbc9ebe8de4001ad))
+* per-agent launch label and alphabetised project-row actions (Swift) ([92de1b9](https://github.com/lpalokan/bmad-manager/commit/92de1b941e7bc73adde202ed1b6f2d0309da6729))
+* seed new projects from an existing project's company context ([8b01679](https://github.com/lpalokan/bmad-manager/commit/8b01679d403d759de3ece1658053e9fff1a24046))
+* seed new projects from an existing project's company context ([64b932d](https://github.com/lpalokan/bmad-manager/commit/64b932d6a290c878be218190440e731d3fdd429a))
+* seed new projects from an existing project's company context (Windows port) ([e136181](https://github.com/lpalokan/bmad-manager/commit/e136181b28fb654a513d16d853de5a0884bc2c10))
+* write a Codex AGENTS.md on project creation to route BMad menu codes ([9aed4b2](https://github.com/lpalokan/bmad-manager/commit/9aed4b21d7a16327d00f5025092690c148f0f4fe))
+
+
+### Bug Fixes
+
+* clarify what App launch opens for Claude vs Codex in Settings ([76ee533](https://github.com/lpalokan/bmad-manager/commit/76ee533d6965850ef63c0538b8bfeff11613e266))
+* link synced skills as direct children so Claude Code/Codex find them ([3dd9699](https://github.com/lpalokan/bmad-manager/commit/3dd9699f8016173f32370fd3c30b82a94de4c4aa))
+* make bmad-method --custom-source accept Windows module paths ([9910583](https://github.com/lpalokan/bmad-manager/commit/9910583ecba2e930af8f2051688c0e1ce7536c5d))
+* make Settings 'Reset to defaults' actually restore defaults ([0fea0eb](https://github.com/lpalokan/bmad-manager/commit/0fea0eb00713232fe46d13052d55eb158d2c95e6))
+* pass cmd.exe the init command verbatim so quoted paths survive ([779171b](https://github.com/lpalokan/bmad-manager/commit/779171b9a639a1c42761489e0dc63e804214884e))
+* refresh the project list without an app restart ([3c32284](https://github.com/lpalokan/bmad-manager/commit/3c322849a7661b36808e70526fec12aad6743e8e))
+* return owned PathBuf from settings_dir to satisfy borrow checker ([c2de1b6](https://github.com/lpalokan/bmad-manager/commit/c2de1b69c094e52a898f77c89599698708e76ecc))
+* strip ANSI/spinner escape codes from install output ([4f2fb3a](https://github.com/lpalokan/bmad-manager/commit/4f2fb3a8209273513d3061f344cce862d6d29597))
+
 ## [0.1.2](https://github.com/lpalokan/bmad-manager/compare/v0.1.1...v0.1.2) (2026-05-23)
 
 
