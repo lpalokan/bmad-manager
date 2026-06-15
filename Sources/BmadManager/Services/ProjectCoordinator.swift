@@ -62,9 +62,29 @@ final class ProjectCoordinator: ObservableObject {
     /// `openInTerminal` — same root cause: the App's @StateObject init
     /// dance can hand us a SettingsStore reference that's a different
     /// instance from the one the View's @EnvironmentObject binds to.)
-    func refresh(root: String, sortOrder: ProjectSortOrder) {
+    func refresh(
+        root: String,
+        sortOrder: ProjectSortOrder,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) {
         projects = projectService.listProjects(in: root, sortedBy: sortOrder)
-        availableContexts = contextService.contexts(in: projects)
+        let projectContexts = contextService.contexts(in: projects)
+        let githubContexts = discoveredGithubContexts(home: home)
+        // Shared repo contexts first, then project-local ones — both groups
+        // already sorted by name.
+        availableContexts = githubContexts + projectContexts
+    }
+
+    /// Reads contexts from the skills repo clone (the `context/` folder
+    /// alongside `skills/`). Both tools clone the same repo into their own
+    /// hidden dir, so we use whichever clone is present.
+    private func discoveredGithubContexts(home: URL) -> [CompanyContext] {
+        for tool in SkillTool.allCases {
+            let repo = SkillsSyncService.managedRepoDir(for: tool, home: home)
+            let contexts = contextService.githubContexts(inRepoRoot: repo)
+            if !contexts.isEmpty { return contexts }
+        }
+        return []
     }
 
     /// Creates a new project using the supplied settings snapshot and
@@ -206,5 +226,54 @@ final class ProjectCoordinator: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Auto-syncs the shared skills repo for every tool, then re-discovers
+    /// contexts so the picker reflects the repo's `context/` folder. Driven
+    /// by app startup and the Refresh button.
+    ///
+    /// Silent when the repo URL or token isn't configured — a fresh install
+    /// shouldn't nag — but a real git failure surfaces via `errorMessage`.
+    /// The local project list and any already-cloned contexts still refresh
+    /// either way. Unlike the manual sync buttons this does NOT force the
+    /// output panel open; git output still streams there if the user opens it.
+    func syncSkillsRepo(
+        settings: AppSettings,
+        token: String?,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        runCommand: @escaping (String, URL) async -> Int32
+    ) async {
+        let url = settings.skillsRepoURL.trimmingCharacters(in: .whitespaces)
+        let trimmedToken = token?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !url.isEmpty, !trimmedToken.isEmpty else {
+            refresh(
+                root: settings.projectsRoot,
+                sortOrder: settings.projectSortOrder,
+                home: home
+            )
+            return
+        }
+
+        var failure: String? = nil
+        for tool in SkillTool.allCases {
+            do {
+                try await SkillsSyncService.sync(
+                    tool: tool,
+                    repoURL: url,
+                    branch: settings.skillsRepoBranch,
+                    token: trimmedToken,
+                    home: home,
+                    runCommand: runCommand
+                )
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
+        errorMessage = failure
+        refresh(
+            root: settings.projectsRoot,
+            sortOrder: settings.projectSortOrder,
+            home: home
+        )
     }
 }

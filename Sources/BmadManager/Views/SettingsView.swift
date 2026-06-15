@@ -35,6 +35,17 @@ struct SettingsView: View {
     @State private var skillsTokenError: String? = nil
     private let tokenStore: any TokenStore = KeychainTokenStore()
 
+    // Optional contributor (read-write) token, kept in a separate Keychain
+    // entry so syncing can stay least-privilege.
+    @State private var contributorToken: String = ""
+    @State private var contributorTokenStored: Bool = false
+    @State private var contributorTokenError: String? = nil
+    @State private var testingAccess: Bool = false
+    @State private var testAccessResult: String? = nil
+    @State private var testAccessOK: Bool = false
+    private let contributorTokenStore: any TokenStore =
+        KeychainTokenStore(account: "skills-repo-contributor-token")
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Settings")
@@ -62,6 +73,7 @@ struct SettingsView: View {
             reconcileTerminalSelection()
             refreshAgentDetection()
             skillsTokenStored = tokenStore.loadToken() != nil
+            contributorTokenStored = contributorTokenStore.loadToken() != nil
         }
         .onChange(of: store.settings.claudeCommand) {
             claudeDetected = PathDetector.detect(store.settings.claudeCommand)
@@ -249,6 +261,80 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Text("Contributor token 🔒 (optional)").font(.subheadline)
+            HStack {
+                SecureField(
+                    contributorTokenStored ? "•••••••• (stored)" : "Fine-grained read-write PAT",
+                    text: $contributorToken
+                )
+                .textFieldStyle(.roundedBorder)
+                Button("Save token") { saveContributorToken() }
+                    .disabled(contributorToken.trimmingCharacters(in: .whitespaces).isEmpty)
+                if contributorTokenStored {
+                    Button("Clear") { clearContributorToken() }
+                }
+                Button("Test access") { Task { await testRepoAccess() } }
+                    .disabled(testingAccess
+                              || store.settings.skillsRepoURL.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if let error = contributorTokenError {
+                Text("Token error: \(error)").font(.caption).foregroundStyle(.red)
+            } else if let result = testAccessResult {
+                Text(result).font(.caption).foregroundStyle(testAccessOK ? .green : .red)
+            } else {
+                Text("To contribute skills/contexts as pull requests, add a fine-grained PAT with Contents: Read and write and Pull requests: Read and write scoped to the skills repo. Leave empty to reuse the read-only token (contributions will then fail until a write token is set).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func saveContributorToken() {
+        do {
+            try contributorTokenStore.saveToken(contributorToken)
+            contributorTokenStored = !contributorToken.trimmingCharacters(in: .whitespaces).isEmpty
+            contributorToken = ""
+            contributorTokenError = nil
+        } catch {
+            contributorTokenError = error.localizedDescription
+        }
+    }
+
+    private func clearContributorToken() {
+        do {
+            try contributorTokenStore.clearToken()
+            contributorTokenStored = false
+            contributorToken = ""
+            contributorTokenError = nil
+        } catch {
+            contributorTokenError = error.localizedDescription
+        }
+    }
+
+    private func testRepoAccess() async {
+        testingAccess = true
+        testAccessResult = nil
+        defer { testingAccess = false }
+        guard let (owner, repo) = ContributionService.parseOwnerRepo(store.settings.skillsRepoURL) else {
+            testAccessOK = false
+            testAccessResult = "Set a valid github.com skills repo URL first."
+            return
+        }
+        guard let token = contributorTokenStore.loadToken() ?? tokenStore.loadToken() else {
+            testAccessOK = false
+            testAccessResult = "Set a contributor GitHub token first."
+            return
+        }
+        do {
+            let access = try await URLSessionGitHubClient(token: token).repoAccess(owner: owner, repo: repo)
+            testAccessOK = access.canPush
+            testAccessResult = access.canPush
+                ? "@\(access.login) can push to \(access.repoFullName) — ready to contribute."
+                : "@\(access.login) can read \(access.repoFullName) but the token lacks write access — contributions will fail."
+        } catch {
+            testAccessOK = false
+            testAccessResult = error.localizedDescription
         }
     }
 

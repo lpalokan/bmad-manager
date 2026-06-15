@@ -2,9 +2,11 @@ use std::path::Path;
 
 use cucumber::{given, then, when};
 
-use bmad_manager_lib::models::{AppSettings, CompanyContext, ModuleSourceKind, ProjectItem};
+use bmad_manager_lib::models::{
+    AppSettings, CompanyContext, ContextSource, ModuleSourceKind, ProjectItem,
+};
 use bmad_manager_lib::services::company_context::{
-    context_in_project, contexts_in, import_context,
+    context_in_project, contexts_in, github_contexts_in, import_context,
 };
 use bmad_manager_lib::services::project_creator;
 
@@ -89,6 +91,13 @@ async fn context_file_vanished(world: &mut TauriWorld, file: String, project: St
         .expect("remove source context file");
 }
 
+#[given(regex = r#"^a skills repo context "([^"]+)" with files "([^"]*)"$"#)]
+async fn skills_repo_context(world: &mut TauriWorld, name: String, files: String) {
+    let files = split_list(&files);
+    let refs: Vec<&str> = files.iter().map(String::as_str).collect();
+    world.seed_skills_repo_context(&name, &refs);
+}
+
 #[given(regex = r#"^creation settings whose init command (succeeds|fails)$"#)]
 async fn creation_settings(world: &mut TauriWorld, outcome: String) {
     let root = world.ensure_projects_root();
@@ -122,6 +131,12 @@ async fn resolve_contexts(world: &mut TauriWorld, projects: String) {
         .map(|name| ProjectItem::new(root.join(name), None))
         .collect();
     world.resolved_contexts = Some(contexts_in(&items));
+}
+
+#[when("I resolve the skills repo contexts")]
+async fn resolve_skills_repo_contexts(world: &mut TauriWorld) {
+    let repo = world.skills_repo_root();
+    world.resolved_contexts = Some(github_contexts_in(&repo));
 }
 
 #[when(regex = r#"^I import the context of "([^"]+)" into project "([^"]+)"$"#)]
@@ -203,6 +218,31 @@ async fn resolved_context_names(world: &mut TauriWorld, list: String) {
     let contexts = world.resolved_contexts.as_ref().expect("resolution ran");
     let names: Vec<&str> = contexts.iter().map(|c| c.project_name.as_str()).collect();
     assert_eq!(names, split_list(&list));
+}
+
+#[then("the resolved contexts all come from the skills repo")]
+async fn resolved_contexts_all_github(world: &mut TauriWorld) {
+    let contexts = world.resolved_contexts.as_ref().expect("resolution ran");
+    assert!(
+        contexts.iter().all(|c| c.source == ContextSource::Github),
+        "expected every context tagged Github, got {contexts:?}"
+    );
+}
+
+#[then(regex = r#"^the github context "([^"]+)" display name is "([^"]+)"$"#)]
+async fn github_context_display_name(world: &mut TauriWorld, name: String, expected: String) {
+    let contexts = world.resolved_contexts.as_ref().expect("resolution ran");
+    let context = contexts
+        .iter()
+        .find(|c| c.project_name == name)
+        .unwrap_or_else(|| panic!("no skills repo context named {name:?}"));
+    assert_eq!(context.display_name(), expected);
+}
+
+#[then("no skills repo contexts are found")]
+async fn no_skills_repo_contexts(world: &mut TauriWorld) {
+    let contexts = world.resolved_contexts.as_ref().expect("resolution ran");
+    assert!(contexts.is_empty(), "expected none, got {contexts:?}");
 }
 
 #[then(regex = r#"^the context display name is "([^"]+)"$"#)]

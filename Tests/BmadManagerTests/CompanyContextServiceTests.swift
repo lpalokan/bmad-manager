@@ -190,13 +190,13 @@ final class CompanyContextServiceTests: XCTestCase {
 
     // MARK: - Display
 
-    func testDisplayNameIsJustTheProjectNameWhenContextIsComplete() {
+    func testDisplayNameIsProjectNameWithFolderMarkerWhenContextIsComplete() {
         let context = CompanyContext(
             projectName: "acme",
             directoryURL: URL(fileURLWithPath: "/tmp/acme/_bmad-output/company-context"),
             files: CompanyContext.recognizedFileNames
         )
-        XCTAssertEqual(context.displayName, "acme")
+        XCTAssertEqual(context.displayName, "acme 📂")
     }
 
     func testDisplayNameFlagsPartialContexts() {
@@ -205,6 +205,73 @@ final class CompanyContextServiceTests: XCTestCase {
             directoryURL: URL(fileURLWithPath: "/tmp/acme/_bmad-output/company-context"),
             files: ["icp.md", "kpis.md"]
         )
-        XCTAssertEqual(context.displayName, "acme (2 of 5 context files)")
+        XCTAssertEqual(context.displayName, "acme (2 of 5 context files) 📂")
+    }
+
+    func testGithubContextDisplayNameCarriesTheGithubMarker() {
+        let context = CompanyContext(
+            projectName: "acme",
+            directoryURL: URL(fileURLWithPath: "/tmp/repo/context/acme"),
+            files: CompanyContext.recognizedFileNames,
+            source: .github
+        )
+        XCTAssertEqual(context.displayName, "acme 🐙")
+    }
+
+    // MARK: - GitHub repo contexts
+
+    /// Seeds `<repo>/context/<name>/` with the given files.
+    @discardableResult
+    private func makeGithubContext(
+        inRepo repo: URL,
+        _ name: String,
+        files: [String]
+    ) throws -> URL {
+        let dir = repo
+            .appendingPathComponent("context", isDirectory: true)
+            .appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for file in files {
+            try "content of \(file)".write(
+                to: dir.appendingPathComponent(file), atomically: true, encoding: .utf8)
+        }
+        return dir
+    }
+
+    func testGithubContextsDiscoversContextFoldersTaggedAsGithub() throws {
+        let repo = projectsRoot.appendingPathComponent("skills-repo", isDirectory: true)
+        try makeGithubContext(inRepo: repo, "globex", files: ["positioning.md"])
+        try makeGithubContext(inRepo: repo, "acme", files: ["icp.md", "kpis.md"])
+
+        let contexts = service.githubContexts(inRepoRoot: repo)
+
+        XCTAssertEqual(contexts.map(\.projectName), ["acme", "globex"])
+        XCTAssertTrue(contexts.allSatisfy { $0.source == .github })
+        XCTAssertEqual(contexts.first?.files, ["icp.md", "kpis.md"])
+    }
+
+    func testGithubContextsIgnoreFoldersWithoutRecognizedFiles() throws {
+        let repo = projectsRoot.appendingPathComponent("skills-repo", isDirectory: true)
+        try makeGithubContext(inRepo: repo, "notes", files: ["README.md"])
+
+        XCTAssertTrue(service.githubContexts(inRepoRoot: repo).isEmpty)
+    }
+
+    func testGithubContextsAreEmptyWhenContextFolderMissing() {
+        let repo = projectsRoot.appendingPathComponent("no-such-repo", isDirectory: true)
+        XCTAssertTrue(service.githubContexts(inRepoRoot: repo).isEmpty)
+    }
+
+    func testGithubContextCanBeImportedIntoANewProject() throws {
+        let repo = projectsRoot.appendingPathComponent("skills-repo", isDirectory: true)
+        try makeGithubContext(inRepo: repo, "acme", files: ["icp.md"])
+        let target = try makeProject("target", contextAt: nil)
+        let context = try XCTUnwrap(service.githubContexts(inRepoRoot: repo).first)
+
+        try service.importContext(context, into: target)
+
+        let destDir = target.appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: destDir.appendingPathComponent("icp.md").path))
     }
 }

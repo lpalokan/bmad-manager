@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use bmad_manager_lib::models::{AppSettings, CompanyContext, ProjectItem};
+use bmad_manager_lib::services::contribution::{ContributableSkill, PreparedFile};
 use cucumber::World;
 use tempfile::TempDir;
 
@@ -41,6 +42,11 @@ pub struct TauriWorld {
     /// Isolated directory used as the token store's `settings_dir` scope so
     /// secure-token scenarios never touch the real per-user credential store.
     pub token_scope: Option<PathBuf>,
+    /// Fake home dir for contribution scenarios (holds `.claude/skills/…`).
+    pub contrib_home: Option<PathBuf>,
+    pub contributable_skills: Option<Vec<ContributableSkill>>,
+    pub prepared_files: Option<Vec<PreparedFile>>,
+    pub parsed_owner_repo: Option<Option<(String, String)>>,
 }
 
 impl TauriWorld {
@@ -83,6 +89,33 @@ impl TauriWorld {
             std::fs::write(dir.join(file), format!("content of {file}"))
                 .expect("write context file");
         }
+    }
+
+    /// Root of a fake skills-repo clone under the scenario's tempdir.
+    pub fn skills_repo_root(&mut self) -> PathBuf {
+        self.ensure_tmp().to_path_buf().join("skills-repo")
+    }
+
+    /// Seeds `<skills-repo>/context/<name>/` with the named files (file name
+    /// as content) so skills-repo context discovery has something to find.
+    pub fn seed_skills_repo_context(&mut self, name: &str, files: &[&str]) {
+        let dir = self.skills_repo_root().join("context").join(name);
+        std::fs::create_dir_all(&dir).expect("create skills repo context dir");
+        for file in files {
+            std::fs::write(dir.join(file), format!("content of {file}"))
+                .expect("write skills repo context file");
+        }
+    }
+
+    /// Fake home directory for contribution scenarios.
+    pub fn ensure_contrib_home(&mut self) -> PathBuf {
+        if let Some(home) = &self.contrib_home {
+            return home.clone();
+        }
+        let home = self.ensure_tmp().to_path_buf().join("contrib-home");
+        std::fs::create_dir_all(&home).expect("create contrib home");
+        self.contrib_home = Some(home.clone());
+        home
     }
 
     /// Builds a minimal module zip fixture (one wrapper folder holding a

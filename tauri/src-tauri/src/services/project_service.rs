@@ -114,15 +114,56 @@ pub fn sort_projects(items: &mut [ProjectItem], order: ProjectSortOrder) {
 }
 
 /// Moves the project folder to the system trash / recycle bin. Mirrors
-/// the macOS app's `NSWorkspace.shared.recycle` semantics.
+/// the macOS app's `NSWorkspace.shared.recycle` semantics. A failure is mapped
+/// to an actionable message — the Windows shell's opaque "Some operations were
+/// aborted" almost always means the folder is open somewhere.
 pub fn trash_project(path: &Path) -> Result<(), String> {
-    trash::delete(path).map_err(|e| e.to_string())
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    trash::delete(path).map_err(|e| describe_trash_failure(&name, &e.to_string()))
+}
+
+/// Turns a raw trash error into something a user can act on. The Windows shell
+/// reports an in-use folder as a generic "Some operations were aborted", which
+/// tells the user nothing — so we explain the usual cause.
+pub fn describe_trash_failure(name: &str, raw: &str) -> String {
+    let base = format!("Couldn't move '{name}' to the Recycle Bin");
+    if raw.contains("aborted") || raw.contains("in use") || raw.contains("being used") {
+        format!(
+            "{base}: the folder or a file inside it is in use. Close any terminal, \
+             editor, or Explorer windows open in this project, then try again. \
+             (details: {raw})"
+        )
+    } else {
+        format!("{base}: {raw}")
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn trash_failure_explains_an_in_use_folder() {
+        let msg = describe_trash_failure(
+            "acme",
+            "Unknown { description: \"Some operations were aborted\" }",
+        );
+        assert!(msg.contains("acme"));
+        assert!(msg.contains("in use"));
+        assert!(msg.contains("Close any terminal"));
+    }
+
+    #[test]
+    fn trash_failure_passes_other_errors_through() {
+        let msg = describe_trash_failure("acme", "permission denied");
+        assert!(msg.contains("acme"));
+        assert!(msg.contains("permission denied"));
+        assert!(!msg.contains("Close any terminal"));
+    }
 
     #[test]
     fn rejects_empty_and_whitespace_names() {

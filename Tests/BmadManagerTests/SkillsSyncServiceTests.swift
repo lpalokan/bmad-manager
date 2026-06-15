@@ -86,6 +86,39 @@ final class SkillsSyncServiceTests: XCTestCase {
         XCTAssertEqual(SkillsSyncService.discoverSkills(in: repo), ["alpha", "beta"])
     }
 
+    // MARK: - skills source folder
+
+    func testSkillsSourceDirPrefersSkillsSubfolderWhenPresent() throws {
+        let repo = home.appendingPathComponent("repo")
+        try makeSkill(in: repo.appendingPathComponent("skills"), "alpha")
+        XCTAssertEqual(
+            SkillsSyncService.skillsSourceDir(in: repo).lastPathComponent, "skills")
+    }
+
+    func testSkillsSourceDirFallsBackToRepoRootWhenNoSubfolder() throws {
+        let repo = home.appendingPathComponent("repo")
+        try makeSkill(in: repo, "alpha")
+        XCTAssertEqual(SkillsSyncService.skillsSourceDir(in: repo).path, repo.path)
+    }
+
+    func testReconcileLinksDiscoversSkillsUnderTheSkillsSubfolder() throws {
+        let skills = home.appendingPathComponent("skills")
+        let repo = home.appendingPathComponent("skills-managed")
+        let manifest = home.appendingPathComponent("links.json")
+        // New layout: skills live under <repo>/skills, contexts under <repo>/context.
+        try makeSkill(in: repo.appendingPathComponent("skills"), "alpha")
+        try makeSkill(in: repo.appendingPathComponent("skills"), "beta")
+        try FileManager.default.createDirectory(
+            at: repo.appendingPathComponent("context/acme"), withIntermediateDirectories: true)
+
+        let summary = try SkillsSyncService.reconcileLinks(
+            skillsRoot: skills, managedRepo: repo, manifestPath: manifest)
+
+        XCTAssertEqual(summary.linked, ["alpha", "beta"])
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: skills.appendingPathComponent("alpha/SKILL.md").path))
+    }
+
     // MARK: - reconcileLinks
 
     func testReconcileLinksCreatesSymlinksForEachSkill() throws {

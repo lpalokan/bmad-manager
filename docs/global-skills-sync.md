@@ -1,9 +1,19 @@
 # Sharing skills with your team: Global Skill Sync
 
-BMad Manager can pull a curated set of **skills** from a private GitHub
-repository into every project you open — in both **Claude Code** and **Codex**.
-This lets one person (the **key user**) maintain an organisation's skills in one
-place, and everyone else sync them down with a single click.
+BMad Manager can pull a curated set of **skills** and **company contexts** from a
+private GitHub repository — skills into every project you open (both **Claude
+Code** and **Codex**), and contexts into the new-project **Context** picker. This
+lets one person (the **key user**) maintain an organisation's skills and contexts
+in one place, and everyone else sync them down.
+
+The sync runs **automatically at app startup and whenever you press Refresh**;
+the **Sync to Claude Code / Codex** buttons remain for an on-demand pull.
+Contexts found in the repo are badged 🐙 in the picker; contexts found in your
+local projects are badged 📂.
+
+> Setting up a brand-new repo for your company? Follow
+> [skills-context-repo.md](skills-context-repo.md). To contribute additions back
+> from the app, see [contributing-from-bmad-manager.md](contributing-from-bmad-manager.md).
 
 There are two ways to give your team access, and you pick one:
 
@@ -59,21 +69,31 @@ Key points:
 3. Set visibility to **Private**.
 4. Create the repository.
 
-### 2. Add your skills
+### 2. Add your skills (and contexts)
 
-A skill is a folder containing a `SKILL.md` (plus any supporting files). Lay the
-repo out so the folders sit at the repo root — they'll land directly inside each
-user's `managed/` folder:
+A skill is a folder containing a `SKILL.md` (plus any supporting files). Put
+skills under a top-level **`skills/`** folder and company contexts under a
+top-level **`context/`** folder:
 
 ```
 bmad-skills/
-├── my-first-skill/
-│   └── SKILL.md
-├── another-skill/
-│   ├── SKILL.md
-│   └── helper.py
+├── skills/
+│   ├── my-first-skill/
+│   │   └── SKILL.md
+│   └── another-skill/
+│       ├── SKILL.md
+│       └── helper.py
+├── context/
+│   └── acme-corp/
+│       ├── icp.md
+│       └── positioning.md
 └── README.md          (optional, ignored by the tools)
 ```
+
+> **Layout note:** older repos that keep skills at the repo root still work (the
+> sync falls back to the root), but new repos should use `skills/` so `context/`
+> can sit beside it. A context folder needs at least one recognized file:
+> `icp.md`, `positioning.md`, `brand-voice.md`, `kpis.md`, `tech-stack.md`.
 
 Commit and push to the branch you want everyone to track (default: `main`):
 
@@ -205,14 +225,19 @@ You don't need a GitHub account and you don't visit github.com at all.
 
 ### Sync
 
-On the main window, in the **Skills** row, click:
+The sync runs automatically at startup and on **Refresh**. To pull on demand,
+use the **Skills** row on the main window:
 
-- **Sync to Claude Code** — pulls into `~/.claude/skills/managed/`
-- **Sync to Codex** — pulls into `~/.codex/skills/managed/`
+- **Sync to Claude Code** — clones into `~/.claude/skills-managed/` and links
+  each skill into `~/.claude/skills/`
+- **Sync to Codex** — clones into `~/.codex/skills-managed/` and links each
+  skill into `~/.codex/skills/`
 
 Click only the button(s) for the tool(s) you use. Git's output streams into the
 output panel; on success the skills are immediately available in new sessions of
-that tool. Re-run any time to pick up the latest changes.
+that tool, and any contexts in the repo's `context/` folder appear in the
+new-project **Context** picker (badged 🐙). Re-run any time to pick up the latest
+changes.
 
 ---
 

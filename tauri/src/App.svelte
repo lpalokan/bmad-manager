@@ -2,6 +2,7 @@
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { onDestroy, onMount } from "svelte";
   import CommandOutput from "./lib/CommandOutput.svelte";
+  import Contribute from "./lib/Contribute.svelte";
   import ProjectRow from "./lib/ProjectRow.svelte";
   import Settings from "./lib/Settings.svelte";
   import {
@@ -18,6 +19,7 @@
     saveSettings,
     syncSkillsClaude,
     syncSkillsCodex,
+    syncSkillsRepo,
   } from "./lib/commands";
   import { companyContextDisplayName, projectSortOrderOptions, type AppSettings, type CompanyContext, type OutputEvent, type ProjectItem, type ProjectSortOrder } from "./lib/types";
 
@@ -29,6 +31,7 @@
   let newProjectName = $state("");
   let isCreating = $state(false);
   let showSettings = $state(false);
+  let showContribute = $state(false);
   let showOutput = $state(false);
   let outputLines: string[] = $state([]);
   let lastExitCode: number | null = $state(null);
@@ -49,7 +52,6 @@
   onMount(async () => {
     try {
       settings = await loadSettings();
-      await refresh();
       unlisten = await listen<OutputEvent>("project-create-output", (event) =>
         applyOutputEvent(event.payload),
       );
@@ -62,10 +64,25 @@
       // failed create. Re-scan whenever the window regains focus so the list
       // reflects reality without forcing a restart.
       window.addEventListener("focus", refresh);
+      // Show the local list immediately, then pull the shared skills repo
+      // (skills + context/) and re-list so GitHub contexts appear.
+      await refresh();
+      await autoSync();
     } catch (err) {
       errorMessage = `Failed to load settings: ${err}`;
     }
   });
+
+  // Auto-sync the shared skills repo, then re-list so the repo's context/
+  // folder shows up. Listeners (above) capture the streamed git output.
+  async function autoSync() {
+    try {
+      await syncSkillsRepo();
+    } catch (err) {
+      errorMessage = `Skill sync failed: ${err}`;
+    }
+    await refresh();
+  }
 
   onDestroy(() => {
     if (unlisten) unlisten();
@@ -219,10 +236,10 @@
     <div class="header-actions">
       <button
         class="icon-btn"
-        title="Refresh projects"
+        title="Refresh projects and sync the skills repo"
         aria-label="Refresh projects"
         data-testid="refresh-projects"
-        onclick={refresh}
+        onclick={autoSync}
       >
         ⟳
       </button>
@@ -343,6 +360,14 @@
     >
       Sync to Codex
     </button>
+    <button
+      type="button"
+      data-testid="contribute"
+      disabled={!settings?.skillsRepoUrl}
+      onclick={() => (showContribute = true)}
+    >
+      Contribute…
+    </button>
     {#if !settings?.skillsRepoUrl}
       <span class="skills-hint">Set a skills repo URL in Settings ⚙ to enable.</span>
     {/if}
@@ -364,6 +389,10 @@
       onClose={() => (showSettings = false)}
       onSaved={settingsSaved}
     />
+  {/if}
+
+  {#if showContribute}
+    <Contribute onClose={() => (showContribute = false)} />
   {/if}
 </main>
 
