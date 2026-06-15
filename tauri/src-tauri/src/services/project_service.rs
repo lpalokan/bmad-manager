@@ -114,33 +114,15 @@ pub fn sort_projects(items: &mut [ProjectItem], order: ProjectSortOrder) {
 }
 
 /// Moves the project folder to the system trash / recycle bin. Mirrors
-/// the macOS app's `NSWorkspace.shared.recycle` semantics.
-///
-/// Runs on a dedicated thread so the OS trash backend gets a clean COM
-/// apartment on Windows — calling it directly from Tauri's command worker pool
-/// can otherwise abort with "Some operations were aborted". A single retry
-/// rides out a transient lock (e.g. antivirus mid-scan); a persistent failure
-/// (the folder is open somewhere) is mapped to an actionable message.
+/// the macOS app's `NSWorkspace.shared.recycle` semantics. A failure is mapped
+/// to an actionable message — the Windows shell's opaque "Some operations were
+/// aborted" almost always means the folder is open somewhere.
 pub fn trash_project(path: &Path) -> Result<(), String> {
     let name = path
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let owned = path.to_path_buf();
-    let outcome = std::thread::spawn(move || {
-        let first = trash::delete(&owned);
-        if first.is_ok() {
-            return first;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        trash::delete(&owned)
-    })
-    .join()
-    .map_err(|_| {
-        format!("Couldn't move '{name}' to the Recycle Bin: the delete worker panicked.")
-    })?;
-
-    outcome.map_err(|e| describe_trash_failure(&name, &e.to_string()))
+    trash::delete(path).map_err(|e| describe_trash_failure(&name, &e.to_string()))
 }
 
 /// Turns a raw trash error into something a user can act on. The Windows shell
