@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.5](https://github.com/lpalokan/bmad-manager/compare/v0.1.4...v0.1.5) (2026-06-15)
+
+
+### Features
+
+* contribute personal skills & project contexts as pull requests ([2401c8d](https://github.com/lpalokan/bmad-manager/commit/2401c8da6cb8a4d4a1a80391760bdb41cf442d6b))
+* search company contexts from the shared skills repo ([ec283c7](https://github.com/lpalokan/bmad-manager/commit/ec283c7d4030deaeb475e0306bff699c1c88aa38))
+* search contexts from the skills repo + contribute additions as PRs ([173f5dc](https://github.com/lpalokan/bmad-manager/commit/173f5dc128c24846372c2b50ca6be8d12e792827))
+
+
+### Bug Fixes
+
+* **windows:** clearer error and retry when a project can't be trashed ([e8103c7](https://github.com/lpalokan/bmad-manager/commit/e8103c72c6ec8bb00b5605cc7f8aa403006d2826))
+
 ## [0.1.4](https://github.com/lpalokan/bmad-manager/compare/v0.1.3...v0.1.4) (2026-06-14)
 
 
