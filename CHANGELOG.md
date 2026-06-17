@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.6](https://github.com/lpalokan/bmad-manager/compare/v0.1.5...v0.1.6) (2026-06-17)
+
+
+### Bug Fixes
+
+* drain ShellProcess pipe from a single reader to stop dropped output ([fae013e](https://github.com/lpalokan/bmad-manager/commit/fae013eb59b4581348bc64f90026a904e40f842e))
+* drain ShellProcess pipe from a single reader to stop dropped output ([2758d99](https://github.com/lpalokan/bmad-manager/commit/2758d9999074eb549246af234fd729b8e2b6934f)), closes [#50](https://github.com/lpalokan/bmad-manager/issues/50)
+
 ## [0.1.5](https://github.com/lpalokan/bmad-manager/compare/v0.1.4...v0.1.5) (2026-06-15)
 
 
