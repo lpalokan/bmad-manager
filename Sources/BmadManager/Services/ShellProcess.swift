@@ -16,33 +16,32 @@ struct ShellProcess {
                 process.standardError = pipe
                 process.standardInput = FileHandle.nullDevice
 
-                pipe.fileHandleForReading.readabilityHandler = { handle in
-                    let data = handle.availableData
-                    if data.isEmpty { return }
-                    guard let chunk = String(data: data, encoding: .utf8) else { return }
-                    continuation.yield(chunk)
-                }
-
-                process.terminationHandler = { proc in
-                    // Drain any data the readability handler hasn't processed yet.
-                    // On fast runners the termination handler can fire before the
-                    // readability handler, so clearing it first would lose output.
-                    let remaining = pipe.fileHandleForReading.readDataToEndOfFile()
-                    if !remaining.isEmpty, let chunk = String(data: remaining, encoding: .utf8) {
-                        continuation.yield(chunk)
-                    }
-                    pipe.fileHandleForReading.readabilityHandler = nil
-                    continuation.finish()
-                    resume.resume(returning: proc.terminationStatus)
-                }
-
                 do {
                     try process.run()
                 } catch {
-                    pipe.fileHandleForReading.readabilityHandler = nil
                     continuation.yield("Failed to launch shell: \(error.localizedDescription)\n")
                     continuation.finish()
                     resume.resume(returning: -1)
+                    return
+                }
+
+                // Drain the pipe from a single reader so output ordering is
+                // deterministic. Splitting reads across a readabilityHandler and
+                // a terminationHandler races on fast runners: the readability
+                // handler can yield a chunk *after* the termination handler has
+                // already finished the stream, silently dropping the output.
+                let readHandle = pipe.fileHandleForReading
+                DispatchQueue.global().async {
+                    while true {
+                        let data = readHandle.availableData
+                        if data.isEmpty { break } // EOF: child exited and write end closed
+                        if let chunk = String(data: data, encoding: .utf8) {
+                            continuation.yield(chunk)
+                        }
+                    }
+                    continuation.finish()
+                    process.waitUntilExit()
+                    resume.resume(returning: process.terminationStatus)
                 }
             }
         }
