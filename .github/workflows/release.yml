@@ -95,17 +95,97 @@ jobs:
           name: ${{ needs.windows-build.outputs.artifact-name }}
           path: windows-installer
 
-      - name: Attach EXE to release
+      - name: Download Windows portable artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.windows-build.outputs.portable-artifact-name }}
+          path: windows-portable
+
+      - name: Attach EXE + portable zip to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          exe=$(find windows-installer -name '*.exe' | head -n1)
+          # `-print -quit` makes find emit the first match and exit on its
+          # own, avoiding the SIGPIPE that `| head -n1` can raise under
+          # `pipefail`.
+          exe=$(find windows-installer -name '*.exe' -print -quit)
+          zip=$(find windows-portable -name '*.zip' -print -quit)
           if [ -z "$exe" ]; then
             echo "no .exe found in downloaded artifact"
             exit 1
           fi
+          if [ -z "$zip" ]; then
+            echo "no .zip found in downloaded artifact"
+            exit 1
+          fi
           cp "$exe" "bmad-manager-windows-x64-setup.exe"
+          cp "$zip" "bmad-manager-windows-x64-portable.zip"
           gh release upload "$TAG" \
-            bmad-manager-windows-x64-setup.exe --clobber \
+            bmad-manager-windows-x64-setup.exe \
+            bmad-manager-windows-x64-portable.zip --clobber \
             --repo ${{ github.repository }}
+
+  # Update the Scoop manifest in the bucket repo, mirroring the Homebrew
+  # cask update above. Guarded so the release still succeeds before the
+  # SCOOP_BUCKET_TOKEN secret / bucket repo are configured.
+  scoop-publish:
+    needs: [windows-build, attach-windows]
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Check for bucket token
+        id: guard
+        env:
+          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+        run: |
+          if [ -z "${SCOOP_BUCKET_TOKEN:-}" ]; then
+            echo "SCOOP_BUCKET_TOKEN not set — skipping Scoop manifest update."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download portable artifact
+        if: steps.guard.outputs.skip == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.windows-build.outputs.portable-artifact-name }}
+          path: windows-portable
+
+      - name: Compute SHA256
+        if: steps.guard.outputs.skip == 'false'
+        id: sha
+        run: |
+          set -euo pipefail
+          zip=$(find windows-portable -name '*.zip' -print -quit)
+          echo "sha256=$(sha256sum "$zip" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout bucket repo
+        if: steps.guard.outputs.skip == 'false'
+        uses: actions/checkout@v4
+        with:
+          repository: lpalokan/scoop-bucket
+          token: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          path: scoop-bucket
+
+      - name: Update manifest
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          SHA="${{ steps.sha.outputs.sha256 }}"
+          URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/bmad-manager-windows-x64-portable.zip"
+          manifest="scoop-bucket/bucket/bmad-manager.json"
+          tmp="$(mktemp)"
+          jq --arg v "$VERSION" --arg u "$URL" --arg h "$SHA" \
+            '.version = $v | .architecture."64bit".url = $u | .architecture."64bit".hash = $h' \
+            "$manifest" > "$tmp"
+          mv "$tmp" "$manifest"
+          cd scoop-bucket
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bucket/bmad-manager.json
+          git commit -m "bmad-manager ${VERSION}"
+          git push

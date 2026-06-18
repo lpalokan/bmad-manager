@@ -33,6 +33,9 @@ on:
       artifact-name:
         description: "Name of the uploaded installer artifact."
         value: ${{ jobs.build.outputs.artifact-name }}
+      portable-artifact-name:
+        description: "Name of the uploaded portable zip artifact (used for Scoop)."
+        value: ${{ jobs.build.outputs.portable-artifact-name }}
 
 permissions:
   contents: write
@@ -43,6 +46,7 @@ jobs:
     timeout-minutes: 40
     outputs:
       artifact-name: ${{ steps.locate.outputs.filename }}
+      portable-artifact-name: ${{ steps.portable.outputs.filename }}
     defaults:
       run:
         working-directory: tauri
@@ -226,9 +230,50 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Build portable zip
+        id: portable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # 7-Zip-extract the NSIS installer we just built and re-zip its
+          # payload. The extracted tree IS the exact on-disk install
+          # layout, so the portable zip is correct by construction — no
+          # need to reconstruct the BaseDirectory::Resource layout by
+          # hand. This zip is what the Scoop manifest extracts.
+          $setup = Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter "*-setup.exe" -Recurse | Select-Object -First 1
+          if (-not $setup) { throw "no NSIS installer to repack" }
+          $staging = Join-Path $env:RUNNER_TEMP "portable-staging"
+          if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          & 7z x "$($setup.FullName)" "-o$staging" -y | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "7z extraction failed ($LASTEXITCODE)" }
+          # Drop NSIS scaffolding that is not part of the app payload.
+          Remove-Item (Join-Path $staging '$PLUGINSDIR') -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item (Join-Path $staging 'uninstall.exe') -Force -ErrorAction SilentlyContinue
+          $exe = Join-Path $staging 'bmad-manager.exe'
+          if (-not (Test-Path $exe)) { throw "extracted payload missing bmad-manager.exe" }
+          $filename = "bmad-manager-windows-x64-portable.zip"
+          $zip = Join-Path "src-tauri/target/release/bundle/nsis" $filename
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip
+          $sizeMb = [Math]::Round((Get-Item $zip).Length / 1MB, 1)
+          "path=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "filename=$filename" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Portable zip: $filename ($sizeMb MB)"
+
+      - name: Upload portable zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.portable.outputs.filename }}
+          path: ${{ steps.portable.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/windows-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.locate.outputs.path }}
+          files: |
+            ${{ steps.locate.outputs.path }}
+            ${{ steps.portable.outputs.path }}
           generate_release_notes: true
