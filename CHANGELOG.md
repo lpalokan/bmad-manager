@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.7](https://github.com/lpalokan/bmad-manager/compare/v0.1.6...v0.1.7) (2026-06-18)
+
+
+### Features
+
+* distribute Windows build via Scoop with clean upgrades ([fed0dec](https://github.com/lpalokan/bmad-manager/commit/fed0dece5ab42e4a272aed4acea464f9425eaeea))
+* distribute Windows build via Scoop with clean upgrades ([9de3732](https://github.com/lpalokan/bmad-manager/commit/9de37320234a965cdd73b74928691d4ce7566287)), closes [#55](https://github.com/lpalokan/bmad-manager/issues/55)
+
 ## [0.1.6](https://github.com/lpalokan/bmad-manager/compare/v0.1.5...v0.1.6) (2026-06-17)
 
 
