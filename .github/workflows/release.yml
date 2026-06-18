@@ -10,6 +10,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+
 jobs:
   publish:
     runs-on: macos-14
@@ -66,3 +69,43 @@ jobs:
           brew tap lpalokan/tap
           brew install --cask lpalokan/tap/bmad-manager
           test -d "/Applications/bmad-manager.app"
+
+  # Build the Windows installer from the released tag, reusing the same
+  # bundling pipeline as the standalone tauri-windows workflow so there
+  # is a single source of truth for how the EXE is produced.
+  windows-build:
+    uses: ./.github/workflows/tauri-windows.yml
+    secrets: inherit
+    with:
+      ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+  # Attach the freshly built EXE to the same GitHub Release the DMG goes
+  # to, so release-please releases carry both platforms automatically.
+  attach-windows:
+    needs: windows-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Download Windows installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.windows-build.outputs.artifact-name }}
+          path: windows-installer
+
+      - name: Attach EXE to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          exe=$(find windows-installer -name '*.exe' | head -n1)
+          if [ -z "$exe" ]; then
+            echo "no .exe found in downloaded artifact"
+            exit 1
+          fi
+          cp "$exe" "bmad-manager-windows-x64-setup.exe"
+          gh release upload "$TAG" \
+            bmad-manager-windows-x64-setup.exe --clobber \
+            --repo ${{ github.repository }}
