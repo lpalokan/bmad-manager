@@ -253,7 +253,11 @@ jobs:
           $exe = Join-Path $staging 'bmad-manager.exe'
           if (-not (Test-Path $exe)) { throw "extracted payload missing bmad-manager.exe" }
           $filename = "bmad-manager-windows-x64-portable.zip"
-          $zip = Join-Path "src-tauri/target/release/bundle/nsis" $filename
+          # Derive the destination from the installer's (absolute)
+          # directory. upload-artifact resolves `path:` from the repo
+          # root and ignores the job's working-directory, so a relative
+          # path here would not be found.
+          $zip = Join-Path $setup.DirectoryName $filename
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip
           $sizeMb = [Math]::Round((Get-Item $zip).Length / 1MB, 1)
