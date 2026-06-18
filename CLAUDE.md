@@ -34,6 +34,15 @@ When working on a feature branch, always `git add -A && git commit` and `git pus
 
 Commits without a recognised prefix are silently ignored by the bot, so a stray `Fix typo` commit will not trigger a release.
 
+## Version files are release-please-owned
+
+One version drives **both** trees. release-please's `extra-files` writes each release version into the app-version fields, so never hand-edit them:
+
+- Swift: `Resources/Info.plist` — `CFBundleShortVersionString` and `CFBundleVersion` are kept identical (plain Major.Minor.Patch, no separate build number).
+- Tauri: `tauri/package.json`, `tauri/src-tauri/tauri.conf.json`, and `tauri/src-tauri/Cargo.toml`.
+
+The plist and `Cargo.toml` carry `x-release-please-version` annotations; the JSON files are matched by jsonpath. To force a one-off version (e.g. a reset), use a `Release-As: X.Y.Z` commit trailer.
+
 Apply the prefix to **both** the PR title and at least one commit on the feature branch. release-please reads whichever ends up on `main`: merge-commit and rebase merges preserve the individual feature-branch commits, while squash merges collapse everything into a single commit whose default message is the PR title. Prefixing both keeps releases triggering regardless of which merge style is used on a given PR.
 
 # Shell command conventions
