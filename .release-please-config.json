@@ -7,7 +7,13 @@
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,
       "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        { "type": "json", "path": "tauri/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "tauri/src-tauri/tauri.conf.json", "jsonpath": "$.version" },
+        { "type": "generic", "path": "tauri/src-tauri/Cargo.toml" },
+        { "type": "generic", "path": "Resources/Info.plist" }
+      ]
     }
   }
 }
