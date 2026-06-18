@@ -18,6 +18,21 @@ on:
     tags:
       - "windows-v*"
   workflow_dispatch:
+  # Reusable entry point: `release.yml` calls this on a published
+  # release-please release so the same EXE lands on the GitHub Release
+  # alongside the macOS DMG. The caller passes the release tag as `ref`
+  # and reads back the uploaded artifact's name to download + attach it.
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref (tag/branch/sha) to build. Defaults to the triggering ref."
+        required: false
+        type: string
+        default: ""
+    outputs:
+      artifact-name:
+        description: "Name of the uploaded installer artifact."
+        value: ${{ jobs.build.outputs.artifact-name }}
 
 permissions:
   contents: write
@@ -26,6 +41,8 @@ jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 40
+    outputs:
+      artifact-name: ${{ steps.locate.outputs.filename }}
     defaults:
       run:
         working-directory: tauri
@@ -48,6 +65,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `inputs.ref` is set only on workflow_call (release.yml passes
+          # the release tag); for push/dispatch it is empty and we fall
+          # back to the triggering ref.
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
