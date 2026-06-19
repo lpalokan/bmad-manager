@@ -222,13 +222,18 @@ jobs:
           "sizeMb=$sizeMb" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Installer: $rename ($sizeMb MB)"
 
+      # 7-day retention keeps the installer available for testing off main
+      # pushes while capping Actions storage growth. On the release path
+      # this artifact is only a hand-off to attach-windows (downloaded and
+      # uploaded to the GitHub Release, which is separate free storage), so
+      # it never needs to live long here.
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.locate.outputs.filename }}
           path: ${{ steps.locate.outputs.path }}
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
       - name: Build portable zip
         id: portable
@@ -265,13 +270,16 @@ jobs:
           "filename=$filename" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Portable zip: $filename ($sizeMb MB)"
 
+      # Same rationale as the installer upload: short retention. On the
+      # release path this is consumed immediately by attach-windows /
+      # scoop-publish; on main pushes it's just a recent build to grab.
       - name: Upload portable zip artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.portable.outputs.filename }}
           path: ${{ steps.portable.outputs.path }}
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/windows-v')

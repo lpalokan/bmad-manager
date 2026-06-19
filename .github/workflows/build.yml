@@ -27,10 +27,15 @@ jobs:
       - name: Build release DMG
         run: ./scripts/build_release.sh
 
+      # Only keep a downloadable DMG for pushes to a tracked branch, not
+      # for every PR run. PR builds still validate end-to-end via the
+      # steps above; storing the binary for each PR is what filled the
+      # account's Actions storage quota. Short retention caps accumulation.
       - name: Upload DMG artifact
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: bmad-manager-dmg
           path: dist/bmad-manager.dmg
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 5
