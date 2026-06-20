@@ -2,6 +2,7 @@ pub mod bundled_tooling;
 pub mod company_context;
 pub mod contribution;
 pub mod init_command;
+pub mod init_existing_folder;
 pub mod open_folder;
 pub mod path_detection;
 pub mod project_service;

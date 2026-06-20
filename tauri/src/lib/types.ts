@@ -38,6 +38,15 @@ export interface ProjectItem {
   createdAt: number | null;
 }
 
+// Mirror of services/project_service.rs InitTargetInfo (serde camelCase).
+// Describes an "initialize into an existing folder" target so the UI can
+// decide whether to confirm a potentially destructive overwrite.
+export interface InitTargetInfo {
+  exists: boolean;
+  isEmpty: boolean;
+  hasBmad: boolean;
+}
+
 // Mirror of models/company_context.rs — RECOGNIZED_FILE_NAMES.
 export const recognizedContextFileNames = [
   "icp.md",

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
@@ -27,13 +27,20 @@ pub enum ProjectCreationError {
 }
 
 /// Full project-creation pipeline: validate name, mkdir under
-/// `settings.projects_root`, materialise the module (git clone or zip
-/// extract), substitute placeholders, run the init command streaming
-/// output via `on_event`, clean up temp dirs.
+/// `settings.projects_root` (or use `target_path` as-is when supplied),
+/// materialise the module (git clone or zip extract), substitute
+/// placeholders, run the init command streaming output via `on_event`,
+/// clean up temp dirs.
+///
+/// When `target_path` is `Some`, the user picked an existing folder to
+/// initialise in-place: it is used as-is (no fresh mkdir, no must-not-exist
+/// guard). When `None`, today's name → new-folder-under-projects-root
+/// behaviour is unchanged.
 pub async fn create_project<F>(
     name: &str,
     settings: &AppSettings,
     import_context_from: Option<&CompanyContext>,
+    target_path: Option<&Path>,
     mut on_event: F,
 ) -> Result<ProjectItem, ProjectCreationError>
 where
@@ -42,7 +49,7 @@ where
     emit_diag(
         &mut on_event,
         format!(
-            "create_project name={name:?} module_source={:?} repo_url={:?} repo_ref={:?} zip_path={:?}",
+            "create_project name={name:?} module_source={:?} repo_url={:?} repo_ref={:?} zip_path={:?} target_path={target_path:?}",
             settings.module_source_kind,
             settings.module_repo_url,
             settings.module_repo_ref,
@@ -60,7 +67,10 @@ where
         ),
     );
 
-    let project_path = project_service::create_project_folder(name, &projects_root)?;
+    let project_path = match target_path {
+        Some(target) => project_service::use_existing_folder(target).map(|item| item.path)?,
+        None => project_service::create_project_folder(name, &projects_root)?,
+    };
     emit_diag(
         &mut on_event,
         format!(

@@ -179,7 +179,7 @@ fn source_context(world: &mut TauriWorld, source: &str) -> CompanyContext {
 async fn run_create(world: &mut TauriWorld, name: &str, context: Option<CompanyContext>) {
     let settings = world.settings.clone().expect("creation settings prepared");
     let result =
-        project_creator::create_project(name, &settings, context.as_ref(), |_event| {}).await;
+        project_creator::create_project(name, &settings, context.as_ref(), None, |_event| {}).await;
     world.last_string_error = result.err().map(|e| e.to_string());
 }
 

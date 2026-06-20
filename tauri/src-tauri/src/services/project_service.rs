@@ -1,8 +1,13 @@
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::models::{ProjectItem, ProjectSortOrder};
+
+/// Marker directories that signal a folder already holds a BMAD install —
+/// a stronger "init could clobber this" warning than mere non-emptiness.
+const BMAD_MARKERS: [&str; 3] = ["bmad", ".bmad", "_cfg"];
 
 #[derive(Debug, Error)]
 pub enum ProjectError {
@@ -12,6 +17,8 @@ pub enum ProjectError {
     ProjectExists(String),
     #[error("Projects root '{0}' exists but is not a directory.")]
     RootNotADirectory(PathBuf),
+    #[error("'{0}' is not an existing folder.")]
+    FolderNotADirectory(PathBuf),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -20,6 +27,7 @@ impl ProjectError {
     pub const INVALID_NAME: &'static str = "invalid name";
     pub const PROJECT_EXISTS: &'static str = "project exists";
     pub const ROOT_NOT_A_DIRECTORY: &'static str = "root not a directory";
+    pub const FOLDER_NOT_A_DIRECTORY: &'static str = "folder not a directory";
     pub const IO: &'static str = "io";
 
     pub fn kind_label(&self) -> &'static str {
@@ -27,8 +35,60 @@ impl ProjectError {
             ProjectError::InvalidName(_) => Self::INVALID_NAME,
             ProjectError::ProjectExists(_) => Self::PROJECT_EXISTS,
             ProjectError::RootNotADirectory(_) => Self::ROOT_NOT_A_DIRECTORY,
+            ProjectError::FolderNotADirectory(_) => Self::FOLDER_NOT_A_DIRECTORY,
             ProjectError::Io(_) => Self::IO,
         }
+    }
+}
+
+/// What the UI needs to decide whether initialising into an existing folder
+/// warrants a destructive-overwrite confirmation. Serialised to the frontend
+/// by the `inspect_init_target` command.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InitTargetInfo {
+    /// The folder exists on disk.
+    pub exists: bool,
+    /// The folder is empty (or missing) — init can run without a prompt.
+    pub is_empty: bool,
+    /// The folder already looks like a BMAD install (a marker dir present).
+    pub has_bmad: bool,
+}
+
+/// Validates that `folder` is an existing directory and returns the matching
+/// [`ProjectItem`]. The "initialize into an existing folder" path: the folder
+/// is used as-is (it must already exist and may be non-empty), so this skips
+/// the must-not-exist guard `create_project_folder` applies.
+pub fn use_existing_folder(folder: &Path) -> Result<ProjectItem, ProjectError> {
+    if !folder.is_dir() {
+        return Err(ProjectError::FolderNotADirectory(folder.to_path_buf()));
+    }
+    let created_at = std::fs::metadata(folder).ok().and_then(|m| m.created().ok());
+    Ok(ProjectItem::new(folder.to_path_buf(), created_at))
+}
+
+/// Inspects a candidate existing-folder init target so the UI can decide
+/// whether to confirm a potentially destructive overwrite. A missing folder
+/// is reported as empty (nothing to overwrite yet).
+pub fn inspect_init_target(folder: &Path) -> InitTargetInfo {
+    let exists = folder.is_dir();
+    if !exists {
+        return InitTargetInfo {
+            exists: false,
+            is_empty: true,
+            has_bmad: false,
+        };
+    }
+    let is_empty = std::fs::read_dir(folder)
+        .map(|mut entries| entries.next().is_none())
+        .unwrap_or(true);
+    let has_bmad = BMAD_MARKERS
+        .iter()
+        .any(|marker| folder.join(marker).is_dir());
+    InitTargetInfo {
+        exists,
+        is_empty,
+        has_bmad,
     }
 }
 
@@ -208,6 +268,74 @@ mod tests {
         create_project_folder("dup", tmp.path()).unwrap();
         let err = create_project_folder("dup", tmp.path()).unwrap_err();
         assert!(matches!(err, ProjectError::ProjectExists(_)));
+    }
+
+    // --- Existing-folder init (#64) ---
+
+    #[test]
+    fn accepts_existing_folder_when_target_given() {
+        let tmp = TempDir::new().unwrap();
+        let folder = tmp.path().join("legacy");
+        std::fs::create_dir(&folder).unwrap();
+        let item = use_existing_folder(&folder).unwrap();
+        assert_eq!(item.path, folder);
+        assert_eq!(item.name, "legacy");
+    }
+
+    #[test]
+    fn rejects_existing_folder_that_is_missing() {
+        let tmp = TempDir::new().unwrap();
+        let err = use_existing_folder(&tmp.path().join("nope")).unwrap_err();
+        assert!(matches!(err, ProjectError::FolderNotADirectory(_)));
+    }
+
+    #[test]
+    fn rejects_existing_folder_that_is_a_file() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("loose.txt");
+        std::fs::write(&file, "x").unwrap();
+        let err = use_existing_folder(&file).unwrap_err();
+        assert!(matches!(err, ProjectError::FolderNotADirectory(_)));
+    }
+
+    #[test]
+    fn init_target_inspection_reports_empty_folder() {
+        let tmp = TempDir::new().unwrap();
+        let info = inspect_init_target(tmp.path());
+        assert!(info.exists);
+        assert!(info.is_empty);
+        assert!(!info.has_bmad);
+    }
+
+    #[test]
+    fn init_target_inspection_reports_non_empty() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("README.md"), "x").unwrap();
+        let info = inspect_init_target(tmp.path());
+        assert!(info.exists);
+        assert!(!info.is_empty);
+        assert!(!info.has_bmad);
+    }
+
+    #[test]
+    fn init_target_inspection_detects_a_bmad_install() {
+        for marker in ["bmad", ".bmad", "_cfg"] {
+            let tmp = TempDir::new().unwrap();
+            std::fs::create_dir(tmp.path().join(marker)).unwrap();
+            let info = inspect_init_target(tmp.path());
+            assert!(info.has_bmad, "expected '{marker}' to be detected");
+            assert!(!info.is_empty);
+        }
+    }
+
+    #[test]
+    fn init_target_inspection_reports_missing_path() {
+        let tmp = TempDir::new().unwrap();
+        let info = inspect_init_target(&tmp.path().join("does-not-exist"));
+        assert!(!info.exists);
+        // A missing folder is reported empty (nothing to overwrite).
+        assert!(info.is_empty);
+        assert!(!info.has_bmad);
     }
 
     #[test]

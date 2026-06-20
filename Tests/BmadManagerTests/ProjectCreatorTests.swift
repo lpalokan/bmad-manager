@@ -71,6 +71,72 @@ final class ProjectCreatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: project.url.path))
     }
 
+    // MARK: - Existing-folder init (#64)
+
+    func testInitializesIntoExistingFolder() async throws {
+        // A pre-existing folder outside the projects root — init should use
+        // it as-is rather than minting a fresh folder under projectsRoot.
+        let existing = projectsRoot.appendingPathComponent("already-here", isDirectory: true)
+        try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: true)
+        let settings = makeSettings(initCommand: "true")
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
+
+        let project = try await creator.create(
+            name: "already-here",
+            settings: settings,
+            destination: existing
+        ) { _, _ in 0 }
+
+        XCTAssertEqual(project.url.standardizedFileURL, existing.standardizedFileURL)
+    }
+
+    func testInitIntoNonEmptyFolderIsAllowed() async throws {
+        let existing = projectsRoot.appendingPathComponent("non-empty", isDirectory: true)
+        try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: true)
+        try "keep me".write(to: existing.appendingPathComponent("existing.txt"),
+                            atomically: true, encoding: .utf8)
+        let settings = makeSettings(initCommand: "true")
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
+
+        let project = try await creator.create(
+            name: "non-empty",
+            settings: settings,
+            destination: existing
+        ) { _, _ in 0 }
+
+        XCTAssertEqual(project.url.standardizedFileURL, existing.standardizedFileURL)
+        // The pre-existing file must be untouched — init runs *in* the folder.
+        let kept = try String(
+            contentsOf: existing.appendingPathComponent("existing.txt"), encoding: .utf8)
+        XCTAssertEqual(kept, "keep me")
+    }
+
+    func testExistingFolderPathUsedAsWorkingDirectory() async throws {
+        let existing = projectsRoot.appendingPathComponent("as-cwd", isDirectory: true)
+        try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: true)
+        let settings = makeSettings(
+            initCommand: "echo '{PROJECT_PATH}' > marker.txt"
+        )
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
+
+        var capturedCwd: URL?
+        let project = try await creator.create(
+            name: "as-cwd",
+            settings: settings,
+            destination: existing
+        ) { command, cwd in
+            capturedCwd = cwd
+            let (_, exitCode) = ShellProcess.run(command: command, cwd: cwd)
+            return await exitCode.value
+        }
+
+        XCTAssertEqual(capturedCwd?.standardizedFileURL, existing.standardizedFileURL)
+        let marker = try String(
+            contentsOf: existing.appendingPathComponent("marker.txt"), encoding: .utf8)
+        XCTAssertTrue(marker.contains(existing.path))
+        XCTAssertEqual(project.url.standardizedFileURL, existing.standardizedFileURL)
+    }
+
     func testWritesCodexAgentsFileAfterSuccessfulInit() async throws {
         let settings = makeSettings(initCommand: "true")
         let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))

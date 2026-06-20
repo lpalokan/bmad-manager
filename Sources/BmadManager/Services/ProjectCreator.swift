@@ -34,9 +34,19 @@ struct ProjectCreator {
         name: String,
         settings: AppSettings,
         importingContextFrom context: CompanyContext? = nil,
+        destination: URL? = nil,
         runCommand: (String, URL) async -> Int32 = { _, _ in 0 }
     ) async throws -> ProjectItem {
-        let projectURL = try projectService.createProjectFolder(name: name, in: settings.projectsRoot)
+        // When `destination` is supplied the user picked an existing folder to
+        // initialise in-place: use it as-is (don't mint a new folder under
+        // projectsRoot, don't apply the must-not-exist guard). Otherwise keep
+        // today's name → new-folder-under-projectsRoot behaviour.
+        let projectURL: URL
+        if let destination {
+            projectURL = try projectService.useExistingFolder(at: destination).url
+        } else {
+            projectURL = try projectService.createProjectFolder(name: name, in: settings.projectsRoot)
+        }
         let source = moduleSourceFor(settings)
 
         try await source.withModuleRoot { moduleRoot in
