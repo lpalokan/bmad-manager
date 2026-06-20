@@ -144,12 +144,16 @@ enum ContributionService {
         return files.sorted { $0.repoPath < $1.repoPath }
     }
 
-    /// Stages only the recognized files of a context as `context/<name>/<file>`.
+    /// Stages every selected file of a context as `context/<name>/<file>`,
+    /// preserving the selection order (the picker already lists canonical
+    /// files first, then extras). Files in `selected` that aren't on disk are
+    /// skipped — the whole context is "all files in the folder", so a
+    /// user-added file must contribute too.
     static func prepareContextFiles(
         name: String, dir: URL, selected: [String], fileManager: FileManager = .default
     ) throws -> [PreparedFile] {
         var files: [PreparedFile] = []
-        for file in CompanyContext.recognizedFileNames where selected.contains(file) {
+        for file in selected {
             let path = dir.appendingPathComponent(file)
             guard fileManager.fileExists(atPath: path.path) else { continue }
             files.append(try read(path, repoPath: "context/\(name)/\(file)", fileManager: fileManager))

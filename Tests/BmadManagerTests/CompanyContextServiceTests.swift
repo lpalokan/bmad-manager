@@ -92,22 +92,30 @@ final class CompanyContextServiceTests: XCTestCase {
         )
     }
 
-    func testIgnoresProjectsWithoutRecognizedContextFiles() throws {
+    func testIgnoresProjectsWithoutAnyContextFiles() throws {
+        // A context folder counts only when it actually holds files. An empty
+        // folder, or no folder at all, is still "no context".
         let empty = try makeProject("empty-context", files: [])
-        let unrecognized = try makeProject("only-unrecognized", files: [])
-        let dir = projectsRoot
-            .appendingPathComponent("only-unrecognized/_bmad-output/company-context", isDirectory: true)
-        try "summary".write(to: dir.appendingPathComponent("bootstrap-summary.md"),
-                            atomically: true, encoding: .utf8)
         let bare = try makeProject("no-context-dir", contextAt: nil)
 
         XCTAssertNil(service.context(inProject: empty))
-        XCTAssertNil(service.context(inProject: unrecognized))
         XCTAssertNil(service.context(inProject: bare))
-        XCTAssertTrue(service.contexts(in: items(empty, unrecognized, bare)).isEmpty)
+        XCTAssertTrue(service.contexts(in: items(empty, bare)).isEmpty)
     }
 
-    func testListsOnlyRecognizedFilesInCanonicalOrder() throws {
+    func testFindsContextWhenOnlyUnrecognizedFilesArePresent() throws {
+        // Extra files the user dropped into the context folder (beyond the
+        // five canonical names) make the folder a valid context too — they
+        // must not be silently ignored.
+        let custom = try makeProject("only-custom", files: ["bootstrap-summary.md"])
+
+        let context = try XCTUnwrap(service.context(inProject: custom))
+        XCTAssertEqual(context.files, ["bootstrap-summary.md"])
+    }
+
+    func testListsAllFilesWithRecognizedOnesFirstInCanonicalOrder() throws {
+        // Pull *every* file in the folder: recognized names first in canonical
+        // order, then the rest alphabetically. Hidden files are skipped.
         let mixed = try makeProject(
             "mixed",
             files: ["tech-stack.md", "bootstrap-summary.md", "icp.md", "notes.txt"]
@@ -115,7 +123,24 @@ final class CompanyContextServiceTests: XCTestCase {
 
         let context = try XCTUnwrap(service.context(inProject: mixed))
 
-        XCTAssertEqual(context.files, ["icp.md", "tech-stack.md"])
+        XCTAssertEqual(
+            context.files,
+            ["icp.md", "tech-stack.md", "bootstrap-summary.md", "notes.txt"]
+        )
+    }
+
+    func testSkipsHiddenFilesAndSubdirectoriesWhenListing() throws {
+        let project = try makeProject("with-extras", files: ["icp.md", "extra.md"])
+        let contextDir = project
+            .appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+        try "hidden".write(to: contextDir.appendingPathComponent(".DS_Store"),
+                           atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(
+            at: contextDir.appendingPathComponent("nested", isDirectory: true),
+            withIntermediateDirectories: true)
+
+        let context = try XCTUnwrap(service.context(inProject: project))
+        XCTAssertEqual(context.files, ["icp.md", "extra.md"])
     }
 
     func testContextsSortByProjectNameRegardlessOfInputOrder() throws {
@@ -146,16 +171,22 @@ final class CompanyContextServiceTests: XCTestCase {
             atPath: destDir.appendingPathComponent("kpis.md").path))
     }
 
-    func testImportDoesNotCarryUnrecognizedFilesOver() throws {
-        let source = try makeProject("source", files: ["icp.md", "bootstrap-summary.md"])
+    func testImportCarriesAllContextFilesOver() throws {
+        // Every file in the source context folder is copied — including ones
+        // beyond the five canonical names the user added themselves.
+        let source = try makeProject(
+            "source", files: ["icp.md", "bootstrap-summary.md", "extra-notes.md"])
         let target = try makeProject("target", contextAt: nil)
         let context = try XCTUnwrap(service.context(inProject: source))
 
         try service.importContext(context, into: target)
 
         let destDir = target.appendingPathComponent("_bmad-output/company-context", isDirectory: true)
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: destDir.appendingPathComponent("bootstrap-summary.md").path))
+        for file in ["icp.md", "bootstrap-summary.md", "extra-notes.md"] {
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: destDir.appendingPathComponent(file).path),
+                "expected '\(file)' to be imported")
+        }
     }
 
     func testImportLeavesExistingDestinationFilesUntouched() throws {
@@ -190,29 +221,22 @@ final class CompanyContextServiceTests: XCTestCase {
 
     // MARK: - Display
 
-    func testDisplayNameIsProjectNameWithFolderMarkerWhenContextIsComplete() {
+    func testDisplayNameIsProjectNameWithFolderMarker() {
+        // The context is now "all files in the folder", so there's no fixed
+        // denominator to flag a partial context against — just name + marker.
         let context = CompanyContext(
             projectName: "acme",
             directoryURL: URL(fileURLWithPath: "/tmp/acme/_bmad-output/company-context"),
-            files: CompanyContext.recognizedFileNames
+            files: ["icp.md", "kpis.md", "custom.md"]
         )
         XCTAssertEqual(context.displayName, "acme 📂")
-    }
-
-    func testDisplayNameFlagsPartialContexts() {
-        let context = CompanyContext(
-            projectName: "acme",
-            directoryURL: URL(fileURLWithPath: "/tmp/acme/_bmad-output/company-context"),
-            files: ["icp.md", "kpis.md"]
-        )
-        XCTAssertEqual(context.displayName, "acme (2 of 5 context files) 📂")
     }
 
     func testGithubContextDisplayNameCarriesTheGithubMarker() {
         let context = CompanyContext(
             projectName: "acme",
             directoryURL: URL(fileURLWithPath: "/tmp/repo/context/acme"),
-            files: CompanyContext.recognizedFileNames,
+            files: ["icp.md"],
             source: .github
         )
         XCTAssertEqual(context.displayName, "acme 🐙")
@@ -250,11 +274,26 @@ final class CompanyContextServiceTests: XCTestCase {
         XCTAssertEqual(contexts.first?.files, ["icp.md", "kpis.md"])
     }
 
-    func testGithubContextsIgnoreFoldersWithoutRecognizedFiles() throws {
+    func testGithubContextsIgnoreEmptyFolders() throws {
         let repo = projectsRoot.appendingPathComponent("skills-repo", isDirectory: true)
-        try makeGithubContext(inRepo: repo, "notes", files: ["README.md"])
+        let dir = repo
+            .appendingPathComponent("context", isDirectory: true)
+            .appendingPathComponent("empty", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         XCTAssertTrue(service.githubContexts(inRepoRoot: repo).isEmpty)
+    }
+
+    func testGithubContextsIncludeFoldersWithOnlyCustomFiles() throws {
+        // A skills-repo context folder with non-canonical files is still a
+        // valid seeding source — all its files get pulled.
+        let repo = projectsRoot.appendingPathComponent("skills-repo", isDirectory: true)
+        try makeGithubContext(inRepo: repo, "notes", files: ["README.md", "playbook.md"])
+
+        let contexts = service.githubContexts(inRepoRoot: repo)
+        XCTAssertEqual(contexts.map(\.projectName), ["notes"])
+        // Non-canonical files come back alphabetically (case-insensitive).
+        XCTAssertEqual(contexts.first?.files, ["playbook.md", "README.md"])
     }
 
     func testGithubContextsAreEmptyWhenContextFolderMissing() {

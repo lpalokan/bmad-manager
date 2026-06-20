@@ -71,7 +71,9 @@ final class ContributionServiceTests: XCTestCase {
                        ["skills/my-skill/SKILL.md", "skills/my-skill/sub/helper.py"])
     }
 
-    func testPrepareContextFilesTakesOnlyRecognizedSelected() throws {
+    func testPrepareContextFilesStagesEverySelectedFile() throws {
+        // The context is "all files in the folder", so a user-added file like
+        // notes.txt must be contributed too, not silently dropped.
         let dir = home.appendingPathComponent("ctx", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         for f in ["icp.md", "kpis.md", "notes.txt"] {
@@ -79,7 +81,19 @@ final class ContributionServiceTests: XCTestCase {
         }
         let files = try ContributionService.prepareContextFiles(
             name: "acme", dir: dir, selected: ["icp.md", "kpis.md", "notes.txt"])
-        XCTAssertEqual(files.map(\.repoPath), ["context/acme/icp.md", "context/acme/kpis.md"])
+        XCTAssertEqual(
+            files.map(\.repoPath),
+            ["context/acme/icp.md", "context/acme/kpis.md", "context/acme/notes.txt"])
+    }
+
+    func testPrepareContextFilesSkipsSelectedFilesThatVanished() throws {
+        let dir = home.appendingPathComponent("ctx2", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "x".write(to: dir.appendingPathComponent("icp.md"), atomically: true, encoding: .utf8)
+        // "gone.md" is selected but not on disk — it should be skipped, not error.
+        let files = try ContributionService.prepareContextFiles(
+            name: "acme", dir: dir, selected: ["icp.md", "gone.md"])
+        XCTAssertEqual(files.map(\.repoPath), ["context/acme/icp.md"])
     }
 
     func testPrepareSkillFilesRejectsOversized() throws {
