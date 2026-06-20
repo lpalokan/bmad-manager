@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.10](https://github.com/lpalokan/bmad-manager/compare/v0.1.9...v0.1.10) (2026-06-20)
+
+
+### Bug Fixes
+
+* flag projects with a non-semver installed version as needing reinstall ([f304dd0](https://github.com/lpalokan/bmad-manager/commit/f304dd0efcdb9064759de258c418ccf429944f7d))
+* flag projects with a non-semver installed version as needing reinstall ([04cc960](https://github.com/lpalokan/bmad-manager/commit/04cc960c822923401fe5296284529020f4a10c60)), closes [#76](https://github.com/lpalokan/bmad-manager/issues/76)
+
 ## [0.1.9](https://github.com/lpalokan/bmad-manager/compare/v0.1.8...v0.1.9) (2026-06-20)
 
 
