@@ -34,9 +34,26 @@ private final class FakeAppLauncher: AppLauncherProtocol {
 
 private enum FakeError: Error { case terminalFailed, appFailed }
 
+/// Yields a pre-built module root (no real clone) for the update/version-check
+/// flows, and can inject a pre-body error to simulate an offline/git failure.
+private struct FakeModuleSource: ModuleSource {
+    let moduleRoot: URL
+    var errorBeforeBody: Error? = nil
+
+    func withModuleRoot<T>(_ body: (URL) async throws -> T) async throws -> T {
+        if let errorBeforeBody { throw errorBeforeBody }
+        return try await body(moduleRoot)
+    }
+}
+
+private enum FakeCoordSourceError: Error { case offline }
+
 @MainActor
 final class ProjectCoordinatorTests: XCTestCase {
     private var projectsRoot: URL!
+    /// A temp dir for fixtures that must live OUTSIDE projectsRoot (fake module
+    /// roots), so `listProjects` doesn't mistake them for projects.
+    private var supportRoot: URL!
     private var settings: SettingsStore!
     private var terminal: FakeTerminalLauncher!
     private var appLauncher: FakeAppLauncher!
@@ -45,6 +62,9 @@ final class ProjectCoordinatorTests: XCTestCase {
         projectsRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("bmad-manager-coord-test-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: projectsRoot, withIntermediateDirectories: true)
+        supportRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("bmad-manager-coord-support-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: supportRoot, withIntermediateDirectories: true)
         terminal = FakeTerminalLauncher()
         appLauncher = FakeAppLauncher()
         // Use an in-memory repository so the test never writes to the
@@ -59,12 +79,47 @@ final class ProjectCoordinatorTests: XCTestCase {
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: projectsRoot)
+        try? FileManager.default.removeItem(at: supportRoot)
     }
 
     private var defaultRunCommand: (String, URL) async -> Int32 = { _, _ in 0 }
 
     private func makeCoordinator() -> ProjectCoordinator {
         ProjectCoordinator(terminalLauncher: terminal, appLauncher: appLauncher)
+    }
+
+    /// Coordinator wired to an injected `ModuleSource`, so update/version-check
+    /// flows run against a fake clone instead of cloning the real repo.
+    private func makeCoordinator(source: ModuleSource) -> ProjectCoordinator {
+        ProjectCoordinator(terminalLauncher: terminal, appLauncher: appLauncher) { _ in source }
+    }
+
+    /// Builds a fake module root (under supportRoot) carrying a
+    /// `skills/module.yaml` at `moduleVersion` for code `marketing-growth`.
+    private func makeModuleRoot(moduleVersion: String) throws -> URL {
+        let root = supportRoot.appendingPathComponent("module-\(UUID().uuidString)", isDirectory: true)
+        let skills = root.appendingPathComponent("skills", isDirectory: true)
+        try FileManager.default.createDirectory(at: skills, withIntermediateDirectories: true)
+        try """
+        code: marketing-growth
+        module_version: \(moduleVersion)
+        """.write(to: skills.appendingPathComponent("module.yaml"), atomically: true, encoding: .utf8)
+        return root
+    }
+
+    /// Seeds a project folder under projectsRoot with a manifest pinning the
+    /// installed marketing-growth version.
+    @discardableResult
+    private func seedProject(_ name: String, marketingGrowthVersion: String) throws -> URL {
+        let project = projectsRoot.appendingPathComponent(name, isDirectory: true)
+        let config = project.appendingPathComponent("_bmad/_config", isDirectory: true)
+        try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+        try """
+        modules:
+          - name: marketing-growth
+            version: \(marketingGrowthVersion)
+        """.write(to: config.appendingPathComponent("manifest.yaml"), atomically: true, encoding: .utf8)
+        return project
     }
 
     private func createProject(
@@ -429,6 +484,99 @@ final class ProjectCoordinatorTests: XCTestCase {
 
         await deleteProject(coordinator, project)
         XCTAssertNil(coordinator.errorMessage)
+    }
+
+    // MARK: - Update & version check
+
+    func testCheckForUpdatesMarksOnlyStaleProjects() async throws {
+        try seedProject("behind", marketingGrowthVersion: "2.0.0")
+        try seedProject("current", marketingGrowthVersion: "2.1.0")
+        let coordinator = makeCoordinator(source: FakeModuleSource(moduleRoot: try makeModuleRoot(moduleVersion: "2.1.0")))
+        refresh(coordinator)
+
+        await coordinator.checkForUpdates(settings: settings.settings)
+
+        // Membership is checked against the same URLs `refresh` produced — the
+        // exact form the View compares with `updateAvailable.contains(...)`.
+        let behind = try XCTUnwrap(coordinator.projects.first { $0.name == "behind" })
+        let current = try XCTUnwrap(coordinator.projects.first { $0.name == "current" })
+        XCTAssertTrue(coordinator.updateAvailable.contains(behind.url))
+        XCTAssertFalse(coordinator.updateAvailable.contains(current.url))
+        XCTAssertNil(coordinator.errorMessage)
+    }
+
+    func testCheckForUpdatesClearsBadgesWhenSourceFails() async throws {
+        try seedProject("behind", marketingGrowthVersion: "2.0.0")
+        let source = FakeModuleSource(
+            moduleRoot: try makeModuleRoot(moduleVersion: "2.1.0"),
+            errorBeforeBody: FakeCoordSourceError.offline)
+        let coordinator = makeCoordinator(source: source)
+        refresh(coordinator)
+
+        await coordinator.checkForUpdates(settings: settings.settings)
+
+        XCTAssertTrue(coordinator.updateAvailable.isEmpty, "offline check must not badge anything")
+        XCTAssertNil(coordinator.errorMessage, "a failed version check must stay silent")
+    }
+
+    func testCheckForUpdatesIgnoresProjectsWithoutTheModule() async throws {
+        // A plain folder with no marketing-growth manifest entry.
+        try FileManager.default.createDirectory(
+            at: projectsRoot.appendingPathComponent("not-bmad"), withIntermediateDirectories: true)
+        let coordinator = makeCoordinator(source: FakeModuleSource(moduleRoot: try makeModuleRoot(moduleVersion: "2.1.0")))
+        refresh(coordinator)
+
+        await coordinator.checkForUpdates(settings: settings.settings)
+
+        XCTAssertTrue(coordinator.updateAvailable.isEmpty)
+    }
+
+    func testCheckForUpdatesClearsStaleBadgeAfterUpgrade() async throws {
+        try seedProject("proj", marketingGrowthVersion: "2.0.0")
+        let coordinator = makeCoordinator(source: FakeModuleSource(moduleRoot: try makeModuleRoot(moduleVersion: "2.1.0")))
+        refresh(coordinator)
+        await coordinator.checkForUpdates(settings: settings.settings)
+        XCTAssertEqual(coordinator.updateAvailable.count, 1, "starts stale")
+
+        // The project gets upgraded on disk; a re-check clears the badge.
+        try seedProject("proj", marketingGrowthVersion: "2.1.0")
+        await coordinator.checkForUpdates(settings: settings.settings)
+
+        XCTAssertTrue(coordinator.updateAvailable.isEmpty)
+    }
+
+    func testUpdateProjectHappyPath() async throws {
+        let project = try seedProject("to-update", marketingGrowthVersion: "2.0.0")
+        let coordinator = makeCoordinator(source: FakeModuleSource(moduleRoot: try makeModuleRoot(moduleVersion: "2.1.0")))
+
+        await coordinator.updateProject(
+            ProjectItem(url: project),
+            settings: settings.settings,
+            runCommand: { _, _ in 0 }
+        )
+
+        XCTAssertNil(coordinator.errorMessage)
+        XCTAssertFalse(coordinator.isUpdating)
+        XCTAssertTrue(coordinator.showOutput)
+        // The bmad AGENTS.md block was refreshed in the project.
+        let agents = try String(
+            contentsOf: project.appendingPathComponent("AGENTS.md"), encoding: .utf8)
+        XCTAssertTrue(agents.contains(AgentsFileWriter.sectionMarker))
+    }
+
+    func testUpdateProjectNonZeroExitCapturesError() async throws {
+        let project = try seedProject("update-fail", marketingGrowthVersion: "2.0.0")
+        let coordinator = makeCoordinator(source: FakeModuleSource(moduleRoot: try makeModuleRoot(moduleVersion: "2.1.0")))
+
+        await coordinator.updateProject(
+            ProjectItem(url: project),
+            settings: settings.settings,
+            runCommand: { _, _ in 42 }
+        )
+
+        XCTAssertNotNil(coordinator.errorMessage)
+        XCTAssertTrue(coordinator.errorMessage?.contains("42") ?? false)
+        XCTAssertFalse(coordinator.isUpdating)
     }
 
     // MARK: - Terminal

@@ -7,6 +7,7 @@
   import ProjectRow from "./lib/ProjectRow.svelte";
   import Settings from "./lib/Settings.svelte";
   import {
+    checkForUpdates,
     createProject,
     deleteProject,
     inspectInitTarget,
@@ -22,6 +23,7 @@
     syncSkillsClaude,
     syncSkillsCodex,
     syncSkillsRepo,
+    updateProject,
   } from "./lib/commands";
   import { companyContextDisplayName, projectSortOrderOptions, type AppSettings, type CompanyContext, type OutputEvent, type ProjectItem, type ProjectSortOrder } from "./lib/types";
 
@@ -32,6 +34,10 @@
   let selectedContextDir = $state("");
   let newProjectName = $state("");
   let isCreating = $state(false);
+  let isUpdating = $state(false);
+  // Paths of projects whose installed module version is behind the repo's
+  // latest — drives each row's Update button.
+  let staleProjects: Set<string> = $state(new Set());
   let showSettings = $state(false);
   let showContribute = $state(false);
   let showOutput = $state(false);
@@ -84,6 +90,19 @@
       errorMessage = `Skill sync failed: ${err}`;
     }
     await refresh();
+    // Independent best-effort version check (one repo fetch + N manifest
+    // reads). Fire-and-forget so a slow clone never blocks the list; stale
+    // projects light up their Update button when it resolves.
+    void runUpdateCheck();
+  }
+
+  async function runUpdateCheck() {
+    try {
+      staleProjects = new Set(await checkForUpdates());
+    } catch {
+      // A failed check stays silent — no badges rather than an error.
+      staleProjects = new Set();
+    }
   }
 
   onDestroy(() => {
@@ -200,6 +219,35 @@
       errorMessage = `Skill sync failed: ${err}`;
     } finally {
       isSyncing = false;
+    }
+  }
+
+  // Per-project "Update": confirm, then re-install the latest module over the
+  // existing folder and refresh its managed AGENTS.md blocks. Init output
+  // streams into the same panel as create. _bmad-output/ user data is kept.
+  async function onUpdateProject(project: ProjectItem) {
+    if (isCreating || isUpdating) return;
+    if (
+      !confirm(
+        `Update '${project.name}' to the latest module? This re-runs BMAD init in the project folder and refreshes the managed AGENTS.md sections. Your files under _bmad-output/ are preserved.`,
+      )
+    ) {
+      return;
+    }
+    isUpdating = true;
+    showOutput = true;
+    outputLines = [];
+    lastExitCode = null;
+    errorMessage = null;
+    try {
+      await updateProject(project.path);
+    } catch (err) {
+      errorMessage = `Update failed: ${err}`;
+    } finally {
+      isUpdating = false;
+      await refresh();
+      // Re-check so the just-updated project's badge clears.
+      void runUpdateCheck();
     }
   }
 
@@ -389,11 +437,13 @@
         {#each projects as project (project.path)}
           <ProjectRow
             {project}
+            updateAvailable={staleProjects.has(project.path)}
             onClaude={() => onClaude(project)}
             onOpencode={() => onOpencode(project)}
             onPi={() => onPi(project)}
             onCodex={() => onCodex(project)}
             onOpenFolder={() => onOpenFolder(project)}
+            onUpdate={() => onUpdateProject(project)}
             onDelete={() => onDelete(project)}
           />
         {/each}
@@ -436,7 +486,7 @@
     <section class="output-panel" data-testid="output-panel">
       <CommandOutput
         lines={outputLines}
-        isRunning={isCreating || isSyncing}
+        isRunning={isCreating || isSyncing || isUpdating}
         {lastExitCode}
       />
     </section>

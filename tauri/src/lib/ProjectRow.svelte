@@ -3,16 +3,29 @@
 
   interface Props {
     project: ProjectItem;
+    // True when the project's installed module version is behind the repo's
+    // latest — surfaces the Update button. Purely presentational.
+    updateAvailable?: boolean;
     onClaude: () => void;
     onOpencode: () => void;
     onPi: () => void;
     onCodex: () => void;
     onOpenFolder: () => void;
+    onUpdate?: () => void;
     onDelete: () => void;
   }
 
-  let { project, onClaude, onOpencode, onPi, onCodex, onOpenFolder, onDelete }: Props =
-    $props();
+  let {
+    project,
+    updateAvailable = false,
+    onClaude,
+    onOpencode,
+    onPi,
+    onCodex,
+    onOpenFolder,
+    onUpdate = () => {},
+    onDelete,
+  }: Props = $props();
 
   function relativeCreated(epoch: number | null): string {
     if (epoch === null) return "";
@@ -34,6 +47,18 @@
     {/if}
   </div>
   <div class="actions">
+    {#if updateAvailable}
+      <!-- Shown only when the project is behind the latest module version. -->
+      <button
+        class="update"
+        data-testid="update-project"
+        title="Re-install the latest module and refresh AGENTS.md"
+        aria-label="Update project"
+        onclick={onUpdate}
+      >
+        Update
+      </button>
+    {/if}
     <!-- Agent buttons, ordered alphabetically by label. -->
     <button onclick={onClaude}>Claude Code</button>
     <button onclick={onCodex}>Codex</button>
@@ -112,6 +137,16 @@
 
   button:hover {
     background: rgba(127, 127, 127, 0.15);
+  }
+
+  button.update {
+    background: rgba(40, 100, 200, 0.85);
+    color: white;
+    border-color: rgba(40, 100, 200, 0.85);
+  }
+
+  button.update:hover {
+    background: rgba(40, 100, 200, 1);
   }
 
   button.danger {

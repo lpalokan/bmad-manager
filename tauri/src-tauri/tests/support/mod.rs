@@ -51,6 +51,10 @@ pub struct TauriWorld {
     /// Existing-folder init target picked by an init-into-existing scenario.
     pub init_target: Option<PathBuf>,
     pub init_target_info: Option<InitTargetInfo>,
+    /// Project folder a version-check / update scenario operates on.
+    pub update_target: Option<PathBuf>,
+    /// Result of the most recent `is_project_stale` check.
+    pub update_available: Option<bool>,
 }
 
 impl TauriWorld {
@@ -141,6 +145,29 @@ impl TauriWorld {
             )
             .expect("start zip entry");
         writer.write_all(b"name: fixture").expect("write zip entry");
+        writer.finish().expect("finish zip");
+        path
+    }
+
+    /// Like [`build_module_zip`], but also writes a
+    /// `module/templates/agents-okf-block.md` so update scenarios can exercise
+    /// the conditional okf-block injection.
+    pub fn build_module_zip_with_okf(&mut self, okf_body: &str) -> PathBuf {
+        use std::io::Write as _;
+        let path = self.ensure_tmp().join("module-fixture-okf.zip");
+        let file = std::fs::File::create(&path).expect("create zip fixture");
+        let mut writer = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default();
+        writer
+            .start_file("module/manifest.yaml", opts)
+            .expect("start zip entry");
+        writer.write_all(b"name: fixture").expect("write zip entry");
+        writer
+            .start_file("module/templates/agents-okf-block.md", opts)
+            .expect("start okf entry");
+        writer
+            .write_all(okf_body.as_bytes())
+            .expect("write okf entry");
         writer.finish().expect("finish zip");
         path
     }

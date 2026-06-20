@@ -121,6 +121,11 @@ struct ContentView: View {
     private func refreshAll() {
         refreshProjects()
         Task { await autoSyncRepo() }
+        // Independent best-effort version check — one repo fetch, then per-
+        // project manifest reads. Runs concurrently with the skills sync and
+        // never blocks the list; stale projects light up their Update button
+        // when it resolves.
+        Task { await coordinator.checkForUpdates(settings: settings.settings) }
     }
 
     private func autoSyncRepo() async {
@@ -292,6 +297,7 @@ struct ContentView: View {
         List(coordinator.projects) { project in
             ProjectRowView(
                 project: project,
+                updateAvailable: coordinator.updateAvailable.contains(project.url),
                 onClaude: {
                     coordinator.openAgent(
                         project: project,
@@ -331,6 +337,7 @@ struct ContentView: View {
                     )
                 },
                 onOpenFolder: { coordinator.openProjectFolder(project) },
+                onUpdate: { Task { await updateProject(project) } },
                 onDelete: { coordinator.projectToDelete = project }
             )
         }
@@ -387,6 +394,34 @@ struct ContentView: View {
         if coordinator.errorMessage == nil {
             selectedContext = nil
         }
+    }
+
+    /// Per-project "Update": confirm, then re-install the latest module over
+    /// the existing folder and refresh its managed AGENTS.md blocks. Mirrors
+    /// `initializeExistingFolder`'s confirm-then-run shape (NSAlert gate, then
+    /// the coordinator streams init output into the panel). `_bmad-output/`
+    /// user data is left untouched.
+    private func updateProject(_ project: ProjectItem) async {
+        guard confirmUpdate(project) else { return }
+        guard ensureModuleZipIfNeeded() else { return }
+
+        await coordinator.updateProject(
+            project,
+            settings: settings.settings,
+            runCommand: { command, cwd in
+                await commandRunner.run(command: command, cwd: cwd)
+            }
+        )
+    }
+
+    private func confirmUpdate(_ project: ProjectItem) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Update '\(project.name)' to the latest module?"
+        alert.informativeText = "This re-runs BMAD init in the project folder and refreshes the managed AGENTS.md sections. Your own files and notes under _bmad-output/ are preserved."
+        alert.addButton(withTitle: "Update")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     /// On local-zip, prompts for (and persists) a module .zip when one

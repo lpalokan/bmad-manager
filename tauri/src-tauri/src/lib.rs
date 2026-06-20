@@ -30,6 +30,8 @@ pub fn run() {
             commands::list_company_contexts,
             commands::create_project,
             commands::inspect_init_target,
+            commands::update_project,
+            commands::check_for_updates,
             commands::delete_project,
             commands::get_bundled_tooling,
             commands::open_in_claude,

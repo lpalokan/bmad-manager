@@ -6,6 +6,7 @@ pub mod init_existing_folder;
 pub mod open_folder;
 pub mod path_detection;
 pub mod project_service;
+pub mod project_update;
 pub mod settings;
 pub mod skills_sync;
 pub mod smoke;

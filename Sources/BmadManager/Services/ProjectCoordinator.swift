@@ -16,15 +16,23 @@ final class ProjectCoordinator: ObservableObject {
     @Published var projects: [ProjectItem] = []
     @Published var availableContexts: [CompanyContext] = []
     @Published var isCreating: Bool = false
+    @Published var isUpdating: Bool = false
     @Published var errorMessage: String? = nil
     @Published var showOutput: Bool = false
     @Published var projectToDelete: ProjectItem? = nil
+    /// URLs of projects whose installed module version is behind the repo's
+    /// latest. Populated by `checkForUpdates`; the row shows an Update button
+    /// when its URL is in this set. A parallel set (rather than a field on
+    /// `ProjectItem`) keeps the model — whose identity is its URL — clean.
+    @Published var updateAvailable: Set<URL> = []
 
     // MARK: - Dependencies
 
     private let projectService: ProjectService
     private let contextService: CompanyContextService
     private let projectCreator: ProjectCreator
+    private let projectUpdater: ProjectUpdater
+    private let moduleSourceFor: (AppSettings) -> ModuleSource
     private let terminalLauncher: any TerminalLauncherProtocol
     private let appLauncher: any AppLauncherProtocol
 
@@ -37,10 +45,17 @@ final class ProjectCoordinator: ObservableObject {
     /// writes to. Capturing them here would re-introduce the
     /// `@StateObject` init-dance drift that caused the Terminal-vs-iTerm2,
     /// projects-root-doesn't-reindex, and empty-output-panel bugs.
+    ///
+    /// `moduleSourceFor` is a pure `(AppSettings) -> ModuleSource` factory,
+    /// not a captured store or `runCommand`, so it doesn't reintroduce that
+    /// drift — it's the same shape `ProjectCreator` already accepts, and lets
+    /// the create/update/check flows share an injected fake in tests.
     init(terminalLauncher: any TerminalLauncherProtocol = DefaultTerminalLauncher(),
-         appLauncher: any AppLauncherProtocol = DefaultAppLauncher()) {
+         appLauncher: any AppLauncherProtocol = DefaultAppLauncher(),
+         moduleSourceFor: @escaping (AppSettings) -> ModuleSource = ModuleSourceFactory.make) {
         self.terminalLauncher = terminalLauncher
         self.appLauncher = appLauncher
+        self.moduleSourceFor = moduleSourceFor
 
         let projectService = ProjectService()
         let contextService = CompanyContextService()
@@ -48,7 +63,12 @@ final class ProjectCoordinator: ObservableObject {
         self.contextService = contextService
         self.projectCreator = ProjectCreator(
             projectService: projectService,
-            contextService: contextService
+            contextService: contextService,
+            moduleSourceFor: moduleSourceFor
+        )
+        self.projectUpdater = ProjectUpdater(
+            projectService: projectService,
+            moduleSourceFor: moduleSourceFor
         )
     }
 
@@ -118,6 +138,56 @@ final class ProjectCoordinator: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Re-installs the latest module over an existing project and refreshes
+    /// its managed AGENTS.md blocks. Mirrors `createProject`'s shape (flags,
+    /// error surfacing, refresh) but uses a distinct `isUpdating` flag so the
+    /// per-row Update spinner doesn't tangle with the create button's state.
+    /// After a successful update the stale set is recomputed so the project's
+    /// badge clears.
+    func updateProject(
+        _ project: ProjectItem,
+        settings: AppSettings,
+        runCommand: @escaping (String, URL) async -> Int32
+    ) async {
+        isUpdating = true
+        showOutput = true
+        defer { isUpdating = false }
+
+        do {
+            try await projectUpdater.update(
+                project: project,
+                settings: settings,
+                runCommand: runCommand
+            )
+            errorMessage = nil
+            refresh(root: settings.projectsRoot, sortOrder: settings.projectSortOrder)
+            await checkForUpdates(settings: settings)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Recomputes which projects are behind the module repo. Materialises the
+    /// configured repo once (one network op, source-agnostic), reads its
+    /// `module_version`, then flags each project whose installed manifest
+    /// version is older. Best-effort: any failure (offline, git missing,
+    /// unreadable repo) clears the set rather than surfacing an error — a
+    /// version check shouldn't nag. Reads `projects`, so call after `refresh`.
+    func checkForUpdates(settings: AppSettings) async {
+        let source = moduleSourceFor(settings)
+        let repoModule = try? await source.withModuleRoot { moduleRoot in
+            ModuleManifest.readRepoModule(atModuleRoot: moduleRoot)
+        }
+        guard let repoModule = repoModule.flatMap({ $0 }) else {
+            updateAvailable = []
+            return
+        }
+        let stale = projects.filter {
+            ModuleManifest.isProjectStale(projectURL: $0.url, repoModule: repoModule)
+        }
+        updateAvailable = Set(stale.map(\.url))
     }
 
     func deleteProject(
