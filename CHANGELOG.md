@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.9](https://github.com/lpalokan/bmad-manager/compare/v0.1.8...v0.1.9) (2026-06-20)
+
+
+### Features
+
+* update existing projects from the bmad-repo (both trees) ([052a965](https://github.com/lpalokan/bmad-manager/commit/052a9653cf1de6259ce4469b645657ee77d59f5b)), closes [#73](https://github.com/lpalokan/bmad-manager/issues/73)
+* update existing projects from the bmad-repo (check-on-refresh + per-project Update) ([06d3b52](https://github.com/lpalokan/bmad-manager/commit/06d3b52eb2f6ebbd5ea410f094fa637123aea77c))
+
 ## [0.1.8](https://github.com/lpalokan/bmad-manager/compare/v0.1.7...v0.1.8) (2026-06-20)
 
 
