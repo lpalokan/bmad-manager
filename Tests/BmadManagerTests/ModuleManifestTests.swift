@@ -226,7 +226,10 @@ final class ModuleManifestTests: XCTestCase {
         XCTAssertFalse(ModuleManifest.isProjectStale(projectURL: project, repoModule: repo))
     }
 
-    func testProjectNotStaleWhenInstalledVersionMalformed() throws {
+    func testProjectStaleWhenInstalledNonComparable() throws {
+        // A non-comparable installed version (e.g. `garbage`) against a real
+        // repo semver can't be verified current, so it must be flagged for a
+        // reinstall — not silently treated as up to date (#76).
         let project = try makeProject(manifest: """
         modules:
           - name: marketing-growth
@@ -234,7 +237,44 @@ final class ModuleManifestTests: XCTestCase {
         """)
         let repo = ModuleManifest.RepoModule(code: "marketing-growth", version: "2.1.0")
 
-        XCTAssertFalse(ModuleManifest.isProjectStale(projectURL: project, repoModule: repo),
-                       "an unreadable installed version must not be badged stale")
+        XCTAssertTrue(ModuleManifest.isProjectStale(projectURL: project, repoModule: repo),
+                      "an unverifiable installed version vs a real repo semver needs reinstall")
+    }
+
+    func testProjectStaleWhenInstalledIsBranchRef() throws {
+        // The canonical #76 case: legacy installs stamped the branch name
+        // `main` instead of a semver, so the project must offer an update.
+        let project = try makeProject(manifest: """
+        modules:
+          - name: marketing-growth
+            version: main
+        """)
+        let repo = ModuleManifest.RepoModule(code: "marketing-growth", version: "2.1.0")
+
+        XCTAssertTrue(ModuleManifest.isProjectStale(projectURL: project, repoModule: repo))
+    }
+
+    func testProjectStaleWhenInstalledIsEmpty() throws {
+        let project = try makeProject(manifest: """
+        modules:
+          - name: marketing-growth
+            version: ""
+        """)
+        let repo = ModuleManifest.RepoModule(code: "marketing-growth", version: "2.1.0")
+
+        XCTAssertTrue(ModuleManifest.isProjectStale(projectURL: project, repoModule: repo))
+    }
+
+    func testProjectNotStaleWhenRepoVersionNonComparable() throws {
+        // If the repo version isn't itself comparable there's nothing to
+        // compare against — stay conservative and don't badge.
+        let project = try makeProject(manifest: """
+        modules:
+          - name: marketing-growth
+            version: main
+        """)
+        let repo = ModuleManifest.RepoModule(code: "marketing-growth", version: "main")
+
+        XCTAssertFalse(ModuleManifest.isProjectStale(projectURL: project, repoModule: repo))
     }
 }

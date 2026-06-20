@@ -5,9 +5,11 @@
 //!
 //! Mirrors the Swift `ModuleManifest`. The project ships no YAML parser and we
 //! only need a couple of scalars plus one list scan, so the reads are
-//! hand-rolled line scans rather than a dependency. The bias throughout is
-//! conservative: anything we can't read cleanly is treated as "not stale" so
-//! we never show a false update badge.
+//! hand-rolled line scans rather than a dependency. The bias is conservative: a
+//! missing module/manifest or a repo version we can't compare is treated as
+//! "not stale" so we never show a false update badge. The one deliberate
+//! exception is an unverifiable *installed* version against a real repo semver —
+//! that's flagged for reinstall (#76).
 
 use std::path::Path;
 
@@ -110,15 +112,23 @@ pub fn is_older(lhs: &str, rhs: &str) -> bool {
     false
 }
 
-/// True iff the project has `repo_module` installed at a strictly older
-/// version. `None`/unreadable/unparseable installed versions are treated as
-/// "not stale" so we never badge a project we can't actually compare.
+/// True iff the project should be offered an update for `repo_module`.
+///
+/// A missing module/manifest, or a repo version we can't read as a semver,
+/// stays "not stale" (nothing to compare against). But when the repo *is* a
+/// real semver and the installed version isn't comparable — a branch ref like
+/// `main`, `unknown`, or empty (legacy installs, see #76) — the project can't be
+/// verified current and needs a reinstall to pin a real version, so it's
+/// flagged. Otherwise compare normally and flag a strictly older one.
 pub fn is_project_stale(project_dir: &Path, repo_module: &RepoModule) -> bool {
     let Some(installed) = installed_version(&repo_module.code, project_dir) else {
         return false;
     };
-    if !has_numeric_component(&installed) || !has_numeric_component(&repo_module.version) {
+    if !has_numeric_component(&repo_module.version) {
         return false;
+    }
+    if !has_numeric_component(&installed) {
+        return true;
     }
     is_older(&installed, &repo_module.version)
 }
@@ -335,11 +345,47 @@ mod tests {
     }
 
     #[test]
-    fn project_not_stale_when_installed_malformed() {
+    fn project_stale_when_installed_non_comparable() {
+        // A non-comparable installed version (e.g. `garbage`) against a real
+        // repo semver can't be verified current → needs a reinstall (#76).
         let tmp = project("modules:\n  - name: marketing-growth\n    version: garbage\n");
         let repo = RepoModule {
             code: "marketing-growth".into(),
             version: "2.1.0".into(),
+        };
+        assert!(is_project_stale(tmp.path(), &repo));
+    }
+
+    #[test]
+    fn project_stale_when_installed_is_branch_ref() {
+        // The canonical #76 case: legacy installs stamped the branch name
+        // `main` instead of a semver, so the project must offer an update.
+        let tmp = project("modules:\n  - name: marketing-growth\n    version: main\n");
+        let repo = RepoModule {
+            code: "marketing-growth".into(),
+            version: "2.1.0".into(),
+        };
+        assert!(is_project_stale(tmp.path(), &repo));
+    }
+
+    #[test]
+    fn project_stale_when_installed_is_empty() {
+        let tmp = project("modules:\n  - name: marketing-growth\n    version: \"\"\n");
+        let repo = RepoModule {
+            code: "marketing-growth".into(),
+            version: "2.1.0".into(),
+        };
+        assert!(is_project_stale(tmp.path(), &repo));
+    }
+
+    #[test]
+    fn project_not_stale_when_repo_version_non_comparable() {
+        // If the repo version isn't itself comparable there's nothing to
+        // compare against — stay conservative and don't badge.
+        let tmp = project("modules:\n  - name: marketing-growth\n    version: main\n");
+        let repo = RepoModule {
+            code: "marketing-growth".into(),
+            version: "main".into(),
         };
         assert!(!is_project_stale(tmp.path(), &repo));
     }
