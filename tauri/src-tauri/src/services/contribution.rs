@@ -15,7 +15,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::models::company_context::RECOGNIZED_FILE_NAMES;
 use crate::services::github_client::{GitHubClient, GitHubError, PullResult, TreeEntry};
 use crate::services::skills_sync::{self, base64_encode, SkillTool};
 
@@ -190,17 +189,18 @@ pub fn prepare_skill_files(name: &str, dir: &Path) -> Result<Vec<PreparedFile>, 
     Ok(files)
 }
 
-/// Stages only the recognized files of a context as `context/<name>/<file>`.
+/// Stages every selected file of a context as `context/<name>/<file>`,
+/// preserving the selection order (the picker already lists canonical
+/// files first, then extras). Selected files that aren't on disk are
+/// skipped — the whole context is "all files in the folder", so a
+/// user-added file must contribute too.
 pub fn prepare_context_files(
     name: &str,
     dir: &Path,
     selected: &[String],
 ) -> Result<Vec<PreparedFile>, ContributionError> {
     let mut files = Vec::new();
-    for file in RECOGNIZED_FILE_NAMES {
-        if !selected.iter().any(|s| s == file) {
-            continue;
-        }
+    for file in selected {
         let path = dir.join(file);
         if !path.is_file() {
             continue;
@@ -489,7 +489,9 @@ mod tests {
     }
 
     #[test]
-    fn prepare_context_files_takes_only_recognized_selected() {
+    fn prepare_context_files_stages_every_selected_file() {
+        // The context is "all files in the folder", so a user-added file
+        // like notes.txt must be contributed too, not silently dropped.
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("ctx");
         std::fs::create_dir_all(&dir).unwrap();
@@ -504,7 +506,27 @@ mod tests {
         )
         .unwrap();
         let paths: Vec<&str> = files.iter().map(|f| f.repo_path.as_str()).collect();
-        assert_eq!(paths, vec!["context/acme/icp.md", "context/acme/kpis.md"]);
+        assert_eq!(
+            paths,
+            vec![
+                "context/acme/icp.md",
+                "context/acme/kpis.md",
+                "context/acme/notes.txt"
+            ]
+        );
+    }
+
+    #[test]
+    fn prepare_context_files_skips_selected_files_that_vanished() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("ctx2");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("icp.md"), "x").unwrap();
+        // "gone.md" is selected but not on disk — skip it, don't error.
+        let files =
+            prepare_context_files("acme", &dir, &["icp.md".into(), "gone.md".into()]).unwrap();
+        let paths: Vec<&str> = files.iter().map(|f| f.repo_path.as_str()).collect();
+        assert_eq!(paths, vec!["context/acme/icp.md"]);
     }
 
     #[test]

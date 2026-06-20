@@ -1,11 +1,12 @@
 Feature: Company context discovery and import
 
   Mirrors the Swift CompanyContextService: existing projects are scanned
-  for the marketing-growth module's recognized company-context files
-  (icp.md, positioning.md, brand-voice.md, kpis.md, tech-stack.md) under
-  `_bmad-output/company-context/` (preferred) or a top-level
-  `company-context/` fallback, so a new project can be seeded from an
-  existing project's context instead of starting from scratch.
+  for a company-context folder under `_bmad-output/company-context/`
+  (preferred) or a top-level `company-context/` fallback. Every file there
+  is part of the context — the canonical names (icp.md, positioning.md,
+  brand-voice.md, kpis.md, tech-stack.md) first, then any extra files the
+  user added — so a new project can be seeded with the complete folder
+  instead of starting from scratch.
 
   # --- Resolution ---
 
@@ -28,15 +29,16 @@ Feature: Company context discovery and import
     Then the context directory ends with "_bmad-output/company-context"
     And the context files are exactly "icp.md"
 
-  Scenario: ignores a project without recognized context files
-    Given a project "empty" with context files "bootstrap-summary.md, notes.txt" under "_bmad-output/company-context"
-    When I resolve the context of project "empty"
-    Then no context is found
+  Scenario: treats any files in a context folder as a context
+    Given a project "extras" with context files "bootstrap-summary.md, notes.txt" under "_bmad-output/company-context"
+    When I resolve the context of project "extras"
+    Then a context from project "extras" is found
+    And the context files are exactly "bootstrap-summary.md, notes.txt"
 
-  Scenario: lists only recognized files in canonical order
+  Scenario: lists all files, canonical names first then extras alphabetically
     Given a project "acme" with context files "tech-stack.md, icp.md, bootstrap-summary.md, brand-voice.md" under "_bmad-output/company-context"
     When I resolve the context of project "acme"
-    Then the context files are exactly "icp.md, brand-voice.md, tech-stack.md"
+    Then the context files are exactly "icp.md, brand-voice.md, tech-stack.md, bootstrap-summary.md"
 
   Scenario: contexts sort by project name regardless of input order
     Given a project "zebra" with context files "icp.md" under "_bmad-output/company-context"
@@ -47,15 +49,15 @@ Feature: Company context discovery and import
 
   # --- Display ---
 
-  Scenario: display name is the project name with a folder marker when complete
+  Scenario: display name is the project name with a folder marker
     Given a project "acme" with context files "icp.md, positioning.md, brand-voice.md, kpis.md, tech-stack.md" under "_bmad-output/company-context"
     When I resolve the context of project "acme"
     Then the context display name is "acme 📂"
 
-  Scenario: display name flags a partial context
+  Scenario: display name has no file-count hint for a partial context
     Given a project "acme" with context files "icp.md, kpis.md" under "_bmad-output/company-context"
     When I resolve the context of project "acme"
-    Then the context display name is "acme (2 of 5 context files) 📂"
+    Then the context display name is "acme 📂"
 
   # --- Skills repo (GitHub) contexts ---
 
@@ -71,25 +73,25 @@ Feature: Company context discovery and import
     When I resolve the skills repo contexts
     Then the github context "acme" display name is "acme 🐙"
 
-  Scenario: ignores a skills repo context folder without recognized files
+  Scenario: discovers a skills repo context folder holding any file
     Given a skills repo context "notes" with files "readme.md"
     When I resolve the skills repo contexts
-    Then no skills repo contexts are found
+    Then the resolved context project names are exactly "notes"
+    And the resolved contexts all come from the skills repo
 
   # --- Import ---
 
-  Scenario: import copies recognized files into the new project
+  Scenario: import copies the context files into the new project
     Given a project "acme" with context files "icp.md, kpis.md" under "_bmad-output/company-context"
     And an empty project "fresh"
     When I import the context of "acme" into project "fresh"
     Then project "fresh" contains context files "icp.md, kpis.md"
 
-  Scenario: import does not carry unrecognized files over
+  Scenario: import carries every file over, including user-added extras
     Given a project "acme" with context files "icp.md, bootstrap-summary.md" under "_bmad-output/company-context"
     And an empty project "fresh"
     When I import the context of "acme" into project "fresh"
-    Then project "fresh" contains context files "icp.md"
-    And project "fresh" does not contain context file "bootstrap-summary.md"
+    Then project "fresh" contains context files "icp.md, bootstrap-summary.md"
 
   Scenario: import leaves existing destination files untouched
     Given a project "acme" with context files "icp.md, kpis.md" under "_bmad-output/company-context"

@@ -63,7 +63,9 @@ pub fn use_existing_folder(folder: &Path) -> Result<ProjectItem, ProjectError> {
     if !folder.is_dir() {
         return Err(ProjectError::FolderNotADirectory(folder.to_path_buf()));
     }
-    let created_at = std::fs::metadata(folder).ok().and_then(|m| m.created().ok());
+    let created_at = std::fs::metadata(folder)
+        .ok()
+        .and_then(|m| m.created().ok());
     Ok(ProjectItem::new(folder.to_path_buf(), created_at))
 }
 

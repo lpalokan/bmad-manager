@@ -85,17 +85,11 @@ export interface CompanyContext {
   source?: ContextSource;
 }
 
-// Mirror of CompanyContext::display_name() in Rust: the source name with a
-// trailing source marker, and a hint appended when the context is missing
-// some of the recognized files.
+// Mirror of CompanyContext::display_name() in Rust: the project name with a
+// trailing source marker.
 export function companyContextDisplayName(context: CompanyContext): string {
-  const total = recognizedContextFileNames.length;
-  const base =
-    context.files.length === total
-      ? context.projectName
-      : `${context.projectName} (${context.files.length} of ${total} context files)`;
   const marker = contextSourceMarker[context.source ?? "project"];
-  return `${base} ${marker}`;
+  return `${context.projectName} ${marker}`;
 }
 
 // --- Contribution (propose additions as a PR) ---

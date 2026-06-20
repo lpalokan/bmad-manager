@@ -4,8 +4,10 @@
 //! The resolution order inside each project mirrors the
 //! company-context-bootstrap workflow's own rules: prefer
 //! `_bmad-output/company-context`, fall back to a top-level
-//! `company-context`. A project counts as having a context when at least
-//! one of `RECOGNIZED_FILE_NAMES` is present there.
+//! `company-context`. A project counts as having a context when its
+//! context folder holds at least one file — every file is part of the
+//! context, not just the canonical names, so user-added files seed across
+//! too.
 //!
 //! Walking the projects folder is deliberately NOT this module's job —
 //! `project_service::list_projects` is the one place that knows what
@@ -41,16 +43,12 @@ pub fn contexts_in(projects: &[ProjectItem]) -> Vec<CompanyContext> {
 }
 
 /// Returns the context found in a single project folder, or `None` when
-/// none of the expected locations contains a recognized file.
+/// none of the expected locations holds any context files.
 pub fn context_in_project(project_path: &Path) -> Option<CompanyContext> {
     let project_name = project_path.file_name()?.to_string_lossy().into_owned();
     for subpath in CONTEXT_SUBPATHS {
         let dir = project_path.join(subpath);
-        let present: Vec<String> = RECOGNIZED_FILE_NAMES
-            .iter()
-            .filter(|name| dir.join(name).is_file())
-            .map(|name| name.to_string())
-            .collect();
+        let present = context_files(&dir);
         if !present.is_empty() {
             return Some(CompanyContext {
                 project_name,
@@ -65,8 +63,8 @@ pub fn context_in_project(project_path: &Path) -> Option<CompanyContext> {
 
 /// Resolves the contexts published in the shared skills repo's top-level
 /// `context/` folder (a sibling of the `skills/` folder). Each immediate
-/// subdirectory holding at least one recognized file is offered as a seeding
-/// source, tagged `Github`. Sorted by name (lowercased).
+/// subdirectory holding at least one file is offered as a seeding source,
+/// tagged `Github`. Sorted by name (lowercased).
 pub fn github_contexts_in(repo_root: &Path) -> Vec<CompanyContext> {
     let context_root = repo_root.join("context");
     let mut contexts = Vec::new();
@@ -80,11 +78,7 @@ pub fn github_contexts_in(repo_root: &Path) -> Vec<CompanyContext> {
             if !dir.is_dir() {
                 continue;
             }
-            let present: Vec<String> = RECOGNIZED_FILE_NAMES
-                .iter()
-                .filter(|file| dir.join(file).is_file())
-                .map(|file| file.to_string())
-                .collect();
+            let present = context_files(&dir);
             if present.is_empty() {
                 continue;
             }
@@ -100,7 +94,37 @@ pub fn github_contexts_in(repo_root: &Path) -> Vec<CompanyContext> {
     contexts
 }
 
-/// Copies the context's recognized files into
+/// Lists every file in a context folder: the recognized names first in
+/// canonical order (so the seed picker stays stable and predictable), then
+/// any other files alphabetically (case-insensitive). Hidden files and
+/// subdirectories are skipped. Returns an empty vec when `dir` doesn't
+/// exist or holds no files. Mirrors the Swift `contextFiles(in:)`.
+fn context_files(dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let names: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|name| !name.starts_with('.'))
+        .collect();
+
+    let recognized = RECOGNIZED_FILE_NAMES
+        .iter()
+        .filter(|name| names.iter().any(|n| n == *name))
+        .map(|name| name.to_string());
+    let mut extras: Vec<String> = names
+        .iter()
+        .filter(|name| !RECOGNIZED_FILE_NAMES.contains(&name.as_str()))
+        .cloned()
+        .collect();
+    extras.sort_by_key(|name| name.to_lowercase());
+
+    recognized.chain(extras).collect()
+}
+
+/// Copies all of the context's files into
 /// `<project_path>/_bmad-output/company-context/`. Files already present
 /// at the destination are left untouched — the manager never overwrites
 /// silently (the bootstrap workflow's behavioural contract); re-running
