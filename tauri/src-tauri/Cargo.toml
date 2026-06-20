@@ -1,6 +1,6 @@
 [package]
 name = "bmad-manager"
-version = "0.1.9" # x-release-please-version
+version = "0.1.10" # x-release-please-version
 description = "Cross-platform port of the BMad Manager macOS app (Windows-first)."
 authors = ["Lauri Palokangas <lauri.palokangas@gmail.com>"]
 edition = "2021"
