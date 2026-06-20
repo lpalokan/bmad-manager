@@ -9,13 +9,19 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use super::SecretError;
-use crate::models::TerminalKind;
+use crate::models::{NewSessionPlacement, ShellKind, TerminalKind};
 
 pub fn run_shell(_command: &str, _cwd: &Path) -> i32 {
     unimplemented!("platform::stub::run_shell — not implemented on this OS")
 }
 
-pub fn launch_terminal(_path: &Path, _command: &str, _kind: TerminalKind) -> Result<(), String> {
+pub fn launch_terminal(
+    _path: &Path,
+    _command: &str,
+    _kind: TerminalKind,
+    _shell: ShellKind,
+    _placement: NewSessionPlacement,
+) -> Result<(), String> {
     unimplemented!("platform::stub::launch_terminal — not implemented on this OS")
 }
 

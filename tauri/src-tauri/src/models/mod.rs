@@ -4,4 +4,6 @@ pub mod settings;
 
 pub use company_context::{CompanyContext, ContextSource};
 pub use project_item::ProjectItem;
-pub use settings::{AppSettings, ModuleSourceKind, ProjectSortOrder, TerminalKind};
+pub use settings::{
+    AppSettings, ModuleSourceKind, NewSessionPlacement, ProjectSortOrder, ShellKind, TerminalKind,
+};

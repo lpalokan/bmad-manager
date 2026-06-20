@@ -15,6 +15,8 @@
   import {
     moduleSourceOptions,
     terminalOptions,
+    shellOptions,
+    newSessionPlacementOptions,
     type AppSettings,
     type BundledTooling,
   } from "./types";
@@ -345,6 +347,48 @@
         {/each}
       </div>
     </section>
+
+    <section>
+      <label class="lbl" for="shell-kind">Shell</label>
+      <div class="segmented" role="group" id="shell-kind">
+        {#each shellOptions as opt (opt.value)}
+          <button
+            type="button"
+            class:active={draft.shellKind === opt.value}
+            onclick={() => (draft.shellKind = opt.value)}
+          >
+            {opt.label}
+          </button>
+        {/each}
+      </div>
+      <p class="hint">
+        What runs inside a launched session. PowerShell 7 must be installed
+        separately to use it.
+      </p>
+    </section>
+
+    {#if draft.terminalKind === "windowsTerminal"}
+      <section>
+        <label class="lbl" for="new-session-placement">
+          Open new sessions in
+        </label>
+        <div class="segmented" role="group" id="new-session-placement">
+          {#each newSessionPlacementOptions as opt (opt.value)}
+            <button
+              type="button"
+              class:active={draft.newSessionPlacement === opt.value}
+              onclick={() => (draft.newSessionPlacement = opt.value)}
+            >
+              {opt.label}
+            </button>
+          {/each}
+        </div>
+        <p class="hint">
+          Tabs open in one dedicated Windows Terminal window. Requires Windows
+          Terminal.
+        </p>
+      </section>
+    {/if}
 
     <section class="agents">
       <div>

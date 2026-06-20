@@ -8,5 +8,6 @@ pub mod project_service;
 pub mod settings;
 pub mod skills_sync;
 pub mod smoke;
+pub mod terminal;
 pub mod token_store;
 pub mod zip_source;
