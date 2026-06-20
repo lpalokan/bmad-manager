@@ -77,6 +77,21 @@ jobs:
         working-directory: tauri/src-tauri
         run: cargo fmt --all -- --check
 
+      # release-please bumps tauri/src-tauri/Cargo.toml's version via its
+      # extra-files generic updater, but nothing rewrites the matching
+      # `bmad-manager` entry in Cargo.lock (release-please has no
+      # cargo-canonical lock updater for a `simple` release-type, and a
+      # textual edit would not survive cargo's next lockfile rewrite). So
+      # on every release PR the checked-in lock lags one version behind
+      # the manifest, and the `--locked` steps below abort with
+      # "cannot update the lock file ... because --locked was passed".
+      # Reconcile only the workspace member versions — offline, so every
+      # third-party pin is left byte-for-byte untouched and the `--locked`
+      # steps still enforce full dependency determinism for the build.
+      - name: Sync Cargo.lock workspace version
+        working-directory: tauri/src-tauri
+        run: cargo update --workspace --offline
+
       - name: Cargo clippy
         working-directory: tauri/src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
