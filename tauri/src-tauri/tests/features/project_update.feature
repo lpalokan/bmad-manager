@@ -21,9 +21,14 @@ Feature: Update existing projects from the bmad-repo
     When I check it against repo module version "2.1.0"
     Then the project reports no update available
 
-  Scenario: a project with an unreadable installed version is not flagged
-    Given a project "broken" with installed module version "garbage"
+  Scenario: a project pinned to a branch ref is flagged for reinstall
+    Given a project "branch-pinned" with installed module version "main"
     When I check it against repo module version "2.1.0"
+    Then the project reports an update is available
+
+  Scenario: a project is not flagged when the repo version is also non-comparable
+    Given a project "branch-pinned" with installed module version "main"
+    When I check it against repo module version "main"
     Then the project reports no update available
 
   # --- Per-project update (re-install + AGENTS.md refresh) ---

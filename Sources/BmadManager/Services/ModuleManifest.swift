@@ -7,8 +7,10 @@ import Foundation
 ///
 /// The project ships no YAML parser, and we only need a couple of scalars and
 /// one list scan, so the reads are hand-rolled line scans rather than a
-/// dependency. The bias throughout is conservative: anything we can't read
-/// cleanly is treated as "not stale" so we never show a false update badge.
+/// dependency. The bias is conservative: a missing module/manifest or a repo
+/// version we can't compare is treated as "not stale" so we never show a false
+/// update badge. The one deliberate exception is an unverifiable *installed*
+/// version against a real repo semver — that's flagged for reinstall (#76).
 enum ModuleManifest {
     /// The module's own identity, read from the repo's `skills/module.yaml`.
     /// `code` matches the installed manifest's `modules[].name`.
@@ -90,16 +92,20 @@ enum ModuleManifest {
         return false
     }
 
-    /// True iff the project has `repoModule` installed at a strictly older
-    /// version. nil/unreadable/unparseable installed versions are treated as
-    /// "not stale" so we never badge a project we can't actually compare.
+    /// True iff the project should be offered an update for `repoModule`.
+    ///
+    /// A missing module/manifest, or a repo version we can't read as a semver,
+    /// stays "not stale" (nothing to compare against). But when the repo *is* a
+    /// real semver and the installed version isn't comparable — a branch ref
+    /// like `main`, `unknown`, or empty (legacy installs, see #76) — the project
+    /// can't be verified current and needs a reinstall to pin a real version, so
+    /// it's flagged. Otherwise compare normally and flag a strictly older one.
     static func isProjectStale(projectURL: URL, repoModule: RepoModule) -> Bool {
         guard let installed = installedVersion(ofModule: repoModule.code, inProject: projectURL) else {
             return false
         }
-        guard hasNumericComponent(installed), hasNumericComponent(repoModule.version) else {
-            return false
-        }
+        guard hasNumericComponent(repoModule.version) else { return false }
+        guard hasNumericComponent(installed) else { return true }
         return isOlder(installed, than: repoModule.version)
     }
 
