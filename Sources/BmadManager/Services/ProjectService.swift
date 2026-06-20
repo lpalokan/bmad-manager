@@ -5,12 +5,14 @@ enum ProjectError: LocalizedError {
     case invalidName(String)
     case projectExists(String)
     case rootNotADirectory(String)
+    case folderNotADirectory(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidName(let message): return message
         case .projectExists(let name): return "A folder named '\(name)' already exists at the projects root."
         case .rootNotADirectory(let path): return "Projects root '\(path)' exists but is not a directory."
+        case .folderNotADirectory(let path): return "'\(path)' is not an existing folder."
         }
     }
 }
@@ -67,6 +69,47 @@ struct ProjectService {
         }
         try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: false)
         return projectURL
+    }
+
+    /// Validates that `folder` is an existing directory and returns the
+    /// matching `ProjectItem`. Unlike `createProjectFolder`, this is the
+    /// "initialize into an existing folder" path: the folder is used as-is,
+    /// so it must already exist and may be non-empty.
+    func useExistingFolder(at folder: URL) throws -> ProjectItem {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDir),
+              isDir.boolValue else {
+            throw ProjectError.folderNotADirectory(folder.path)
+        }
+        let values = try? folder.resourceValues(forKeys: [.creationDateKey])
+        return ProjectItem(url: folder, createdAt: values?.creationDate)
+    }
+
+    /// True when `folder` holds no visible entries. Used to decide whether
+    /// initialising into an existing folder needs a destructive-overwrite
+    /// confirmation (empty → proceed silently).
+    func folderIsEmpty(_ folder: URL) -> Bool {
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return entries.isEmpty
+    }
+
+    /// True when `folder` already looks like a BMAD install — a stronger
+    /// signal than "non-empty" that re-running init could clobber an
+    /// existing setup. Detects the common marker directories.
+    func folderHasBmadInstall(_ folder: URL) -> Bool {
+        for marker in ["bmad", ".bmad", "_cfg"] {
+            var isDir: ObjCBool = false
+            let candidate = folder.appendingPathComponent(marker)
+            if FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDir),
+               isDir.boolValue {
+                return true
+            }
+        }
+        return false
     }
 
     func trash(_ project: ProjectItem) async throws {

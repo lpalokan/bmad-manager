@@ -98,6 +98,7 @@ final class ProjectCoordinator: ObservableObject {
         name: String,
         settings: AppSettings,
         importContextFrom context: CompanyContext? = nil,
+        destination: URL? = nil,
         runCommand: @escaping (String, URL) async -> Int32
     ) async {
         isCreating = true
@@ -109,6 +110,7 @@ final class ProjectCoordinator: ObservableObject {
                 name: name,
                 settings: settings,
                 importingContextFrom: context,
+                destination: destination,
                 runCommand: runCommand
             )
             errorMessage = nil

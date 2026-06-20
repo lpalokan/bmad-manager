@@ -1,5 +1,6 @@
 <script lang="ts">
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { open } from "@tauri-apps/plugin-dialog";
   import { onDestroy, onMount } from "svelte";
   import CommandOutput from "./lib/CommandOutput.svelte";
   import Contribute from "./lib/Contribute.svelte";
@@ -8,6 +9,7 @@
   import {
     createProject,
     deleteProject,
+    inspectInitTarget,
     listCompanyContexts,
     listProjects,
     loadSettings,
@@ -111,6 +113,50 @@
   async function onCreate() {
     const trimmed = newProjectName.trim();
     if (!trimmed || isCreating) return;
+    await runCreate(trimmed, null, () => {
+      newProjectName = "";
+    });
+  }
+
+  // "Initialize existing folder…": pick any folder, then run BMAD init in it
+  // (name = its basename, targetPath = the folder). A non-empty folder gets a
+  // destructive-overwrite confirmation first; an empty one runs silently. A
+  // detected existing BMAD install is flagged more strongly.
+  async function onInitializeExisting() {
+    if (isCreating) return;
+    const picked = await open({
+      directory: true,
+      multiple: false,
+      title: "Choose a folder to initialize",
+    });
+    if (typeof picked !== "string") return;
+
+    let info;
+    try {
+      info = await inspectInitTarget(picked);
+    } catch (err) {
+      errorMessage = `Couldn't inspect folder: ${err}`;
+      return;
+    }
+    if (!info.isEmpty) {
+      const name = basename(picked);
+      const message = info.hasBmad
+        ? `'${name}' already looks like a BMAD project. Re-running init may overwrite or modify the existing setup. Continue?`
+        : `'${name}' already contains files. Initializing may overwrite or modify them. Continue?`;
+      if (!confirm(message)) return;
+    }
+
+    await runCreate(basename(picked), picked, () => {});
+  }
+
+  // Shared create flow for both the new-folder and existing-folder paths.
+  // `targetPath` is null for a fresh folder, or the existing folder to
+  // initialise in-place. `onSuccess` resets path-specific input state.
+  async function runCreate(
+    name: string,
+    targetPath: string | null,
+    onSuccess: () => void,
+  ) {
     isCreating = true;
     showOutput = true;
     outputLines = [];
@@ -119,8 +165,8 @@
     try {
       const context =
         contexts.find((c) => c.directory === selectedContextDir) ?? null;
-      await createProject(trimmed, context);
-      newProjectName = "";
+      await createProject(name, context, targetPath);
+      onSuccess();
       // Reset to scratch so the next creation doesn't silently inherit
       // the previous selection.
       selectedContextDir = "";
@@ -133,6 +179,12 @@
       // the project folder on disk, so it must show up in the list.
       await refresh();
     }
+  }
+
+  // Folder basename, tolerant of both POSIX and Windows separators.
+  function basename(path: string): string {
+    const parts = path.replace(/[\\/]+$/, "").split(/[\\/]/);
+    return parts[parts.length - 1] ?? path;
   }
 
   async function onSyncSkills(tool: "claude" | "codex") {
@@ -275,6 +327,13 @@
     />
     <button class="primary" disabled={!canCreate} onclick={onCreate}>
       {isCreating ? "Creating…" : "Create new project"}
+    </button>
+    <button
+      disabled={!settings || isCreating}
+      onclick={onInitializeExisting}
+      title="Run BMAD init in a folder that already exists"
+    >
+      Initialize existing folder…
     </button>
   </section>
 

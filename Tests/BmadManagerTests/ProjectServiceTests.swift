@@ -69,6 +69,68 @@ final class ProjectServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     }
 
+    // MARK: - Existing-folder init (#64)
+
+    func testUseExistingFolderReturnsProjectForExistingDirectory() throws {
+        let folder = tempRoot.appendingPathComponent("legacy-project", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let project = try service.useExistingFolder(at: folder)
+        XCTAssertEqual(project.url.standardizedFileURL, folder.standardizedFileURL)
+        XCTAssertEqual(project.name, "legacy-project")
+    }
+
+    func testUseExistingFolderRejectsAMissingPath() {
+        let missing = tempRoot.appendingPathComponent("not-here")
+        XCTAssertThrowsError(try service.useExistingFolder(at: missing)) { error in
+            if case ProjectError.folderNotADirectory = error { /* ok */ } else {
+                XCTFail("expected folderNotADirectory, got \(error)")
+            }
+        }
+    }
+
+    func testUseExistingFolderRejectsAFile() throws {
+        let file = tempRoot.appendingPathComponent("loose.txt")
+        try "x".write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try service.useExistingFolder(at: file)) { error in
+            if case ProjectError.folderNotADirectory = error { /* ok */ } else {
+                XCTFail("expected folderNotADirectory, got \(error)")
+            }
+        }
+    }
+
+    func testFolderIsEmptyForAFreshDirectory() throws {
+        let folder = tempRoot.appendingPathComponent("fresh", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        XCTAssertTrue(service.folderIsEmpty(folder))
+    }
+
+    func testFolderIsNotEmptyWhenItHoldsAFile() throws {
+        let folder = tempRoot.appendingPathComponent("has-file", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try "x".write(to: folder.appendingPathComponent("README.md"),
+                      atomically: true, encoding: .utf8)
+        XCTAssertFalse(service.folderIsEmpty(folder))
+    }
+
+    func testFolderWithABmadMarkerIsDetectedAsAnExistingInstall() throws {
+        for marker in ["bmad", ".bmad", "_cfg"] {
+            let folder = tempRoot.appendingPathComponent("install-\(marker)", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: folder.appendingPathComponent(marker, isDirectory: true),
+                withIntermediateDirectories: true)
+            XCTAssertTrue(service.folderHasBmadInstall(folder),
+                          "expected '\(marker)' to be detected as a BMAD marker")
+        }
+    }
+
+    func testFolderWithoutABmadMarkerIsNotAnExistingInstall() throws {
+        let folder = tempRoot.appendingPathComponent("plain", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try "x".write(to: folder.appendingPathComponent("notes.txt"),
+                      atomically: true, encoding: .utf8)
+        XCTAssertFalse(service.folderHasBmadInstall(folder))
+    }
+
     func testListProjectsReturnsDirectoriesAlphabetically() throws {
         _ = try service.createProjectFolder(name: "beta", in: tempRoot.path)
         _ = try service.createProjectFolder(name: "alpha", in: tempRoot.path)

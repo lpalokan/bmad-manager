@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use bmad_manager_lib::models::{AppSettings, CompanyContext, ProjectItem};
 use bmad_manager_lib::services::contribution::{ContributableSkill, PreparedFile};
+use bmad_manager_lib::services::project_service::InitTargetInfo;
 use cucumber::World;
 use tempfile::TempDir;
 
@@ -47,6 +48,9 @@ pub struct TauriWorld {
     pub contributable_skills: Option<Vec<ContributableSkill>>,
     pub prepared_files: Option<Vec<PreparedFile>>,
     pub parsed_owner_repo: Option<Option<(String, String)>>,
+    /// Existing-folder init target picked by an init-into-existing scenario.
+    pub init_target: Option<PathBuf>,
+    pub init_target_info: Option<InitTargetInfo>,
 }
 
 impl TauriWorld {

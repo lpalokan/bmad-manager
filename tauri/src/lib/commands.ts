@@ -9,6 +9,7 @@ import type {
   ContributableItems,
   ContributionRequest,
   ContributionResult,
+  InitTargetInfo,
   ProjectItem,
   RepoAccessReport,
 } from "./types";
@@ -31,10 +32,19 @@ export const listProjects = (): Promise<ProjectItem[]> =>
 export const listCompanyContexts = (): Promise<CompanyContext[]> =>
   invoke<CompanyContext[]>("list_company_contexts");
 
+// `targetPath`, when given, is an existing folder to initialise in-place
+// (used as-is); otherwise a fresh folder is minted from `name`.
 export const createProject = (
   name: string,
   context: CompanyContext | null = null,
-): Promise<ProjectItem> => invoke<ProjectItem>("create_project", { name, context });
+  targetPath: string | null = null,
+): Promise<ProjectItem> =>
+  invoke<ProjectItem>("create_project", { name, context, targetPath });
+
+// Inspects an existing-folder init target so the UI can decide whether to
+// confirm a potentially destructive overwrite before calling createProject.
+export const inspectInitTarget = (path: string): Promise<InitTargetInfo> =>
+  invoke<InitTargetInfo>("inspect_init_target", { path });
 
 export const deleteProject = (path: string): Promise<void> =>
   invoke("delete_project", { path });
