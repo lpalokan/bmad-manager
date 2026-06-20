@@ -83,6 +83,56 @@ impl TerminalKind {
     }
 }
 
+/// Which shell runs *inside* a launched session on Windows.
+///
+/// Orthogonal to [`TerminalKind`] (which picks the host window): the shell
+/// is the command interpreter the user types into. Today the launcher
+/// forces `cmd` inside Windows Terminal, overriding the user's default
+/// profile; this lets them pick PowerShell instead. `Cmd` is the default
+/// so existing installs keep their current behaviour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShellKind {
+    #[serde(rename = "cmd")]
+    Cmd,
+    #[serde(rename = "powershell")]
+    PowerShell,
+    #[serde(rename = "pwsh")]
+    Pwsh,
+}
+
+impl ShellKind {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            ShellKind::Cmd => "Command Prompt",
+            ShellKind::PowerShell => "Windows PowerShell",
+            ShellKind::Pwsh => "PowerShell 7",
+        }
+    }
+}
+
+/// Where a newly launched session opens: a brand-new window, or a tab in
+/// the app's dedicated Windows Terminal window.
+///
+/// Only meaningful when the terminal is Windows Terminal (a standalone
+/// `cmd`/`powershell` window can't be tabbed). `NewWindow` is the default
+/// so existing installs keep their current behaviour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NewSessionPlacement {
+    #[serde(rename = "newWindow")]
+    NewWindow,
+    #[serde(rename = "newTab")]
+    NewTab,
+}
+
+impl NewSessionPlacement {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            NewSessionPlacement::NewWindow => "New window",
+            NewSessionPlacement::NewTab => "New tab",
+        }
+    }
+}
+
 pub const DEFAULT_MODULE_REPO_URL: &str = "https://github.com/lpalokan/bmad-marketing-growth";
 
 /// Default branch a skills repo is synced from when the user hasn't overridden
@@ -111,6 +161,10 @@ pub struct AppSettings {
     pub codex_command: String,
     pub project_sort_order: ProjectSortOrder,
     pub terminal_kind: TerminalKind,
+    /// Shell run inside a launched session on Windows (cmd / PowerShell).
+    pub shell_kind: ShellKind,
+    /// Whether a launched session opens in a new window or a new tab.
+    pub new_session_placement: NewSessionPlacement,
     /// HTTPS URL of the private skills repo synced into the global
     /// `~/.claude/skills/managed` and `~/.codex/skills/managed` folders.
     /// Empty until the user configures it. The matching read-only token is
@@ -139,6 +193,8 @@ impl AppSettings {
             codex_command: "codex".to_string(),
             project_sort_order: ProjectSortOrder::NameAscending,
             terminal_kind: TerminalKind::default_for_platform(),
+            shell_kind: ShellKind::Cmd,
+            new_session_placement: NewSessionPlacement::NewWindow,
             skills_repo_url: String::new(),
             skills_repo_branch: DEFAULT_SKILLS_REPO_BRANCH.to_string(),
         }
@@ -187,6 +243,10 @@ impl<'de> Deserialize<'de> for AppSettings {
             #[serde(default)]
             terminal_kind: Option<TerminalKind>,
             #[serde(default)]
+            shell_kind: Option<ShellKind>,
+            #[serde(default)]
+            new_session_placement: Option<NewSessionPlacement>,
+            #[serde(default)]
             skills_repo_url: Option<String>,
             #[serde(default)]
             skills_repo_branch: Option<String>,
@@ -224,6 +284,10 @@ impl<'de> Deserialize<'de> for AppSettings {
             terminal_kind: raw
                 .terminal_kind
                 .unwrap_or_else(TerminalKind::default_for_platform),
+            shell_kind: raw.shell_kind.unwrap_or(ShellKind::Cmd),
+            new_session_placement: raw
+                .new_session_placement
+                .unwrap_or(NewSessionPlacement::NewWindow),
             skills_repo_url: raw.skills_repo_url.unwrap_or_default(),
             skills_repo_branch: raw
                 .skills_repo_branch
@@ -356,6 +420,69 @@ mod tests {
     }
 
     #[test]
+    fn legacy_without_shell_kind_defaults_to_cmd() {
+        // A settings.json written before the shell selector existed.
+        let legacy = r#"{
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }"#;
+        let decoded: AppSettings = serde_json::from_str(legacy).unwrap();
+        assert_eq!(decoded.shell_kind, ShellKind::Cmd);
+    }
+
+    #[test]
+    fn legacy_without_new_session_placement_defaults_to_new_window() {
+        let legacy = r#"{
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }"#;
+        let decoded: AppSettings = serde_json::from_str(legacy).unwrap();
+        assert_eq!(
+            decoded.new_session_placement,
+            NewSessionPlacement::NewWindow
+        );
+    }
+
+    #[test]
+    fn round_trip_preserves_shell_kind() {
+        let mut original = AppSettings::defaults();
+        original.shell_kind = ShellKind::Pwsh;
+        let json = serde_json::to_string(&original).unwrap();
+        let decoded: AppSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.shell_kind, ShellKind::Pwsh);
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn round_trip_preserves_new_session_placement() {
+        let mut original = AppSettings::defaults();
+        original.new_session_placement = NewSessionPlacement::NewTab;
+        let json = serde_json::to_string(&original).unwrap();
+        let decoded: AppSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.new_session_placement, NewSessionPlacement::NewTab);
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn shell_kind_serializes_to_camel_case_keys() {
+        let mut s = AppSettings::defaults();
+        s.shell_kind = ShellKind::PowerShell;
+        s.new_session_placement = NewSessionPlacement::NewTab;
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"shellKind\":\"powershell\""), "got {json}");
+        assert!(
+            json.contains("\"newSessionPlacement\":\"newTab\""),
+            "got {json}"
+        );
+    }
+
+    #[test]
     fn round_trip_local_zip() {
         let original = AppSettings {
             projects_root: "/tmp/p".to_string(),
@@ -370,6 +497,8 @@ mod tests {
             codex_command: "codex".to_string(),
             project_sort_order: ProjectSortOrder::DateNewestFirst,
             terminal_kind: TerminalKind::WindowsTerminal,
+            shell_kind: ShellKind::PowerShell,
+            new_session_placement: NewSessionPlacement::NewTab,
             skills_repo_url: "https://github.com/my-org/skills".to_string(),
             skills_repo_branch: "main".to_string(),
         };

@@ -15,6 +15,13 @@ export type TerminalKind =
   | "windowsTerminal"
   | "cmd";
 
+// Shell run inside a launched session on Windows (cmd / PowerShell).
+export type ShellKind = "cmd" | "powershell" | "pwsh";
+
+// Whether a launched session opens in a new window or a tab in the app's
+// dedicated Windows Terminal window.
+export type NewSessionPlacement = "newWindow" | "newTab";
+
 export interface AppSettings {
   projectsRoot: string;
   moduleSourceKind: ModuleSourceKind;
@@ -28,6 +35,8 @@ export interface AppSettings {
   codexCommand: string;
   projectSortOrder: ProjectSortOrder;
   terminalKind: TerminalKind;
+  shellKind: ShellKind;
+  newSessionPlacement: NewSessionPlacement;
   skillsRepoUrl: string;
   skillsRepoBranch: string;
 }
@@ -139,4 +148,18 @@ export const moduleSourceOptions: { value: ModuleSourceKind; label: string }[] =
 export const terminalOptions: { value: TerminalKind; label: string }[] = [
   { value: "windowsTerminal", label: "Windows Terminal" },
   { value: "cmd", label: "Command Prompt" },
+];
+
+export const shellOptions: { value: ShellKind; label: string }[] = [
+  { value: "cmd", label: "Command Prompt" },
+  { value: "powershell", label: "Windows PowerShell" },
+  { value: "pwsh", label: "PowerShell 7" },
+];
+
+export const newSessionPlacementOptions: {
+  value: NewSessionPlacement;
+  label: string;
+}[] = [
+  { value: "newWindow", label: "New window" },
+  { value: "newTab", label: "New tab" },
 ];

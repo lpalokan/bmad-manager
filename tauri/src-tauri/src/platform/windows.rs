@@ -17,7 +17,8 @@ use tauri::path::BaseDirectory;
 use tauri::Manager;
 
 use super::SecretError;
-use crate::models::TerminalKind;
+use crate::models::{NewSessionPlacement, ShellKind, TerminalKind};
+use crate::services::terminal::{fallback_cmd_args, shell_argv, wt_args, APP_WINDOW_NAME};
 
 /// Run `command` under `cmd /C` with the augmented PATH. Synchronous;
 /// streaming callers go through `services::command_runner` instead.
@@ -32,18 +33,27 @@ pub fn run_shell(command: &str, cwd: &Path) -> i32 {
         .unwrap_or(-1)
 }
 
-/// Open a new terminal window in `path` and run `command`. Uses Windows
-/// Terminal when available and the kind asks for it (or when nothing is
-/// configured), falling back to a detached `cmd /K`.
-pub fn launch_terminal(path: &Path, command: &str, kind: TerminalKind) -> Result<(), String> {
+/// Open a new session in `path` running `command`. `shell` picks the
+/// interpreter (cmd / PowerShell); `placement` picks new window vs. a tab
+/// in the app's dedicated Windows Terminal window. Uses Windows Terminal
+/// when available and the kind asks for it (or when nothing is
+/// configured), falling back to a detached standalone window — in which
+/// case `placement` is ignored (a standalone window can't be tabbed).
+pub fn launch_terminal(
+    path: &Path,
+    command: &str,
+    kind: TerminalKind,
+    shell: ShellKind,
+    placement: NewSessionPlacement,
+) -> Result<(), String> {
     let want_wt = matches!(
         kind,
         TerminalKind::WindowsTerminal | TerminalKind::Terminal | TerminalKind::Iterm2
     );
     if want_wt && wt_available() {
-        spawn_wt(path, command).map_err(|e| e.to_string())
+        spawn_wt(path, command, shell, placement).map_err(|e| e.to_string())
     } else {
-        spawn_cmd(path, command).map_err(|e| e.to_string())
+        spawn_cmd(path, command, shell).map_err(|e| e.to_string())
     }
 }
 
@@ -57,27 +67,39 @@ fn wt_available() -> bool {
         .unwrap_or(false)
 }
 
-fn spawn_wt(path: &Path, command: &str) -> std::io::Result<()> {
-    // `wt.exe -d <cwd> cmd /K <command>` opens a new Windows Terminal
-    // tab/window in `cwd`, launching `cmd` configured to leave the
-    // shell alive after `command` finishes so the user can keep typing.
+fn spawn_wt(
+    path: &Path,
+    command: &str,
+    shell: ShellKind,
+    placement: NewSessionPlacement,
+) -> std::io::Result<()> {
+    // e.g. `wt.exe -w bmad-manager new-tab -d <cwd> powershell.exe -NoExit
+    // -Command <command>` opens (or reuses) the app's Windows Terminal
+    // window and adds a tab in `cwd` running the chosen shell, left alive
+    // after `command` finishes so the user can keep typing. The arg vector
+    // is built by the platform-agnostic `services::terminal` so it can be
+    // unit-tested off-Windows.
+    let inner = shell_argv(shell, command);
     Command::new("wt.exe")
-        .arg("-d")
-        .arg(path)
-        .arg("cmd")
-        .arg("/K")
-        .arg(command)
+        .args(wt_args(
+            placement,
+            APP_WINDOW_NAME,
+            &path.to_string_lossy(),
+            &inner,
+        ))
         .env("PATH", augmented_path())
         .spawn()
         .map(|_| ())
 }
 
-fn spawn_cmd(path: &Path, command: &str) -> std::io::Result<()> {
-    // `start "" cmd /K` opens a detached cmd window with the same /K
-    // semantics as the wt path. The empty `""` is `start`'s title arg —
-    // omitting it makes `start` treat the next quoted token as the title.
+fn spawn_cmd(path: &Path, command: &str, shell: ShellKind) -> std::io::Result<()> {
+    // `start "" <shell …>` opens a detached standalone window with the
+    // same keep-alive semantics as the wt path. Placement is irrelevant
+    // here — a standalone window can't be a tab — so this always opens a
+    // new window.
+    let inner = shell_argv(shell, command);
     Command::new("cmd.exe")
-        .args(["/C", "start", "", "cmd", "/K", command])
+        .args(fallback_cmd_args(&inner))
         .current_dir(path)
         .env("PATH", augmented_path())
         .spawn()

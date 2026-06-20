@@ -429,7 +429,14 @@ fn open_in_terminal(project_path: &str, which: &str, state: State<'_, AppState>)
         )));
     }
     let path = PathBuf::from(project_path);
-    platform::launch_terminal(&path, &command, settings.terminal_kind).map_err(IpcError)?;
+    platform::launch_terminal(
+        &path,
+        &command,
+        settings.terminal_kind,
+        settings.shell_kind,
+        settings.new_session_placement,
+    )
+    .map_err(IpcError)?;
     Ok(())
 }
 

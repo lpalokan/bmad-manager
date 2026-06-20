@@ -60,3 +60,21 @@ Feature: AppSettings serialization and defaults
   Scenario: round-trip preserves a customised codex command
     When I round-trip the default settings with codex command "C:\\bin\\codex.exe"
     Then the decoded codex command is "C:\\bin\\codex.exe"
+
+  Scenario: legacy settings without shell kind default to Command Prompt
+    Given a legacy settings JSON without shellKind
+    When I decode it
+    Then the shell kind is "cmd"
+
+  Scenario: round-trip preserves a chosen shell kind
+    When I round-trip the default settings with shell kind "powershell"
+    Then the decoded shell kind is "powershell"
+
+  Scenario: legacy settings without new-session placement default to new window
+    Given a legacy settings JSON without newSessionPlacement
+    When I decode it
+    Then the new session placement is "newWindow"
+
+  Scenario: round-trip preserves a chosen new-session placement
+    When I round-trip the default settings with new session placement "newTab"
+    Then the decoded new session placement is "newTab"
