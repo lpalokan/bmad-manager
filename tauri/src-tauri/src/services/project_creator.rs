@@ -6,7 +6,8 @@ use crate::models::{AppSettings, CompanyContext, ModuleSourceKind, ProjectItem};
 use crate::platform;
 use crate::services::command_runner::OutputEvent;
 use crate::services::{
-    command_runner, company_context, git_source, init_command, project_service, zip_source,
+    agents_file, command_runner, company_context, git_source, init_command, project_service,
+    zip_source,
 };
 
 #[derive(Debug, Error)]
@@ -113,6 +114,14 @@ where
 
     let exit_code = command_runner::run(&command, &project_path, &mut on_event).await;
     emit_diag(&mut on_event, format!("init_command exit_code={exit_code}"));
+
+    if exit_code == 0 {
+        // bmad-method installs BMad's skills for Codex under `.agents/skills`
+        // (which Codex auto-discovers) but emits no Codex `AGENTS.md`, so write
+        // the menu-code routing into the project's AGENTS.md. Best-effort: a
+        // missing bridge file shouldn't fail an otherwise-successful creation.
+        let _ = agents_file::ensure_bmad_section(&project_path);
+    }
 
     // Cleanup the temp module dir whether the init succeeded or not so
     // we don't leak gigabytes of clones across repeated failed runs.

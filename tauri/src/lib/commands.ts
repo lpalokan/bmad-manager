@@ -46,6 +46,16 @@ export const createProject = (
 export const inspectInitTarget = (path: string): Promise<InitTargetInfo> =>
   invoke<InitTargetInfo>("inspect_init_target", { path });
 
+// Re-installs the latest module over an existing project and refreshes its
+// managed AGENTS.md blocks. Init output streams on the project-create channel.
+export const updateProject = (path: string): Promise<void> =>
+  invoke("update_project", { path });
+
+// Returns the paths of projects whose installed module version is behind the
+// repo's latest. One repo fetch + N local manifest reads; empty on any failure.
+export const checkForUpdates = (): Promise<string[]> =>
+  invoke<string[]>("check_for_updates");
+
 export const deleteProject = (path: string): Promise<void> =>
   invoke("delete_project", { path });
 

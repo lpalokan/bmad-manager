@@ -1,3 +1,4 @@
+pub mod agents_file;
 pub mod bundled_tooling;
 pub mod command_runner;
 pub mod company_context;
@@ -5,9 +6,11 @@ pub mod contribution;
 pub mod git_source;
 pub mod github_client;
 pub mod init_command;
+pub mod module_manifest;
 pub mod path_detection;
 pub mod project_creator;
 pub mod project_service;
+pub mod project_updater;
 pub mod settings_store;
 pub mod skills_sync;
 pub mod terminal;

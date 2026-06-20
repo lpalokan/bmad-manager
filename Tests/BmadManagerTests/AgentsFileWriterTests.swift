@@ -60,4 +60,65 @@ final class AgentsFileWriterTests: XCTestCase {
         let occurrences = secondPass.components(separatedBy: AgentsFileWriter.sectionMarker).count - 1
         XCTAssertEqual(occurrences, 1, "the BMad section must appear exactly once")
     }
+
+    // MARK: - Generalized managed sections (parameterized namespace + body)
+
+    func testConstantsMatchDerivedBmadMarkers() {
+        // The public `sectionMarker` (which other tests pin) must stay in lock
+        // step with the derived markers, so the wrapper and constant can't drift.
+        XCTAssertEqual(AgentsFileWriter.sectionMarker,
+                       AgentsFileWriter.startMarker(for: "bmad-manager:bmad"))
+    }
+
+    func testEnsureManagedSectionCreatesFileForArbitraryNamespace() throws {
+        try AgentsFileWriter.ensureManagedSection(
+            in: dir, namespace: "marketing-growth:okf", body: "OKF body line")
+
+        let text = try String(contentsOf: agentsURL, encoding: .utf8)
+        XCTAssertTrue(text.contains(AgentsFileWriter.startMarker(for: "marketing-growth:okf")))
+        XCTAssertTrue(text.contains(AgentsFileWriter.endMarker(for: "marketing-growth:okf")))
+        XCTAssertTrue(text.contains("OKF body line"))
+    }
+
+    func testTwoNamespacesCoexistInOneFile() throws {
+        try AgentsFileWriter.ensureBmadSection(in: dir)
+        try AgentsFileWriter.ensureManagedSection(
+            in: dir, namespace: "marketing-growth:okf", body: "OKF body line")
+
+        let text = try String(contentsOf: agentsURL, encoding: .utf8)
+        // Both managed blocks present, each exactly once.
+        XCTAssertEqual(text.components(separatedBy: AgentsFileWriter.sectionMarker).count - 1, 1)
+        XCTAssertEqual(
+            text.components(separatedBy: AgentsFileWriter.startMarker(for: "marketing-growth:okf")).count - 1, 1)
+        XCTAssertTrue(text.contains(".agents/skills"), "bmad block untouched by the okf write")
+        XCTAssertTrue(text.contains("OKF body line"))
+    }
+
+    func testEnsureManagedSectionRefreshesOnlyItsOwnBlock() throws {
+        try AgentsFileWriter.ensureBmadSection(in: dir)
+        try AgentsFileWriter.ensureManagedSection(
+            in: dir, namespace: "marketing-growth:okf", body: "first okf body")
+        let bmadBlock = AgentsFileWriter.bmadBlock()
+
+        // Refresh only the okf block with new content.
+        try AgentsFileWriter.ensureManagedSection(
+            in: dir, namespace: "marketing-growth:okf", body: "second okf body")
+
+        let text = try String(contentsOf: agentsURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("second okf body"))
+        XCTAssertFalse(text.contains("first okf body"), "old okf body must be replaced")
+        XCTAssertTrue(text.contains(bmadBlock), "bmad block must be byte-identical")
+        XCTAssertEqual(
+            text.components(separatedBy: AgentsFileWriter.startMarker(for: "marketing-growth:okf")).count - 1, 1)
+    }
+
+    func testEnsureManagedSectionHonoursCustomFileName() throws {
+        try AgentsFileWriter.ensureManagedSection(
+            in: dir, fileName: "OTHER.md", namespace: "marketing-growth:okf", body: "OKF body line")
+
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("OTHER.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: agentsURL.path),
+                       "AGENTS.md must not be written when a custom file name is given")
+    }
 }

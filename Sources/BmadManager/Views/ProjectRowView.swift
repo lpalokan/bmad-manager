@@ -2,11 +2,16 @@ import SwiftUI
 
 struct ProjectRowView: View {
     let project: ProjectItem
+    /// True when the project's installed module version is behind the repo's
+    /// latest — surfaces the Update button. Purely presentational: the row
+    /// branches on this flag but doesn't compute it.
+    var updateAvailable: Bool = false
     let onClaude: () -> Void
     let onOpencode: () -> Void
     let onPi: () -> Void
     let onCodex: () -> Void
     let onOpenFolder: () -> Void
+    var onUpdate: () -> Void = {}
     let onDelete: () -> Void
 
     var body: some View {
@@ -24,6 +29,14 @@ struct ProjectRowView: View {
                 }
             }
             Spacer()
+            // Shown only when the project is behind the latest module version.
+            if updateAvailable {
+                Button("Update", action: onUpdate)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .help("Re-install the latest module and refresh AGENTS.md")
+                    .accessibilityLabel("Update project")
+            }
             // Agent launch buttons, ordered alphabetically by label.
             Button("Claude Code", action: onClaude)
                 .buttonStyle(.bordered)

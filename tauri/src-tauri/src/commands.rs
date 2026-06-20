@@ -18,8 +18,8 @@ use crate::services::command_runner::OutputEvent;
 use crate::services::github_client::GitHubClient;
 use crate::services::skills_sync::{self, SkillTool};
 use crate::services::{
-    company_context, contribution, github_client, path_detection, project_creator, project_service,
-    settings_store, token_store,
+    company_context, contribution, github_client, module_manifest, path_detection, project_creator,
+    project_service, project_updater, settings_store, token_store,
 };
 
 pub struct AppState {
@@ -120,6 +120,45 @@ pub async fn create_project(
 #[tauri::command]
 pub fn inspect_init_target(path: String) -> CmdResult<project_service::InitTargetInfo> {
     Ok(project_service::inspect_init_target(&PathBuf::from(path)))
+}
+
+/// Re-installs the latest module over an existing project and refreshes its
+/// managed AGENTS.md blocks. Streams init output on the same channel as
+/// create. Serialised behind `create_lock` so it can't race a create/update.
+#[tauri::command]
+pub async fn update_project(
+    path: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<()> {
+    let _guard = state.create_lock.lock().await;
+    let settings = settings_store::load_or_init(&state.settings_path)?;
+    let emit = move |event: OutputEvent| {
+        let _ = app.emit("project-create-output", event);
+    };
+    let project = ProjectItem::new(PathBuf::from(path), None);
+    project_updater::update(&project, &settings, emit)
+        .await
+        .map_err(|e| IpcError(e.to_string()))
+}
+
+/// Returns the paths of projects whose installed module version is behind the
+/// repo's latest. One repo fetch + N local manifest reads. Best-effort: any
+/// failure (offline, git missing, unreadable repo) yields an empty list so the
+/// UI shows no stale badges rather than an error.
+#[tauri::command]
+pub async fn check_for_updates(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
+    let settings = settings_store::load_or_init(&state.settings_path)?;
+    let Some(repo_module) = project_updater::read_latest_repo_module(&settings) else {
+        return Ok(Vec::new());
+    };
+    let root = expand_tilde(&settings.projects_root);
+    let stale = project_service::list_projects(&root, settings.project_sort_order)
+        .into_iter()
+        .filter(|p| module_manifest::is_project_stale(&p.path, &repo_module))
+        .map(|p| p.path.to_string_lossy().into_owned())
+        .collect();
+    Ok(stale)
 }
 
 /// Scans for company contexts the new-project "Context" picker can offer as
