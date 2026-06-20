@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.8](https://github.com/lpalokan/bmad-manager/compare/v0.1.7...v0.1.8) (2026-06-20)
+
+
+### Features
+
+* add Windows shell selector and new-session window/tab placement ([651255f](https://github.com/lpalokan/bmad-manager/commit/651255f54e044676212cedacecab3e02b7f5d2dd))
+* cross-platform release — terminal launch options, existing-folder init, all-context-files ([b03c6d6](https://github.com/lpalokan/bmad-manager/commit/b03c6d6889bd962eab1e2e8e0418b6fd7644f7b6))
+* include context files in subfolders (recursive), both platforms ([c708fb7](https://github.com/lpalokan/bmad-manager/commit/c708fb79c111203606a857a63a1fd048cc7f6eb4)), closes [#70](https://github.com/lpalokan/bmad-manager/issues/70)
+* initialize BMAD into an existing folder (Mac + Windows) ([ce4ad86](https://github.com/lpalokan/bmad-manager/commit/ce4ad8637493f7328a894149806976aaf7996619)), closes [#64](https://github.com/lpalokan/bmad-manager/issues/64)
+* open new sessions in a new window or tab on macOS too ([0f83563](https://github.com/lpalokan/bmad-manager/commit/0f83563bdfdc0971f7927f8f5079482e049b6cbe))
+
+
+### Bug Fixes
+
+* pull all company-context files on Windows too (Tauri port) ([7544065](https://github.com/lpalokan/bmad-manager/commit/754406513509bf373acec53c5ac9f90cc4b7e2be))
+* pull all company-context files, not just the five recognized ones ([c9a64b5](https://github.com/lpalokan/bmad-manager/commit/c9a64b594b9fe2a52666c4470f705f35b95bc2e1)), closes [#67](https://github.com/lpalokan/bmad-manager/issues/67)
+
 ## [0.1.7](https://github.com/lpalokan/bmad-manager/compare/v0.1.6...v0.1.7) (2026-06-18)
 
 
