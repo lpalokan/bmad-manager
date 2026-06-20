@@ -129,18 +129,39 @@ final class CompanyContextServiceTests: XCTestCase {
         )
     }
 
-    func testSkipsHiddenFilesAndSubdirectoriesWhenListing() throws {
+    func testSkipsHiddenFilesAndHiddenDirectories() throws {
         let project = try makeProject("with-extras", files: ["icp.md", "extra.md"])
         let contextDir = project
             .appendingPathComponent("_bmad-output/company-context", isDirectory: true)
         try "hidden".write(to: contextDir.appendingPathComponent(".DS_Store"),
                            atomically: true, encoding: .utf8)
-        try FileManager.default.createDirectory(
-            at: contextDir.appendingPathComponent("nested", isDirectory: true),
-            withIntermediateDirectories: true)
+        // A hidden directory (e.g. a stray .git) must not be descended into.
+        let hidden = contextDir.appendingPathComponent(".git", isDirectory: true)
+        try FileManager.default.createDirectory(at: hidden, withIntermediateDirectories: true)
+        try "x".write(to: hidden.appendingPathComponent("config"),
+                      atomically: true, encoding: .utf8)
 
         let context = try XCTUnwrap(service.context(inProject: project))
         XCTAssertEqual(context.files, ["icp.md", "extra.md"])
+    }
+
+    func testRecursesIntoSubfoldersWithRelativePaths() throws {
+        // Files in subfolders are part of the context too, carried as paths
+        // relative to the context folder. Recognized top-level names still
+        // sort first; nested files follow alphabetically by relative path.
+        let project = try makeProject("nested-ctx", files: ["icp.md"])
+        let contextDir = project
+            .appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+        let research = contextDir.appendingPathComponent("research", isDirectory: true)
+        try FileManager.default.createDirectory(at: research, withIntermediateDirectories: true)
+        try "n".write(to: research.appendingPathComponent("notes.md"),
+                      atomically: true, encoding: .utf8)
+        try "p".write(to: research.appendingPathComponent("personas.md"),
+                      atomically: true, encoding: .utf8)
+
+        let context = try XCTUnwrap(service.context(inProject: project))
+        XCTAssertEqual(
+            context.files, ["icp.md", "research/notes.md", "research/personas.md"])
     }
 
     func testContextsSortByProjectNameRegardlessOfInputOrder() throws {
@@ -187,6 +208,25 @@ final class CompanyContextServiceTests: XCTestCase {
                 FileManager.default.fileExists(atPath: destDir.appendingPathComponent(file).path),
                 "expected '\(file)' to be imported")
         }
+    }
+
+    func testImportRecreatesSubfoldersInNewProject() throws {
+        let source = try makeProject("source", files: ["icp.md"])
+        let contextDir = source
+            .appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+        let research = contextDir.appendingPathComponent("research", isDirectory: true)
+        try FileManager.default.createDirectory(at: research, withIntermediateDirectories: true)
+        try "nested note".write(to: research.appendingPathComponent("notes.md"),
+                                atomically: true, encoding: .utf8)
+        let target = try makeProject("target", contextAt: nil)
+        let context = try XCTUnwrap(service.context(inProject: source))
+
+        try service.importContext(context, into: target)
+
+        let destDir = target.appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+        let nested = destDir.appendingPathComponent("research/notes.md")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: nested.path))
+        XCTAssertEqual(try String(contentsOf: nested, encoding: .utf8), "nested note")
     }
 
     func testImportLeavesExistingDestinationFilesUntouched() throws {

@@ -89,26 +89,37 @@ struct CompanyContextService {
             }
     }
 
-    /// Lists every file in a context folder: the recognized names first in
-    /// canonical order (so the seed picker stays stable and predictable),
-    /// then any other files alphabetically. Hidden files and subdirectories
-    /// are skipped. Returns an empty array when `dir` doesn't exist or holds
-    /// no files.
+    /// Lists every file in a context folder, recursing into subfolders: the
+    /// recognized top-level names first in canonical order (so the seed
+    /// picker stays stable and predictable), then any other files — including
+    /// nested ones — by relative path alphabetically. Paths are relative to
+    /// `dir` with "/" separators (e.g. "research/notes.md"). Hidden files and
+    /// hidden directories are skipped. Returns an empty array when `dir`
+    /// doesn't exist or holds no files.
     private func contextFiles(in dir: URL) -> [String] {
-        guard let entries = try? FileManager.default.contentsOfDirectory(
+        guard let enumerator = FileManager.default.enumerator(
             at: dir,
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
-        let names = entries
-            .filter { url in
-                (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile ?? false
-            }
-            .map(\.lastPathComponent)
+        // Resolve symlinks on both the base and each entry so the prefix
+        // matches: the enumerator canonicalises paths (e.g. /var →
+        // /private/var) while `dir` may not, which would otherwise break the
+        // relative-path computation.
+        let basePath = dir.resolvingSymlinksInPath().path
+        var relPaths: [String] = []
+        for case let url as URL in enumerator {
+            let isRegular = (try? url.resourceValues(forKeys: [.isRegularFileKey]))?
+                .isRegularFile ?? false
+            guard isRegular else { continue }
+            let fullPath = url.resolvingSymlinksInPath().path
+            guard fullPath.hasPrefix(basePath + "/") else { continue }
+            relPaths.append(String(fullPath.dropFirst(basePath.count + 1)))
+        }
 
-        let recognized = CompanyContext.recognizedFileNames.filter(names.contains)
-        let extras = names
+        let recognized = CompanyContext.recognizedFileNames.filter(relPaths.contains)
+        let extras = relPaths
             .filter { !CompanyContext.recognizedFileNames.contains($0) }
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         return recognized + extras
@@ -130,6 +141,13 @@ struct CompanyContextService {
             let destination = destDir.appendingPathComponent(file)
             if FileManager.default.fileExists(atPath: destination.path) { continue }
             do {
+                // Recreate the file's subfolder (e.g. "research/") before
+                // copying, so nested context files land at the same relative
+                // path in the new project.
+                try FileManager.default.createDirectory(
+                    at: destination.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
                 try FileManager.default.copyItem(
                     at: context.directoryURL.appendingPathComponent(file),
                     to: destination

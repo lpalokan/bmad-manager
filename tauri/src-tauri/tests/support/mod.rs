@@ -85,13 +85,18 @@ impl TauriWorld {
     }
 
     /// Writes the named context files (with the file name as content so
-    /// copies are verifiable) into `<root>/<project>/<subpath>/`.
+    /// copies are verifiable) into `<root>/<project>/<subpath>/`. A file name
+    /// may itself contain a relative subpath (e.g. "research/notes.md") to
+    /// seed nested context files; intermediate folders are created.
     pub fn seed_context_files(&mut self, project: &str, subpath: &str, files: &[&str]) {
         let dir = self.ensure_projects_root().join(project).join(subpath);
         std::fs::create_dir_all(&dir).expect("create context dir");
         for file in files {
-            std::fs::write(dir.join(file), format!("content of {file}"))
-                .expect("write context file");
+            let path = dir.join(file);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).expect("create nested context dir");
+            }
+            std::fs::write(path, format!("content of {file}")).expect("write context file");
         }
     }
 

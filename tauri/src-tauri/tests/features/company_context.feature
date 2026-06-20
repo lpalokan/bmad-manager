@@ -40,6 +40,11 @@ Feature: Company context discovery and import
     When I resolve the context of project "acme"
     Then the context files are exactly "icp.md, brand-voice.md, tech-stack.md, bootstrap-summary.md"
 
+  Scenario: includes files in subfolders with their relative paths
+    Given a project "acme" with context files "icp.md, research/notes.md, research/personas.md" under "_bmad-output/company-context"
+    When I resolve the context of project "acme"
+    Then the context files are exactly "icp.md, research/notes.md, research/personas.md"
+
   Scenario: contexts sort by project name regardless of input order
     Given a project "zebra" with context files "icp.md" under "_bmad-output/company-context"
     And a project "Alpha" with context files "kpis.md" under "_bmad-output/company-context"
@@ -92,6 +97,12 @@ Feature: Company context discovery and import
     And an empty project "fresh"
     When I import the context of "acme" into project "fresh"
     Then project "fresh" contains context files "icp.md, bootstrap-summary.md"
+
+  Scenario: import recreates subfolders in the new project
+    Given a project "acme" with context files "icp.md, research/notes.md" under "_bmad-output/company-context"
+    And an empty project "fresh"
+    When I import the context of "acme" into project "fresh"
+    Then project "fresh" contains context files "icp.md, research/notes.md"
 
   Scenario: import leaves existing destination files untouched
     Given a project "acme" with context files "icp.md, kpis.md" under "_bmad-output/company-context"
