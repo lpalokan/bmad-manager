@@ -147,7 +147,12 @@ final class ProjectCoordinator: ObservableObject {
     /// instance is the one the Picker writes to — passing the kind through
     /// at call time guarantees we honour what the user just chose, even on
     /// the very first click after a change.
-    func openInTerminal(project: ProjectItem, command: String, kind: TerminalKind) {
+    func openInTerminal(
+        project: ProjectItem,
+        command: String,
+        kind: TerminalKind,
+        placement: NewSessionPlacement = .newWindow
+    ) {
         let trimmed = command.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
             errorMessage = "Command is empty. Set it in Settings."
@@ -157,7 +162,8 @@ final class ProjectCoordinator: ObservableObject {
             try terminalLauncher.open(
                 projectPath: project.url.path,
                 command: trimmed,
-                kind: kind
+                kind: kind,
+                placement: placement
             )
         } catch {
             errorMessage = error.localizedDescription
@@ -179,7 +185,8 @@ final class ProjectCoordinator: ObservableObject {
         method: AgentLaunchMethod,
         appInstalled: Bool,
         command: String,
-        kind: TerminalKind
+        kind: TerminalKind,
+        placement: NewSessionPlacement = .newWindow
     ) {
         switch AgentLaunchResolver.resolve(method: method, appInstalled: appInstalled) {
         case .app:
@@ -193,7 +200,7 @@ final class ProjectCoordinator: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         case .cli:
-            openInTerminal(project: project, command: command, kind: kind)
+            openInTerminal(project: project, command: command, kind: kind, placement: placement)
         }
     }
 

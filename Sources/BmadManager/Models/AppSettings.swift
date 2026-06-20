@@ -58,6 +58,8 @@ struct AppSettings: Codable, Equatable {
     var codexLaunchMethod: AgentLaunchMethod
     var projectSortOrder: ProjectSortOrder
     var terminalKind: TerminalKind
+    /// Whether a launched session opens in a new window or a new tab.
+    var newSessionPlacement: NewSessionPlacement
     /// HTTPS URL of the private skills repo synced into the global
     /// `~/.claude/skills/managed` and `~/.codex/skills/managed` folders.
     /// Empty until configured. The read-only token lives in the Keychain,
@@ -95,6 +97,7 @@ struct AppSettings: Codable, Equatable {
             codexLaunchMethod: .default,
             projectSortOrder: .nameAscending,
             terminalKind: .terminal,
+            newSessionPlacement: .newWindow,
             skillsRepoURL: "",
             skillsRepoBranch: AppSettings.defaultSkillsRepoBranch
         )
@@ -117,6 +120,7 @@ struct AppSettings: Codable, Equatable {
         case codexLaunchMethod
         case projectSortOrder
         case terminalKind
+        case newSessionPlacement
         // Explicit raw value so the on-disk key matches the Tauri/Rust side
         // (`skillsRepoUrl`), keeping settings.json portable across platforms.
         case skillsRepoURL = "skillsRepoUrl"
@@ -137,6 +141,7 @@ struct AppSettings: Codable, Equatable {
          codexLaunchMethod: AgentLaunchMethod = .default,
          projectSortOrder: ProjectSortOrder = .nameAscending,
          terminalKind: TerminalKind = .terminal,
+         newSessionPlacement: NewSessionPlacement = .newWindow,
          skillsRepoURL: String = "",
          skillsRepoBranch: String = AppSettings.defaultSkillsRepoBranch) {
         self.projectsRoot = projectsRoot
@@ -153,6 +158,7 @@ struct AppSettings: Codable, Equatable {
         self.codexLaunchMethod = codexLaunchMethod
         self.projectSortOrder = projectSortOrder
         self.terminalKind = terminalKind
+        self.newSessionPlacement = newSessionPlacement
         self.skillsRepoURL = skillsRepoURL
         self.skillsRepoBranch = skillsRepoBranch
     }
@@ -193,6 +199,12 @@ struct AppSettings: Codable, Equatable {
         // Legacy settings.json files predate the terminal picker — default
         // to Terminal.app so upgrades keep the previous behaviour.
         terminalKind = try c.decodeIfPresent(TerminalKind.self, forKey: .terminalKind) ?? .terminal
+
+        // Window-vs-tab placement is a later addition (and may be absent in a
+        // settings.json written by the Windows port); default to a new window
+        // so upgrades keep the previous behaviour.
+        newSessionPlacement = try c.decodeIfPresent(
+            NewSessionPlacement.self, forKey: .newSessionPlacement) ?? .newWindow
 
         // Skills sync (#40) — legacy files predate these; default to an
         // unconfigured repo on `main` so loading never fails.

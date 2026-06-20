@@ -59,4 +59,34 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(script.contains("create window with default profile"))
         XCTAssertTrue(script.contains("write text \"cd '/tmp' && ls\""))
     }
+
+    // MARK: - New-window vs. new-tab placement
+
+    func testAppleScriptDefaultsToNewWindowForTerminal() {
+        // Omitting placement keeps the historical new-window behaviour.
+        let script = TerminalLauncher.appleScript(for: .terminal, shellLine: "cd '/tmp' && ls")
+        XCTAssertFalse(script.contains("keystroke \"t\""))
+        XCTAssertTrue(script.contains("do script \"cd '/tmp' && ls\""))
+    }
+
+    func testAppleScriptForTerminalNewTabSendsCommandT() {
+        let script = TerminalLauncher.appleScript(
+            for: .terminal, placement: .newTab, shellLine: "cd '/tmp' && ls")
+        XCTAssertTrue(script.contains("keystroke \"t\" using command down"))
+        XCTAssertTrue(script.contains("do script \"cd '/tmp' && ls\" in front window"))
+    }
+
+    func testAppleScriptForITerm2NewTabCreatesTab() {
+        let script = TerminalLauncher.appleScript(
+            for: .iterm2, placement: .newTab, shellLine: "cd '/tmp' && ls")
+        XCTAssertTrue(script.contains("create tab with default profile"))
+        XCTAssertTrue(script.contains("write text \"cd '/tmp' && ls\""))
+    }
+
+    func testAppleScriptForITerm2NewWindowDoesNotCreateTab() {
+        let script = TerminalLauncher.appleScript(
+            for: .iterm2, placement: .newWindow, shellLine: "cd '/tmp' && ls")
+        XCTAssertTrue(script.contains("create window with default profile"))
+        XCTAssertFalse(script.contains("create tab with default profile"))
+    }
 }

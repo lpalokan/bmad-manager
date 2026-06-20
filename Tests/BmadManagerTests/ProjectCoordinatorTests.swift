@@ -6,12 +6,16 @@ import XCTest
 /// Records terminal-open calls so tests can assert the right arguments
 /// were passed without launching a real terminal.
 private final class FakeTerminalLauncher: TerminalLauncherProtocol {
-    private(set) var opens: [(projectPath: String, command: String, kind: TerminalKind)] = []
+    private(set) var opens: [(
+        projectPath: String, command: String, kind: TerminalKind, placement: NewSessionPlacement
+    )] = []
     var errorToThrow: Error? = nil
 
-    func open(projectPath: String, command: String, kind: TerminalKind) throws {
+    func open(
+        projectPath: String, command: String, kind: TerminalKind, placement: NewSessionPlacement
+    ) throws {
         if let error = errorToThrow { throw error }
-        opens.append((projectPath, command, kind))
+        opens.append((projectPath, command, kind, placement))
     }
 }
 

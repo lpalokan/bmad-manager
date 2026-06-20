@@ -6,12 +6,27 @@ import Foundation
 /// so terminal-launch orchestration can be tested without spawning a real
 /// terminal. Follows the same pattern as `ModuleSource`.
 protocol TerminalLauncherProtocol {
-    func open(projectPath: String, command: String, kind: TerminalKind) throws
+    func open(
+        projectPath: String,
+        command: String,
+        kind: TerminalKind,
+        placement: NewSessionPlacement
+    ) throws
 }
 
 /// Production adapter that delegates to the static `TerminalLauncher` helpers.
 struct DefaultTerminalLauncher: TerminalLauncherProtocol {
-    func open(projectPath: String, command: String, kind: TerminalKind) throws {
-        try TerminalLauncher.open(projectPath: projectPath, command: command, kind: kind)
+    func open(
+        projectPath: String,
+        command: String,
+        kind: TerminalKind,
+        placement: NewSessionPlacement
+    ) throws {
+        try TerminalLauncher.open(
+            projectPath: projectPath,
+            command: command,
+            kind: kind,
+            placement: placement
+        )
     }
 }

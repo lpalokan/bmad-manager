@@ -169,6 +169,20 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Open new sessions in").font(.subheadline).bold()
+                Picker("Open new sessions in", selection: $store.settings.newSessionPlacement) {
+                    ForEach(NewSessionPlacement.allCases) { placement in
+                        Text(placement.displayName).tag(placement)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                Text("A tab opens in the frontmost window of the chosen terminal; a new window is always separate.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             VStack(alignment: .leading, spacing: 10) {
                 agentRow(
                     label: "Claude Code",

@@ -299,21 +299,24 @@ struct ContentView: View {
                         method: settings.settings.claudeLaunchMethod,
                         appInstalled: AppDetector.isInstalled(.claude),
                         command: settings.settings.claudeCommand,
-                        kind: settings.settings.terminalKind
+                        kind: settings.settings.terminalKind,
+                        placement: settings.settings.newSessionPlacement
                     )
                 },
                 onOpencode: {
                     coordinator.openInTerminal(
                         project: project,
                         command: settings.settings.opencodeCommand,
-                        kind: settings.settings.terminalKind
+                        kind: settings.settings.terminalKind,
+                        placement: settings.settings.newSessionPlacement
                     )
                 },
                 onPi: {
                     coordinator.openInTerminal(
                         project: project,
                         command: settings.settings.piCommand,
-                        kind: settings.settings.terminalKind
+                        kind: settings.settings.terminalKind,
+                        placement: settings.settings.newSessionPlacement
                     )
                 },
                 onCodex: {
@@ -323,7 +326,8 @@ struct ContentView: View {
                         method: settings.settings.codexLaunchMethod,
                         appInstalled: AppDetector.isInstalled(.codex),
                         command: settings.settings.codexCommand,
-                        kind: settings.settings.terminalKind
+                        kind: settings.settings.terminalKind,
+                        placement: settings.settings.newSessionPlacement
                     )
                 },
                 onOpenFolder: { coordinator.openProjectFolder(project) },
