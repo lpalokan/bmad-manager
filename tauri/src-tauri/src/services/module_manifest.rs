@@ -160,7 +160,9 @@ fn has_numeric_component(version: &str) -> bool {
 
 fn stripped(version: &str) -> &str {
     let v = version.trim();
-    v.strip_prefix('v').or_else(|| v.strip_prefix('V')).unwrap_or(v)
+    v.strip_prefix('v')
+        .or_else(|| v.strip_prefix('V'))
+        .unwrap_or(v)
 }
 
 #[cfg(test)]
@@ -204,7 +206,8 @@ mod tests {
 
     #[test]
     fn reads_repo_module_quoted_and_commented() {
-        let tmp = module_root("# c\nname: x\ncode: \"marketing-growth\"\nmodule_version: \"2.1.3\"\n");
+        let tmp =
+            module_root("# c\nname: x\ncode: \"marketing-growth\"\nmodule_version: \"2.1.3\"\n");
         let m = read_repo_module(tmp.path()).unwrap();
         assert_eq!(m.code, "marketing-growth");
         assert_eq!(m.version, "2.1.3");
@@ -224,14 +227,19 @@ mod tests {
 
     #[test]
     fn read_repo_module_ignores_nested_keys() {
-        let tmp = module_root("code: marketing-growth\nquestions:\n  module_version: 9.9.9\nmodule_version: 2.0.0\n");
+        let tmp = module_root(
+            "code: marketing-growth\nquestions:\n  module_version: 9.9.9\nmodule_version: 2.0.0\n",
+        );
         assert_eq!(read_repo_module(tmp.path()).unwrap().version, "2.0.0");
     }
 
     #[test]
     fn installed_version_from_list() {
         let tmp = project(&installed_manifest("2.0.0"));
-        assert_eq!(installed_version("marketing-growth", tmp.path()), Some("2.0.0".into()));
+        assert_eq!(
+            installed_version("marketing-growth", tmp.path()),
+            Some("2.0.0".into())
+        );
         assert_eq!(installed_version("core", tmp.path()), Some("6.8.0".into()));
     }
 
@@ -243,7 +251,9 @@ mod tests {
 
     #[test]
     fn installed_version_ignores_installation_block() {
-        let tmp = project("installation:\n  version: 6.8.0\nmodules:\n  - name: core\n    version: 6.8.0\n");
+        let tmp = project(
+            "installation:\n  version: 6.8.0\nmodules:\n  - name: core\n    version: 6.8.0\n",
+        );
         assert!(installed_version("marketing-growth", tmp.path()).is_none());
     }
 
@@ -287,35 +297,50 @@ mod tests {
     #[test]
     fn project_stale_when_behind() {
         let tmp = project(&installed_manifest("2.0.0"));
-        let repo = RepoModule { code: "marketing-growth".into(), version: "2.1.0".into() };
+        let repo = RepoModule {
+            code: "marketing-growth".into(),
+            version: "2.1.0".into(),
+        };
         assert!(is_project_stale(tmp.path(), &repo));
     }
 
     #[test]
     fn project_not_stale_when_current() {
         let tmp = project(&installed_manifest("2.1.0"));
-        let repo = RepoModule { code: "marketing-growth".into(), version: "2.1.0".into() };
+        let repo = RepoModule {
+            code: "marketing-growth".into(),
+            version: "2.1.0".into(),
+        };
         assert!(!is_project_stale(tmp.path(), &repo));
     }
 
     #[test]
     fn project_not_stale_when_module_absent() {
         let tmp = project("modules:\n  - name: core\n    version: 6.8.0\n");
-        let repo = RepoModule { code: "marketing-growth".into(), version: "2.1.0".into() };
+        let repo = RepoModule {
+            code: "marketing-growth".into(),
+            version: "2.1.0".into(),
+        };
         assert!(!is_project_stale(tmp.path(), &repo));
     }
 
     #[test]
     fn project_not_stale_when_manifest_missing() {
         let tmp = TempDir::new().unwrap();
-        let repo = RepoModule { code: "marketing-growth".into(), version: "2.1.0".into() };
+        let repo = RepoModule {
+            code: "marketing-growth".into(),
+            version: "2.1.0".into(),
+        };
         assert!(!is_project_stale(tmp.path(), &repo));
     }
 
     #[test]
     fn project_not_stale_when_installed_malformed() {
         let tmp = project("modules:\n  - name: marketing-growth\n    version: garbage\n");
-        let repo = RepoModule { code: "marketing-growth".into(), version: "2.1.0".into() };
+        let repo = RepoModule {
+            code: "marketing-growth".into(),
+            version: "2.1.0".into(),
+        };
         assert!(!is_project_stale(tmp.path(), &repo));
     }
 }

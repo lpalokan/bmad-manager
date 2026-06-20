@@ -40,7 +40,12 @@ fn bmad_body() -> &'static str {
 }
 
 fn wrap(namespace: &str, body: &str) -> String {
-    format!("{}\n{}\n{}", start_marker(namespace), body, end_marker(namespace))
+    format!(
+        "{}\n{}\n{}",
+        start_marker(namespace),
+        body,
+        end_marker(namespace)
+    )
 }
 
 /// The managed BMad block, start/end markers included.
@@ -91,7 +96,11 @@ pub fn ensure_managed_section(
     }
 
     // Append, preserving the user's existing content.
-    let separator = if existing.ends_with('\n') { "\n" } else { "\n\n" };
+    let separator = if existing.ends_with('\n') {
+        "\n"
+    } else {
+        "\n\n"
+    };
     std::fs::write(&path, format!("{existing}{separator}{block}\n"))
 }
 
@@ -149,8 +158,13 @@ mod tests {
     #[test]
     fn creates_block_for_arbitrary_namespace() {
         let tmp = TempDir::new().unwrap();
-        ensure_managed_section(tmp.path(), "AGENTS.md", "marketing-growth:okf", "OKF body line")
-            .unwrap();
+        ensure_managed_section(
+            tmp.path(),
+            "AGENTS.md",
+            "marketing-growth:okf",
+            "OKF body line",
+        )
+        .unwrap();
         let text = agents(tmp.path());
         assert!(text.contains(&start_marker("marketing-growth:okf")));
         assert!(text.contains(&end_marker("marketing-growth:okf")));
@@ -161,11 +175,19 @@ mod tests {
     fn two_namespaces_coexist_in_one_file() {
         let tmp = TempDir::new().unwrap();
         ensure_bmad_section(tmp.path()).unwrap();
-        ensure_managed_section(tmp.path(), "AGENTS.md", "marketing-growth:okf", "OKF body line")
-            .unwrap();
+        ensure_managed_section(
+            tmp.path(),
+            "AGENTS.md",
+            "marketing-growth:okf",
+            "OKF body line",
+        )
+        .unwrap();
         let text = agents(tmp.path());
         assert_eq!(text.matches(BMAD_SECTION_MARKER).count(), 1);
-        assert_eq!(text.matches(&start_marker("marketing-growth:okf")).count(), 1);
+        assert_eq!(
+            text.matches(&start_marker("marketing-growth:okf")).count(),
+            1
+        );
         assert!(text.contains(".agents/skills"));
         assert!(text.contains("OKF body line"));
     }
@@ -174,24 +196,42 @@ mod tests {
     fn refreshes_only_its_own_block() {
         let tmp = TempDir::new().unwrap();
         ensure_bmad_section(tmp.path()).unwrap();
-        ensure_managed_section(tmp.path(), "AGENTS.md", "marketing-growth:okf", "first okf body")
-            .unwrap();
+        ensure_managed_section(
+            tmp.path(),
+            "AGENTS.md",
+            "marketing-growth:okf",
+            "first okf body",
+        )
+        .unwrap();
         let bmad = bmad_block();
 
-        ensure_managed_section(tmp.path(), "AGENTS.md", "marketing-growth:okf", "second okf body")
-            .unwrap();
+        ensure_managed_section(
+            tmp.path(),
+            "AGENTS.md",
+            "marketing-growth:okf",
+            "second okf body",
+        )
+        .unwrap();
         let text = agents(tmp.path());
         assert!(text.contains("second okf body"));
         assert!(!text.contains("first okf body"));
         assert!(text.contains(&bmad), "bmad block must be byte-identical");
-        assert_eq!(text.matches(&start_marker("marketing-growth:okf")).count(), 1);
+        assert_eq!(
+            text.matches(&start_marker("marketing-growth:okf")).count(),
+            1
+        );
     }
 
     #[test]
     fn honours_custom_file_name() {
         let tmp = TempDir::new().unwrap();
-        ensure_managed_section(tmp.path(), "OTHER.md", "marketing-growth:okf", "OKF body line")
-            .unwrap();
+        ensure_managed_section(
+            tmp.path(),
+            "OTHER.md",
+            "marketing-growth:okf",
+            "OKF body line",
+        )
+        .unwrap();
         assert!(tmp.path().join("OTHER.md").is_file());
         assert!(!tmp.path().join("AGENTS.md").exists());
     }
