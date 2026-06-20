@@ -7,13 +7,19 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use crate::models::TerminalKind;
+use crate::models::{NewSessionPlacement, ShellKind, TerminalKind};
 
 pub fn run_shell(_command: &str, _cwd: &Path) -> i32 {
     unimplemented!("platform::macos::run_shell — future macOS unification milestone")
 }
 
-pub fn launch_terminal(_path: &Path, _command: &str, _kind: TerminalKind) -> Result<(), String> {
+pub fn launch_terminal(
+    _path: &Path,
+    _command: &str,
+    _kind: TerminalKind,
+    _shell: ShellKind,
+    _placement: NewSessionPlacement,
+) -> Result<(), String> {
     unimplemented!("platform::macos::launch_terminal — future macOS unification milestone")
 }
 

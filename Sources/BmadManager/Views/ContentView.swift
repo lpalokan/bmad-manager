@@ -184,6 +184,11 @@ struct ContentView: View {
             }
             .keyboardShortcut(.defaultAction)
             .disabled(!canCreate)
+            Button("Initialize existing folder…") {
+                Task { await initializeExistingFolder() }
+            }
+            .help("Run BMAD init in a folder that already exists")
+            .disabled(coordinator.isCreating)
         }
         .padding(.horizontal)
         .padding(.bottom, 8)
@@ -294,21 +299,24 @@ struct ContentView: View {
                         method: settings.settings.claudeLaunchMethod,
                         appInstalled: AppDetector.isInstalled(.claude),
                         command: settings.settings.claudeCommand,
-                        kind: settings.settings.terminalKind
+                        kind: settings.settings.terminalKind,
+                        placement: settings.settings.newSessionPlacement
                     )
                 },
                 onOpencode: {
                     coordinator.openInTerminal(
                         project: project,
                         command: settings.settings.opencodeCommand,
-                        kind: settings.settings.terminalKind
+                        kind: settings.settings.terminalKind,
+                        placement: settings.settings.newSessionPlacement
                     )
                 },
                 onPi: {
                     coordinator.openInTerminal(
                         project: project,
                         command: settings.settings.piCommand,
-                        kind: settings.settings.terminalKind
+                        kind: settings.settings.terminalKind,
+                        placement: settings.settings.newSessionPlacement
                     )
                 },
                 onCodex: {
@@ -318,7 +326,8 @@ struct ContentView: View {
                         method: settings.settings.codexLaunchMethod,
                         appInstalled: AppDetector.isInstalled(.codex),
                         command: settings.settings.codexCommand,
-                        kind: settings.settings.terminalKind
+                        kind: settings.settings.terminalKind,
+                        placement: settings.settings.newSessionPlacement
                     )
                 },
                 onOpenFolder: { coordinator.openProjectFolder(project) },
@@ -332,20 +341,7 @@ struct ContentView: View {
     private func createProject() async {
         let name = newProjectName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
-
-        // If the user is on local-zip and hasn't picked a module yet,
-        // prompt for one and persist the choice before kicking off
-        // creation. Centralising the prompt here keeps the coordinator
-        // free of UI concerns and avoids the @StateObject-drift bug
-        // that captured-SettingsStore reads used to expose.
-        if settings.settings.moduleSourceKind == .localZip,
-           settings.settings.moduleZipPath.trimmingCharacters(in: .whitespaces).isEmpty {
-            guard let picked = promptForModuleZip() else {
-                coordinator.errorMessage = "A marketing growth module .zip is required to create a project."
-                return
-            }
-            settings.settings.moduleZipPath = picked.path
-        }
+        guard ensureModuleZipIfNeeded() else { return }
 
         await coordinator.createProject(
             name: name,
@@ -362,6 +358,80 @@ struct ContentView: View {
             // inherit the previous selection.
             selectedContext = nil
         }
+    }
+
+    /// "Initialize existing folder…": pick any folder, then run BMAD init in
+    /// it (cwd = that folder, name = its basename). A non-empty folder gets a
+    /// destructive-overwrite confirmation before proceeding; an empty one runs
+    /// silently. A detected existing BMAD install is flagged more strongly.
+    private func initializeExistingFolder() async {
+        guard let folder = promptForExistingFolder() else { return }
+
+        let service = ProjectService()
+        if !service.folderIsEmpty(folder) {
+            let isInstall = service.folderHasBmadInstall(folder)
+            guard confirmInitInNonEmptyFolder(folder, existingInstall: isInstall) else { return }
+        }
+        guard ensureModuleZipIfNeeded() else { return }
+
+        await coordinator.createProject(
+            name: folder.lastPathComponent,
+            settings: settings.settings,
+            importContextFrom: selectedContext,
+            destination: folder,
+            runCommand: { command, cwd in
+                await commandRunner.run(command: command, cwd: cwd)
+            }
+        )
+
+        if coordinator.errorMessage == nil {
+            selectedContext = nil
+        }
+    }
+
+    /// On local-zip, prompts for (and persists) a module .zip when one
+    /// hasn't been chosen yet. Returns `false` (after setting an error) when
+    /// the user cancels the prompt. Centralising it here keeps the
+    /// coordinator free of UI concerns and avoids the @StateObject-drift bug
+    /// that captured-SettingsStore reads used to expose. Shared by both the
+    /// new-project and existing-folder flows.
+    private func ensureModuleZipIfNeeded() -> Bool {
+        guard settings.settings.moduleSourceKind == .localZip,
+              settings.settings.moduleZipPath.trimmingCharacters(in: .whitespaces).isEmpty
+        else { return true }
+        guard let picked = promptForModuleZip() else {
+            coordinator.errorMessage = "A marketing growth module .zip is required to create a project."
+            return false
+        }
+        settings.settings.moduleZipPath = picked.path
+        return true
+    }
+
+    private func promptForExistingFolder() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.title = "Choose a folder to initialize"
+        panel.prompt = "Initialize Here"
+        panel.message = "Pick a folder to run BMAD init in. The project name is taken from the folder's name."
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    private func confirmInitInNonEmptyFolder(_ folder: URL, existingInstall: Bool) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        if existingInstall {
+            alert.messageText = "'\(folder.lastPathComponent)' already looks like a BMAD project."
+            alert.informativeText = "Re-running init here may overwrite or modify the existing BMAD setup. Continue?"
+        } else {
+            alert.messageText = "'\(folder.lastPathComponent)' already contains files."
+            alert.informativeText = "Initializing may overwrite or modify them. Continue?"
+        }
+        alert.addButton(withTitle: "Initialize")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     private func syncSkills(_ tool: SkillTool) async {

@@ -211,6 +211,41 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.terminalKind, .terminal)
     }
 
+    func testLegacyWithoutNewSessionPlacementDefaultsToNewWindow() throws {
+        // Pre-placement-picker settings.json files (and files written by the
+        // Windows port without the field) must fall back to .newWindow so a
+        // freshly upgraded install keeps the previous behaviour.
+        let legacy = """
+        {
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertEqual(decoded.newSessionPlacement, .newWindow)
+    }
+
+    func testNewSessionPlacementUsesPortableRawValues() throws {
+        // The on-disk key/values must match the Rust side so settings.json is
+        // portable between the macOS app and the Windows port.
+        var settings = AppSettings.defaults()
+        settings.newSessionPlacement = .newTab
+        let json = String(data: try JSONEncoder().encode(settings), encoding: .utf8)!
+        XCTAssertTrue(json.contains("\"newSessionPlacement\":\"newTab\""), json)
+    }
+
+    func testCodableRoundTripPreservesNewSessionPlacement() throws {
+        var original = AppSettings.defaults()
+        original.newSessionPlacement = .newTab
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
+        XCTAssertEqual(decoded.newSessionPlacement, .newTab)
+        XCTAssertEqual(original, decoded)
+    }
+
     func testCodableRoundTripPreservesTerminalKind() throws {
         let original = AppSettings(
             projectsRoot: "/tmp/my-projects",

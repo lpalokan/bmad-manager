@@ -96,6 +96,7 @@ pub fn list_projects(state: State<'_, AppState>) -> CmdResult<Vec<ProjectItem>> 
 pub async fn create_project(
     name: String,
     context: Option<CompanyContext>,
+    target_path: Option<String>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<ProjectItem> {
@@ -104,9 +105,21 @@ pub async fn create_project(
     let emit = move |event: OutputEvent| {
         let _ = app.emit("project-create-output", event);
     };
-    project_creator::create_project(&name, &settings, context.as_ref(), emit)
+    // `target_path`, when present, is the existing folder the user chose to
+    // initialise in-place (used as-is); otherwise a fresh folder is minted
+    // under the projects root from `name`.
+    let target = target_path.map(PathBuf::from);
+    project_creator::create_project(&name, &settings, context.as_ref(), target.as_deref(), emit)
         .await
         .map_err(|e| IpcError(e.to_string()))
+}
+
+/// Inspects a candidate existing-folder init target so the UI can decide
+/// whether to confirm a potentially destructive overwrite before calling
+/// `create_project` with a `target_path`.
+#[tauri::command]
+pub fn inspect_init_target(path: String) -> CmdResult<project_service::InitTargetInfo> {
+    Ok(project_service::inspect_init_target(&PathBuf::from(path)))
 }
 
 /// Scans for company contexts the new-project "Context" picker can offer as
@@ -429,7 +442,14 @@ fn open_in_terminal(project_path: &str, which: &str, state: State<'_, AppState>)
         )));
     }
     let path = PathBuf::from(project_path);
-    platform::launch_terminal(&path, &command, settings.terminal_kind).map_err(IpcError)?;
+    platform::launch_terminal(
+        &path,
+        &command,
+        settings.terminal_kind,
+        settings.shell_kind,
+        settings.new_session_placement,
+    )
+    .map_err(IpcError)?;
     Ok(())
 }
 

@@ -23,16 +23,16 @@ enum CompanyContextSource: Hashable {
 /// skills repo.
 ///
 /// The bmad-marketing-growth module's company-context-bootstrap workflow
-/// defines the shared context as five recognized files under
-/// `_bmad-output/company-context/` (every v2 agent reads them on
-/// activation). The manager scans the projects folder for those files — and
-/// the skills repo's top-level `context/` folder — so a new project can be
-/// seeded from an existing context instead of starting from scratch.
+/// seeds a set of canonical files under `_bmad-output/company-context/`
+/// (every v2 agent reads them on activation), but a user is free to drop
+/// additional files into that folder. The manager scans the projects folder
+/// — and the skills repo's top-level `context/` folder — and treats *every*
+/// file there as part of the context, so a new project can be seeded with
+/// the complete folder instead of starting from scratch.
 struct CompanyContext: Identifiable, Hashable {
-    /// The file names the bootstrap workflow recognizes, in canonical
-    /// order. Anything else in a context folder (e.g.
-    /// `bootstrap-summary.md`) is ignored, matching the workflow's own
-    /// import rules.
+    /// The canonical file names the bootstrap workflow seeds, in display
+    /// order. These are sorted to the front of a context's file list for a
+    /// stable picker; any extra files the user added follow alphabetically.
     static let recognizedFileNames = [
         "icp.md",
         "positioning.md",
@@ -47,7 +47,7 @@ struct CompanyContext: Identifiable, Hashable {
     let projectName: String
     /// The context folder itself (e.g. `<project>/_bmad-output/company-context`).
     let directoryURL: URL
-    /// Recognized files present in the source, in canonical order.
+    /// All files present in the source: canonical names first, then extras.
     let files: [String]
     /// Whether the context came from a project on disk or the skills repo.
     let source: CompanyContextSource
@@ -65,13 +65,8 @@ struct CompanyContext: Identifiable, Hashable {
         self.source = source
     }
 
-    /// Menu label: the source name with a trailing source marker, and a hint
-    /// appended when the context is missing some of the recognized files.
+    /// Menu label: the source name with a trailing source marker.
     var displayName: String {
-        let total = Self.recognizedFileNames.count
-        let base = files.count == total
-            ? projectName
-            : "\(projectName) (\(files.count) of \(total) context files)"
-        return "\(base) \(source.marker)"
+        "\(projectName) \(source.marker)"
     }
 }

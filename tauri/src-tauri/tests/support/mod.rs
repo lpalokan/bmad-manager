@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use bmad_manager_lib::models::{AppSettings, CompanyContext, ProjectItem};
 use bmad_manager_lib::services::contribution::{ContributableSkill, PreparedFile};
+use bmad_manager_lib::services::project_service::InitTargetInfo;
 use cucumber::World;
 use tempfile::TempDir;
 
@@ -47,6 +48,9 @@ pub struct TauriWorld {
     pub contributable_skills: Option<Vec<ContributableSkill>>,
     pub prepared_files: Option<Vec<PreparedFile>>,
     pub parsed_owner_repo: Option<Option<(String, String)>>,
+    /// Existing-folder init target picked by an init-into-existing scenario.
+    pub init_target: Option<PathBuf>,
+    pub init_target_info: Option<InitTargetInfo>,
 }
 
 impl TauriWorld {
@@ -81,13 +85,18 @@ impl TauriWorld {
     }
 
     /// Writes the named context files (with the file name as content so
-    /// copies are verifiable) into `<root>/<project>/<subpath>/`.
+    /// copies are verifiable) into `<root>/<project>/<subpath>/`. A file name
+    /// may itself contain a relative subpath (e.g. "research/notes.md") to
+    /// seed nested context files; intermediate folders are created.
     pub fn seed_context_files(&mut self, project: &str, subpath: &str, files: &[&str]) {
         let dir = self.ensure_projects_root().join(project).join(subpath);
         std::fs::create_dir_all(&dir).expect("create context dir");
         for file in files {
-            std::fs::write(dir.join(file), format!("content of {file}"))
-                .expect("write context file");
+            let path = dir.join(file);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).expect("create nested context dir");
+            }
+            std::fs::write(path, format!("content of {file}")).expect("write context file");
         }
     }
 

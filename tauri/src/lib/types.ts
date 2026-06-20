@@ -15,6 +15,13 @@ export type TerminalKind =
   | "windowsTerminal"
   | "cmd";
 
+// Shell run inside a launched session on Windows (cmd / PowerShell).
+export type ShellKind = "cmd" | "powershell" | "pwsh";
+
+// Whether a launched session opens in a new window or a tab in the app's
+// dedicated Windows Terminal window.
+export type NewSessionPlacement = "newWindow" | "newTab";
+
 export interface AppSettings {
   projectsRoot: string;
   moduleSourceKind: ModuleSourceKind;
@@ -28,6 +35,8 @@ export interface AppSettings {
   codexCommand: string;
   projectSortOrder: ProjectSortOrder;
   terminalKind: TerminalKind;
+  shellKind: ShellKind;
+  newSessionPlacement: NewSessionPlacement;
   skillsRepoUrl: string;
   skillsRepoBranch: string;
 }
@@ -36,6 +45,15 @@ export interface ProjectItem {
   name: string;
   path: string;
   createdAt: number | null;
+}
+
+// Mirror of services/project_service.rs InitTargetInfo (serde camelCase).
+// Describes an "initialize into an existing folder" target so the UI can
+// decide whether to confirm a potentially destructive overwrite.
+export interface InitTargetInfo {
+  exists: boolean;
+  isEmpty: boolean;
+  hasBmad: boolean;
 }
 
 // Mirror of models/company_context.rs — RECOGNIZED_FILE_NAMES.
@@ -67,17 +85,11 @@ export interface CompanyContext {
   source?: ContextSource;
 }
 
-// Mirror of CompanyContext::display_name() in Rust: the source name with a
-// trailing source marker, and a hint appended when the context is missing
-// some of the recognized files.
+// Mirror of CompanyContext::display_name() in Rust: the project name with a
+// trailing source marker.
 export function companyContextDisplayName(context: CompanyContext): string {
-  const total = recognizedContextFileNames.length;
-  const base =
-    context.files.length === total
-      ? context.projectName
-      : `${context.projectName} (${context.files.length} of ${total} context files)`;
   const marker = contextSourceMarker[context.source ?? "project"];
-  return `${base} ${marker}`;
+  return `${context.projectName} ${marker}`;
 }
 
 // --- Contribution (propose additions as a PR) ---
@@ -139,4 +151,18 @@ export const moduleSourceOptions: { value: ModuleSourceKind; label: string }[] =
 export const terminalOptions: { value: TerminalKind; label: string }[] = [
   { value: "windowsTerminal", label: "Windows Terminal" },
   { value: "cmd", label: "Command Prompt" },
+];
+
+export const shellOptions: { value: ShellKind; label: string }[] = [
+  { value: "cmd", label: "Command Prompt" },
+  { value: "powershell", label: "Windows PowerShell" },
+  { value: "pwsh", label: "PowerShell 7" },
+];
+
+export const newSessionPlacementOptions: {
+  value: NewSessionPlacement;
+  label: string;
+}[] = [
+  { value: "newWindow", label: "New window" },
+  { value: "newTab", label: "New tab" },
 ];

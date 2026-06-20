@@ -1,6 +1,8 @@
 use cucumber::{given, then, when};
 
-use bmad_manager_lib::models::{AppSettings, ModuleSourceKind, ProjectSortOrder, TerminalKind};
+use bmad_manager_lib::models::{
+    AppSettings, ModuleSourceKind, NewSessionPlacement, ProjectSortOrder, ShellKind, TerminalKind,
+};
 
 use crate::support::TauriWorld;
 
@@ -226,6 +228,93 @@ async fn decode_raw_json(world: &mut TauriWorld) {
 async fn terminal_kind_platform_default(world: &mut TauriWorld) {
     let s = settings_for_assertion(world);
     assert_eq!(s.terminal_kind, TerminalKind::default_for_platform());
+}
+
+#[given("a legacy settings JSON without shellKind")]
+async fn legacy_without_shell_kind(world: &mut TauriWorld) {
+    world.raw_json = Some(legacy_settings_json());
+}
+
+#[given("a legacy settings JSON without newSessionPlacement")]
+async fn legacy_without_new_session_placement(world: &mut TauriWorld) {
+    world.raw_json = Some(legacy_settings_json());
+}
+
+#[then(regex = r#"^the shell kind is "(cmd|powershell|pwsh)"$"#)]
+async fn shell_kind_is(world: &mut TauriWorld, kind: String) {
+    let s = settings_for_assertion(world);
+    assert_eq!(s.shell_kind, parse_shell_kind(&kind));
+}
+
+#[then(regex = r#"^the new session placement is "(newWindow|newTab)"$"#)]
+async fn new_session_placement_is(world: &mut TauriWorld, placement: String) {
+    let s = settings_for_assertion(world);
+    assert_eq!(s.new_session_placement, parse_placement(&placement));
+}
+
+#[when(regex = r#"^I round-trip the default settings with shell kind "(cmd|powershell|pwsh)"$"#)]
+async fn round_trip_with_shell_kind(world: &mut TauriWorld, kind: String) {
+    let mut original = AppSettings::defaults();
+    original.shell_kind = parse_shell_kind(&kind);
+    round_trip(world, original);
+}
+
+#[then(regex = r#"^the decoded shell kind is "(cmd|powershell|pwsh)"$"#)]
+async fn decoded_shell_kind_is(world: &mut TauriWorld, kind: String) {
+    let decoded = world.decoded_settings.as_ref().expect("decoded");
+    assert_eq!(decoded.shell_kind, parse_shell_kind(&kind));
+}
+
+#[when(
+    regex = r#"^I round-trip the default settings with new session placement "(newWindow|newTab)"$"#
+)]
+async fn round_trip_with_placement(world: &mut TauriWorld, placement: String) {
+    let mut original = AppSettings::defaults();
+    original.new_session_placement = parse_placement(&placement);
+    round_trip(world, original);
+}
+
+#[then(regex = r#"^the decoded new session placement is "(newWindow|newTab)"$"#)]
+async fn decoded_placement_is(world: &mut TauriWorld, placement: String) {
+    let decoded = world.decoded_settings.as_ref().expect("decoded");
+    assert_eq!(decoded.new_session_placement, parse_placement(&placement));
+}
+
+fn parse_shell_kind(kind: &str) -> ShellKind {
+    match kind {
+        "cmd" => ShellKind::Cmd,
+        "powershell" => ShellKind::PowerShell,
+        "pwsh" => ShellKind::Pwsh,
+        _ => unreachable!(),
+    }
+}
+
+fn parse_placement(placement: &str) -> NewSessionPlacement {
+    match placement {
+        "newWindow" => NewSessionPlacement::NewWindow,
+        "newTab" => NewSessionPlacement::NewTab,
+        _ => unreachable!(),
+    }
+}
+
+fn round_trip(world: &mut TauriWorld, original: AppSettings) {
+    let json = serde_json::to_string(&original).expect("encode");
+    let decoded: AppSettings = serde_json::from_str(&json).expect("decode");
+    world.settings = Some(original);
+    world.decoded_settings = Some(decoded);
+}
+
+/// A settings.json shaped like the oldest releases: only the always-present
+/// fields, so every later-added field must fall back to its default.
+fn legacy_settings_json() -> String {
+    r#"{
+        "projectsRoot": "/tmp/legacy",
+        "moduleZipPath": "",
+        "initCommand": "echo {PROJECT_PATH}",
+        "claudeCommand": "claude",
+        "opencodeCommand": "opencode"
+    }"#
+    .to_string()
 }
 
 fn settings_for_assertion(world: &TauriWorld) -> &AppSettings {
