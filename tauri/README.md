@@ -6,13 +6,14 @@ the Windows port (and the eventual unification target — see `CLAUDE.md`).
 Issue [#25](https://github.com/lpalokan/bmad-manager/issues/25)
 tracks the full Windows shipping plan.
 
-**Stage 3** is now landed: the NSIS installer bundles portable Node
-and PortableGit alongside a pre-warmed `bmad-method` npm cache, so
-end users double-click one `.exe` and have a working app with zero
-prerequisite installs. The installer is per-user (no UAC prompt) and
-the `.github/workflows/tauri-windows.yml` release pipeline produces it
-on every push to `main` and the integration branch (and attaches it to a GitHub
-Release on `windows-v*` tag pushes).
+**Stage 3** is now landed: the build bundles portable Node and
+PortableGit alongside a pre-warmed `bmad-method` npm cache, so end
+users get a working app with zero prerequisite installs. Distribution
+is via Scoop — the `.github/workflows/tauri-windows.yml` pipeline
+compiles the app (`pnpm tauri build --no-bundle`) and packages it as a
+portable zip on every push to `main` and the integration branch (and
+attaches it to a GitHub Release on `windows-v*` tag pushes). See
+[`../packaging/scoop/`](../packaging/scoop) for the Scoop manifest.
 
 ## Layout
 
@@ -147,11 +148,12 @@ branch — the fast feedback loop while iterating.
 `tauri-windows.yml` is the release pipeline. It downloads the pinned
 portable Node (`NODE_VERSION` env var) and PortableGit
 (`GIT_FOR_WINDOWS_VERSION` + `GIT_FOR_WINDOWS_TAG`), pre-warms the npm
-cache with `bmad-method`, runs `pnpm tauri build`, and uploads the
-resulting NSIS installer as a workflow artifact named
-`BmadManager-windows-x64-<sha>.exe`. Tagging the commit with
-`windows-v*` additionally publishes a GitHub Release with the
-installer attached.
+cache with `bmad-method`, compiles the app with `pnpm tauri build
+--no-bundle`, and packages the exe plus those bundled resources into a
+portable zip uploaded as a workflow artifact named
+`bmad-manager-windows-x64-portable.zip` (the artifact Scoop installs —
+no NSIS installer is produced). Tagging the commit with `windows-v*`
+additionally publishes a GitHub Release with the zip attached.
 
 The bundled binaries live under `src-tauri/resources/`:
 

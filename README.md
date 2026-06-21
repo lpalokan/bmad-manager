@@ -10,8 +10,8 @@ opencode, and installs a custom "marketing growth" module on top.
 A Windows port via Tauri lives under [`tauri/`](tauri/) — see
 [issue #25](https://github.com/lpalokan/bmad-manager/issues/25) for the
 shipping plan. All three stages (scaffold, Rust services + Svelte UI,
-bundled Node + PortableGit installer) have landed; the Windows build
-ships as a single double-click `.exe` with Node and Git bundled inside.
+bundled Node + PortableGit) have landed; the Windows build ships via
+Scoop as a portable app with Node and Git bundled inside.
 
 The UI is intentionally tiny:
 
@@ -56,31 +56,38 @@ Manual DMG install below still works if you prefer it.
 
 ## End-user install (Windows)
 
-You receive **`BmadManager-windows-x64-<sha>.exe`** from the developer (a
-download link to a GitHub Releases asset, or a direct upload of the
-workflow artifact produced by `.github/workflows/tauri-windows.yml`).
+The Windows build is distributed via [Scoop](https://scoop.sh). Add the
+bucket once, then install:
 
-1. **Unblock the download.** Right-click the `.exe` → **Properties** →
-   tick **Unblock** at the bottom → **OK**. Windows marks files
-   downloaded from the internet so SmartScreen can warn about them;
-   unblocking up-front skips that warning at install time.
-2. **Run the installer.** Double-click it. The installer is per-user
-   (no UAC prompt, no admin needed) and lands the app under
-   `%LOCALAPPDATA%\Programs\BMad Manager\`.
-3. **First launch.** If SmartScreen still warns (it sometimes does for
-   newly-signed binaries), click **More info → Run anyway**. This is a
-   one-time dismissal — Windows remembers the choice.
-4. **Set your projects folder** in Settings, then type a name and click
-   **Create new project**. The bundled Node and Git mean you don't need
-   to install anything else — `npx bmad-method install` runs inside the
-   app's sandbox using the pre-warmed npm cache.
+```
+scoop bucket add lpalokan https://github.com/lpalokan/scoop-bucket
+scoop install bmad-manager
+```
+
+`scoop update bmad-manager` upgrades in place — your projects folder,
+settings, and npm cache are preserved (they live outside the install
+dir, in `%APPDATA%` / `%LOCALAPPDATA%`).
+
+Prefer not to use Scoop? Every release also attaches a portable zip
+(**`bmad-manager-windows-x64-portable.zip`**) to its
+[GitHub Release](https://github.com/lpalokan/bmad-manager/releases).
+Extract it anywhere and run `bmad-manager.exe` — no installer, no admin.
+
+Either way:
+
+- **Set your projects folder** in Settings, then type a name and click
+  **Create new project**. The bundled Node and Git mean you don't need
+  to install anything else — `npx bmad-method install` runs inside the
+  app's sandbox using the pre-warmed npm cache.
+- If SmartScreen warns on first launch, click **More info → Run
+  anyway**. This is a one-time dismissal — Windows remembers the choice.
 
 Settings shows the bundled Node and Git versions under "Bundled tooling"
 so you can answer "what version is this running?" without digging into
 AppData. Configuration is persisted at `%APPDATA%\bmad-manager\settings.json`.
 
 > **Heads-up:** If your Windows machine is managed by corporate IT
-> (Intune / AppLocker / Defender for Endpoint), the unsigned installer
+> (Intune / AppLocker / Defender for Endpoint), the unsigned binary
 > may be blocked outright with no override. The colleagues this tool is
 > built for are running personal Windows machines.
 
@@ -159,11 +166,12 @@ swift run
 The Windows port lives under [`tauri/`](tauri/). The CI workflow
 `.github/workflows/tauri-windows.yml` runs on `windows-latest`,
 downloads portable Node and PortableGit at build time, pre-warms the
-`bmad-method` npm cache, runs `pnpm tauri build`, and uploads the NSIS
-installer as a workflow artifact named
-`BmadManager-windows-x64-<sha>.exe`. Tagging a commit with
-`windows-v*` (e.g. `windows-v0.1.0`) additionally publishes a GitHub
-Release with the installer attached.
+`bmad-method` npm cache, compiles the app with `pnpm tauri build
+--no-bundle`, and packages it into a portable zip uploaded as a
+workflow artifact named `bmad-manager-windows-x64-portable.zip` (the
+artifact Scoop installs). Tagging a commit with `windows-v*` (e.g.
+`windows-v0.1.0`) additionally publishes a GitHub Release with the zip
+attached.
 
 To bump the bundled Node or PortableGit version, edit
 `NODE_VERSION` / `GIT_FOR_WINDOWS_VERSION` in

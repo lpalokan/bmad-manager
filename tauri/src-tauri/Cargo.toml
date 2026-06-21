@@ -49,6 +49,9 @@ harness = false
 [profile.release]
 panic = "abort"
 codegen-units = 1
-lto = true
+# Thin LTO instead of fat: keeps the optimized build but roughly halves
+# the release link time in CI (fat LTO re-optimizes every dependency at
+# link time) for a negligibly larger binary inside the ~198 MB zip.
+lto = "thin"
 opt-level = "s"
 strip = true
