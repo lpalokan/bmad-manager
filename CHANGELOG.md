@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.11](https://github.com/lpalokan/bmad-manager/compare/v0.1.10...v0.1.11) (2026-06-21)
+
+
+### Features
+
+* record GitHub module installs by repo URL, not local temp path ([e47a1a9](https://github.com/lpalokan/bmad-manager/commit/e47a1a9bf762dd6764187da175cdbd7c0d0e78a2))
+* record GitHub module installs by repo URL, not local temp path ([586d100](https://github.com/lpalokan/bmad-manager/commit/586d1008131d130ace346a5e801a282740144dab)), closes [#79](https://github.com/lpalokan/bmad-manager/issues/79)
+
+
+### Bug Fixes
+
+* update ProjectCoordinatorTests fake to two-arg withModuleRoot ([1ebe7de](https://github.com/lpalokan/bmad-manager/commit/1ebe7de4ac0d683d91e6b39d49ce35b8302b1f08))
+
 ## [0.1.10](https://github.com/lpalokan/bmad-manager/compare/v0.1.9...v0.1.10) (2026-06-20)
 
 
