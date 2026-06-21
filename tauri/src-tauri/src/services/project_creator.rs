@@ -115,7 +115,9 @@ where
     );
     emit_diag(
         &mut on_event,
-        format!("module_source={module_source} custom_source_arg={module_arg} init_command={command}"),
+        format!(
+            "module_source={module_source} custom_source_arg={module_arg} init_command={command}"
+        ),
     );
 
     let exit_code = command_runner::run(&command, &project_path, &mut on_event).await;

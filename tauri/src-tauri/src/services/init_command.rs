@@ -114,7 +114,10 @@ mod tests {
             "/m",
             false,
         );
-        assert_eq!(out, "init demo at /p/demo from https://github.com/o/r@v1 (/m)");
+        assert_eq!(
+            out,
+            "init demo at /p/demo from https://github.com/o/r@v1 (/m)"
+        );
     }
 
     #[test]
