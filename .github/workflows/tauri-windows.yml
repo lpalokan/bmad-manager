@@ -79,16 +79,18 @@ jobs:
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo registry + target
-        uses: actions/cache@v4
+      # Swatinem/rust-cache prunes the target dir to just dependency
+      # artifacts (dropping the final-crate + incremental bloat the raw
+      # actions/cache kept), so the saved cache shrinks from ~2 GB to a
+      # few hundred MB and the post-job save drops from ~5 min to well
+      # under a minute. Keyed on Cargo.lock + rustc automatically;
+      # `key: release-bundle` namespaces it away from any future
+      # rust-cache in the check workflow (different target contents).
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tauri/src-tauri/target
-          key: cargo-release-${{ runner.os }}-${{ hashFiles('tauri/src-tauri/Cargo.lock') }}
-          restore-keys: |
-            cargo-release-${{ runner.os }}-
+          workspaces: "tauri/src-tauri"
+          key: "release-bundle"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
