@@ -9,8 +9,9 @@ Homebrew cask update).
 ## How the pieces fit
 
 - `tauri-windows.yml` builds a portable zip (`bmad-manager-windows-x64-portable.zip`)
-  by 7-Zip-extracting the NSIS installer and re-zipping the payload, then attaches it
-  to the GitHub Release.
+  directly from the compiled `bmad-manager.exe` plus the bundled resource dirs
+  (`pnpm tauri build --no-bundle` — no NSIS installer is produced, since Scoop is the
+  Windows distribution channel), then attaches it to the GitHub Release.
 - `release.yml`'s `scoop-publish` job downloads that zip, computes its SHA256, and
   updates the manifest in the bucket repo. The job is guarded on the
   `SCOOP_BUCKET_TOKEN` secret, so releases still succeed before it is configured.

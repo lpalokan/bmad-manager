@@ -79,8 +79,10 @@ jobs:
     with:
       ref: ${{ github.event.release.tag_name || inputs.tag }}
 
-  # Attach the freshly built EXE to the same GitHub Release the DMG goes
-  # to, so release-please releases carry both platforms automatically.
+  # Attach the freshly built portable zip to the same GitHub Release the
+  # DMG goes to, so release-please releases carry both platforms
+  # automatically. Scoop's manifest points at this zip asset (no NSIS
+  # installer is produced — Scoop is the Windows distribution channel).
   attach-windows:
     needs: windows-build
     runs-on: ubuntu-latest
@@ -89,19 +91,13 @@ jobs:
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
-      - name: Download Windows installer artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.windows-build.outputs.artifact-name }}
-          path: windows-installer
-
       - name: Download Windows portable artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ needs.windows-build.outputs.portable-artifact-name }}
           path: windows-portable
 
-      - name: Attach EXE + portable zip to release
+      - name: Attach portable zip to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -109,20 +105,13 @@ jobs:
           # `-print -quit` makes find emit the first match and exit on its
           # own, avoiding the SIGPIPE that `| head -n1` can raise under
           # `pipefail`.
-          exe=$(find windows-installer -name '*.exe' -print -quit)
           zip=$(find windows-portable -name '*.zip' -print -quit)
-          if [ -z "$exe" ]; then
-            echo "no .exe found in downloaded artifact"
-            exit 1
-          fi
           if [ -z "$zip" ]; then
             echo "no .zip found in downloaded artifact"
             exit 1
           fi
-          cp "$exe" "bmad-manager-windows-x64-setup.exe"
           cp "$zip" "bmad-manager-windows-x64-portable.zip"
           gh release upload "$TAG" \
-            bmad-manager-windows-x64-setup.exe \
             bmad-manager-windows-x64-portable.zip --clobber \
             --repo ${{ github.repository }}
 

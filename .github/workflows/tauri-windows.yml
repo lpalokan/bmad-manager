@@ -1,11 +1,16 @@
 name: tauri-windows
 
-# Stage 3 of issue #25: produces a bundled NSIS installer for the Tauri
-# Windows port. Downloads portable Node + PortableGit at build time,
-# pre-warms the bmad-method npm cache, then runs `pnpm tauri build`
-# and uploads the resulting `.exe` as a workflow artifact. Tagging the
-# commit with `windows-v*` (e.g. `windows-v0.1.0`) additionally creates
-# a GitHub Release and attaches the installer.
+# Stage 3 of issue #25: builds the Tauri Windows port and packages it as
+# a portable zip for Scoop distribution. Downloads portable Node +
+# PortableGit at build time, pre-warms the bmad-method npm cache, then
+# runs `pnpm tauri build --no-bundle` (compile only — no NSIS) and zips
+# the compiled exe alongside the bundled resource dirs. Scoop consumes
+# this zip, so the NSIS installer is skipped entirely: packing the whole
+# ~490 MB payload into a solid-LZMA installer and then immediately
+# unpacking it again just to produce the zip cost ~3 min of makensis per
+# run for an artifact nobody installs. Tagging the commit with
+# `windows-v*` (e.g. `windows-v0.1.0`) additionally creates a GitHub
+# Release and attaches the zip.
 #
 # Sibling workflow `tauri-windows-check.yml` covers fmt/clippy/tests
 # on every push; this one is the heavier release pipeline.
@@ -30,9 +35,6 @@ on:
         type: string
         default: ""
     outputs:
-      artifact-name:
-        description: "Name of the uploaded installer artifact."
-        value: ${{ jobs.build.outputs.artifact-name }}
       portable-artifact-name:
         description: "Name of the uploaded portable zip artifact (used for Scoop)."
         value: ${{ jobs.build.outputs.portable-artifact-name }}
@@ -45,7 +47,6 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 40
     outputs:
-      artifact-name: ${{ steps.locate.outputs.filename }}
       portable-artifact-name: ${{ steps.portable.outputs.filename }}
     defaults:
       run:
@@ -204,65 +205,53 @@ jobs:
             }
           }
 
-      - name: Build Tauri NSIS installer
-        run: pnpm tauri build
-
-      - name: Locate installer
-        id: locate
-        shell: pwsh
-        run: |
-          $exe = Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter "*-setup.exe" -Recurse | Select-Object -First 1
-          if (-not $exe) { throw "no NSIS installer produced" }
-          $sizeMb = [Math]::Round($exe.Length / 1MB, 1)
-          $rename = "BmadManager-windows-x64-${{ github.sha }}.exe"
-          $renamedPath = Join-Path $exe.DirectoryName $rename
-          Copy-Item -Path $exe.FullName -Destination $renamedPath -Force
-          "path=$renamedPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "filename=$rename" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "sizeMb=$sizeMb" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Installer: $rename ($sizeMb MB)"
-
-      # 7-day retention keeps the installer available for testing off main
-      # pushes while capping Actions storage growth. On the release path
-      # this artifact is only a hand-off to attach-windows (downloaded and
-      # uploaded to the GitHub Release, which is separate free storage), so
-      # it never needs to live long here.
-      - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.locate.outputs.filename }}
-          path: ${{ steps.locate.outputs.path }}
-          if-no-files-found: error
-          retention-days: 7
+      # Compile only — no bundler. `--no-bundle` skips the NSIS step
+      # (~3 min of solid-LZMA `makensis`) and still produces the release
+      # exe at src-tauri/target/release/bmad-manager.exe plus the embedded
+      # frontend. The portable zip below is assembled directly from that
+      # exe and the staged resource dirs, so Scoop's only artifact never
+      # pays for an installer no one installs.
+      - name: Build Tauri app (compile only, no installer)
+        run: pnpm tauri build --no-bundle
 
       - name: Build portable zip
         id: portable
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # 7-Zip-extract the NSIS installer we just built and re-zip its
-          # payload. The extracted tree IS the exact on-disk install
-          # layout, so the portable zip is correct by construction — no
-          # need to reconstruct the BaseDirectory::Resource layout by
-          # hand. This zip is what the Scoop manifest extracts.
-          $setup = Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter "*-setup.exe" -Recurse | Select-Object -First 1
-          if (-not $setup) { throw "no NSIS installer to repack" }
+          # Assemble the portable payload directly from the compiled exe +
+          # the resource dirs staged before the build. This reproduces the
+          # exact on-disk layout Tauri's BaseDirectory::Resource resolves
+          # to next to the exe, mirroring the `bundle.resources` map in
+          # tauri.conf.json (each resources/<name>/ -> <name>/). Scoop
+          # extracts this zip as-is.
           $staging = Join-Path $env:RUNNER_TEMP "portable-staging"
           if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $staging | Out-Null
-          & 7z x "$($setup.FullName)" "-o$staging" -y | Out-Host
-          if ($LASTEXITCODE -ne 0) { throw "7z extraction failed ($LASTEXITCODE)" }
-          # Drop NSIS scaffolding that is not part of the app payload.
-          Remove-Item (Join-Path $staging '$PLUGINSDIR') -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item (Join-Path $staging 'uninstall.exe') -Force -ErrorAction SilentlyContinue
-          $exe = Join-Path $staging 'bmad-manager.exe'
-          if (-not (Test-Path $exe)) { throw "extracted payload missing bmad-manager.exe" }
+          $exe = "src-tauri/target/release/bmad-manager.exe"
+          if (-not (Test-Path $exe)) { throw "release build missing $exe" }
+          Copy-Item $exe -Destination $staging -Force
+          # Each bundled resource dir (node-portable, portable-git,
+          # npm-cache) lands at the staging root under the same name. Copy
+          # whatever dirs exist so adding a resource only needs the
+          # tauri.conf.json map updated, not this step (the map keeps
+          # source basename == target, e.g. resources/node-portable/ ->
+          # node-portable/).
+          $resDirs = Get-ChildItem "src-tauri/resources" -Directory
+          if (-not $resDirs) { throw "no resource dirs under src-tauri/resources" }
+          foreach ($d in $resDirs) {
+            Copy-Item $d.FullName -Destination (Join-Path $staging $d.Name) -Recurse -Force
+          }
+          # Sanity-check the exact paths the runtime resolver
+          # (platform/windows.rs) depends on, so a broken payload fails
+          # here instead of on a user's machine.
+          foreach ($p in @("bmad-manager.exe", "node-portable/node.exe", "portable-git/cmd/git.exe", "npm-cache")) {
+            if (-not (Test-Path (Join-Path $staging $p))) { throw "portable payload missing $p" }
+          }
           $filename = "bmad-manager-windows-x64-portable.zip"
-          # Derive the destination from the installer's (absolute)
-          # directory. upload-artifact resolves `path:` from the repo
-          # root and ignores the job's working-directory, so a relative
-          # path here would not be found.
-          $zip = Join-Path $setup.DirectoryName $filename
+          # upload-artifact resolves `path:` from the repo root and ignores
+          # the job's working-directory, so hand it an absolute path.
+          $zip = Join-Path (Resolve-Path "src-tauri/target/release").Path $filename
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip
           $sizeMb = [Math]::Round((Get-Item $zip).Length / 1MB, 1)
@@ -286,6 +275,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ${{ steps.locate.outputs.path }}
             ${{ steps.portable.outputs.path }}
           generate_release_notes: true
