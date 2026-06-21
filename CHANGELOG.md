@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.12](https://github.com/lpalokan/bmad-manager/compare/v0.1.11...v0.1.12) (2026-06-21)
+
+
+### Bug Fixes
+
+* show Update button for git-sourced projects behind the latest ([8251449](https://github.com/lpalokan/bmad-manager/commit/8251449dd62bf42e6ef2e49aee4c556b9d061b37))
+* show Update button for git-sourced projects behind the latest ([670213e](https://github.com/lpalokan/bmad-manager/commit/670213e5a62870bd854aa04604be7ed6262d6bf7))
+
 ## [0.1.11](https://github.com/lpalokan/bmad-manager/compare/v0.1.10...v0.1.11) (2026-06-21)
 
 
