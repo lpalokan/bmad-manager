@@ -44,7 +44,7 @@ where
 {
     let project_path = project.path.as_path();
     let module_dir = materialise_module(settings)?;
-    let module_root_path = zip_source::module_root(&module_dir);
+    let module_root_path = module_root_for(settings, &module_dir);
 
     // `bmad-method`'s `--custom-source` rejects Windows drive-absolute paths;
     // hand it a project-relative path it can resolve instead (no-op on POSIX).
@@ -105,15 +105,72 @@ fn inject_okf_block(module_root: &Path, project_path: &Path) {
     let _ = agents_file::ensure_managed_section(project_path, "AGENTS.md", OKF_NAMESPACE, trimmed);
 }
 
-/// Materialises the module repo once and reads its `module_version`. Drives
-/// the version check. Best-effort: any failure (offline, git missing,
-/// unreadable repo) yields `None` so the check stays silent.
-pub fn read_latest_repo_module(settings: &AppSettings) -> Option<module_manifest::RepoModule> {
-    let module_dir = materialise_module(settings).ok()?;
-    let module_root = zip_source::module_root(&module_dir);
+/// Materialises the module repo once and reads its `module_version`, emitting
+/// diagnostics through `on_event` (clone/extract outcome, the parsed
+/// code/version, or the reason it couldn't be read). Drives the version check.
+/// The events let `check_for_updates` stream *why* a check came back empty to
+/// the output panel, so a failed check on Windows is diagnosable rather than
+/// indistinguishable from "up to date" — the shape the missing-Update-button
+/// report took. Best-effort: any failure (offline, git missing, unreadable
+/// repo) yields `None`.
+pub fn read_latest_repo_module_logged<F: FnMut(OutputEvent)>(
+    settings: &AppSettings,
+    mut on_event: F,
+) -> Option<module_manifest::RepoModule> {
+    let module_dir = match materialise_module(settings) {
+        Ok(dir) => dir,
+        Err(err) => {
+            emit_diag(
+                &mut on_event,
+                format!("update check: module fetch failed: {err}"),
+            );
+            return None;
+        }
+    };
+    let module_root = module_root_for(settings, &module_dir);
     let repo = module_manifest::read_repo_module(&module_root);
+    match &repo {
+        Some(m) => emit_diag(
+            &mut on_event,
+            format!("update check: latest {} = {}", m.code, m.version),
+        ),
+        None => emit_diag(
+            &mut on_event,
+            format!(
+                "update check: could not read code/module_version from {}/skills/module.yaml",
+                module_root.display()
+            ),
+        ),
+    }
     zip_source::cleanup(&module_dir);
     repo
+}
+
+/// Non-logging convenience wrapper over [`read_latest_repo_module_logged`].
+pub fn read_latest_repo_module(settings: &AppSettings) -> Option<module_manifest::RepoModule> {
+    read_latest_repo_module_logged(settings, |_| {})
+}
+
+/// Resolves the module root inside a freshly materialised source dir. A git
+/// clone's root *is* the module root — the repo content sits at the top level
+/// (see `git_source::clone`) — so it's read directly. Only a zip extract
+/// carries the GitHub "Download ZIP" wrapper folder that
+/// [`zip_source::module_root`] descends into. Applying that descent to a git
+/// clone is wrong: a repo whose sole top-level entry is one directory (e.g.
+/// just `skills/`) gets mistaken for a wrapper and descended into, hiding
+/// `skills/module.yaml` so the version check reads nothing and shows no Update
+/// button.
+fn module_root_for(settings: &AppSettings, module_dir: &Path) -> PathBuf {
+    match settings.module_source_kind {
+        ModuleSourceKind::GitRepo => module_dir.to_path_buf(),
+        ModuleSourceKind::LocalZip => zip_source::module_root(module_dir),
+    }
+}
+
+fn emit_diag<F: FnMut(OutputEvent)>(on_event: &mut F, message: String) {
+    on_event(OutputEvent::Stderr {
+        line: format!("[bmad] {message}"),
+    });
 }
 
 fn materialise_module(settings: &AppSettings) -> Result<PathBuf, ProjectUpdateError> {

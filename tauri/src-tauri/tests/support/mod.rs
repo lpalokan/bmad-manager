@@ -238,4 +238,47 @@ impl TauriWorld {
         git(&["tag", tag]);
         format!("file://{}", repo.display())
     }
+
+    /// Builds a local git repo whose `skills/module.yaml` carries the
+    /// marketing-growth `code` and the given `module_version`, returning a
+    /// `file://` URL for it. Unlike a "Download ZIP" archive, a git clone's
+    /// content sits at the clone *root* (here: only `skills/` at the top
+    /// level), so this drives the exact clone + `read_repo_module` path
+    /// `check_for_updates` runs for a GitHub source — the path PR #83's zip
+    /// fixture never exercised.
+    pub fn build_marketing_growth_git_repo(&mut self, version: &str) -> String {
+        use std::process::Command;
+        let repo = self
+            .ensure_tmp()
+            .to_path_buf()
+            .join(format!("marketing-growth-git-{version}"));
+        let skills = repo.join("skills");
+        std::fs::create_dir_all(&skills).expect("create git repo skills dir");
+        std::fs::write(
+            skills.join("module.yaml"),
+            format!("code: marketing-growth\nmodule_version: {version}\n"),
+        )
+        .expect("write module.yaml");
+
+        let git = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .output()
+                .expect("run git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        git(&["init", "--quiet", "--initial-branch=main"]);
+        git(&["config", "user.email", "test@example.com"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["config", "commit.gpgsign", "false"]);
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", "initial"]);
+        format!("file://{}", repo.display())
+    }
 }

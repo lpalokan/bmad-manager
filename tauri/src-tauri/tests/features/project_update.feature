@@ -53,6 +53,22 @@ Feature: Update existing projects from the bmad-repo
     When I run the version check
     Then the version check reports no projects need an update
 
+  # --- Version check end-to-end against a GIT source (the default on Windows:
+  #     a clone whose module sits at the repo root, not a zip wrapper). This is
+  #     the path the reported missing-Update-button bug actually travels. ---
+
+  Scenario: the version check reads a git source and flags a behind project
+    Given a project "git-behind" with installed module version "2.0.0"
+    And a marketing-growth git source at version "2.0.2"
+    When I run the version check
+    Then the version check reports "git-behind" needs an update
+
+  Scenario: the version check clears a current project against a git source
+    Given a project "git-current" with installed module version "2.0.2"
+    And a marketing-growth git source at version "2.0.2"
+    When I run the version check
+    Then the version check reports no projects need an update
+
   # --- Per-project update (re-install + AGENTS.md refresh) ---
 
   Scenario: updating re-installs and refreshes the bmad AGENTS.md block

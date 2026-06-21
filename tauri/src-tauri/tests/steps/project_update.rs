@@ -74,6 +74,18 @@ async fn module_source_at_version(world: &mut TauriWorld, version: String) {
     world.settings = Some(settings);
 }
 
+#[given(regex = r#"^a marketing-growth git source at version "([^"]+)"$"#)]
+async fn git_module_source_at_version(world: &mut TauriWorld, version: String) {
+    let url = world.build_marketing_growth_git_repo(&version);
+    let root = world.ensure_projects_root();
+    let mut settings = AppSettings::defaults();
+    settings.projects_root = root.to_string_lossy().into_owned();
+    settings.module_source_kind = ModuleSourceKind::GitRepo;
+    settings.module_repo_url = url;
+    settings.module_repo_ref = String::new();
+    world.settings = Some(settings);
+}
+
 #[when("I run the version check")]
 async fn run_version_check(world: &mut TauriWorld) {
     let settings = world.settings.clone().expect("module source prepared");
