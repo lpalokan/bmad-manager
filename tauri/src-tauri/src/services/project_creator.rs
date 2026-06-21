@@ -100,16 +100,22 @@ where
         &project_path.to_string_lossy(),
         cfg!(target_os = "windows"),
     );
+    // `{MODULE_SOURCE}` is the repo URL for a git source (so the installer
+    // records `repoUrl` + a real version) — NOT run through the Windows
+    // relative-path conversion, which is meaningless for a URL. For a zip it's
+    // the local module path, same as `{MODULE_PATH}`.
+    let module_source = module_source_arg(settings, &module_arg);
     let command = init_command::substitute(
         &settings.init_command,
         name,
         &project_path.to_string_lossy(),
+        &module_source,
         &module_arg,
         cfg!(target_os = "windows"),
     );
     emit_diag(
         &mut on_event,
-        format!("custom_source_arg={module_arg} init_command={command}"),
+        format!("module_source={module_source} custom_source_arg={module_arg} init_command={command}"),
     );
 
     let exit_code = command_runner::run(&command, &project_path, &mut on_event).await;
@@ -164,6 +170,21 @@ where
     on_event(OutputEvent::Stderr {
         line: format!("[bmad] {message}"),
     });
+}
+
+/// The `{MODULE_SOURCE}` value: the repo URL (with ref / latest tag resolved)
+/// for a git source so the installer records `repoUrl` + a real version, or the
+/// already-computed local module path for a zip source. Shared by the create
+/// and update flows. Mirrors the Swift `ModuleSource.installerSource` seam.
+pub(crate) fn module_source_arg(settings: &AppSettings, module_arg: &str) -> String {
+    match settings.module_source_kind {
+        ModuleSourceKind::GitRepo => git_source::git_installer_source(
+            &platform::resolve_git_path(),
+            &settings.module_repo_url,
+            &settings.module_repo_ref,
+        ),
+        ModuleSourceKind::LocalZip => module_arg.to_string(),
+    }
 }
 
 async fn materialise_module<F>(

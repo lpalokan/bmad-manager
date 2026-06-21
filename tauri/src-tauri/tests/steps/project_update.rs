@@ -83,6 +83,21 @@ async fn update_settings_fails(world: &mut TauriWorld) {
     set_update_settings(world, zip, "exit 1");
 }
 
+#[given(regex = r#"^git update settings with a module repo tagged "([^"]+)"$"#)]
+async fn git_update_settings(world: &mut TauriWorld, tag: String) {
+    let url = world.build_module_git_repo(&tag);
+    let root = world.ensure_projects_root();
+    let mut settings = AppSettings::defaults();
+    settings.projects_root = root.to_string_lossy().into_owned();
+    settings.module_source_kind = ModuleSourceKind::GitRepo;
+    settings.module_repo_url = url;
+    settings.module_repo_ref = String::new();
+    // Echo the resolved {MODULE_SOURCE} so the test can assert what reaches
+    // `--custom-source` (the repo URL + tag, not a temp clone path).
+    settings.init_command = "echo '{MODULE_SOURCE}' > module-source.txt".to_string();
+    world.settings = Some(settings);
+}
+
 fn set_update_settings(world: &mut TauriWorld, zip: PathBuf, init: &str) {
     let root = world.ensure_projects_root();
     let mut settings = AppSettings::defaults();
@@ -150,6 +165,16 @@ async fn project_file_still_has(world: &mut TauriWorld, rel: String, content: St
     let project = world.update_target.as_ref().expect("project seeded");
     let got = std::fs::read_to_string(project.join(&rel)).expect("user file present");
     assert_eq!(got, content);
+}
+
+#[then(regex = r#"^the project file "([^"]+)" contains "([^"]+)"$"#)]
+async fn project_file_contains(world: &mut TauriWorld, rel: String, needle: String) {
+    let project = world.update_target.as_ref().expect("project seeded");
+    let got = std::fs::read_to_string(project.join(&rel)).expect("file present");
+    assert!(
+        got.contains(&needle),
+        "expected {rel} to contain {needle:?}, got {got:?}"
+    );
 }
 
 #[then("the project folder still exists")]

@@ -9,7 +9,7 @@ final class AppSettingsTests: XCTestCase {
                       "projectsRoot should be tilde-expanded to an absolute path")
         XCTAssertFalse(defaults.projectsRoot.contains("~"))
         XCTAssertTrue(defaults.initCommand.contains("{PROJECT_PATH}"))
-        XCTAssertTrue(defaults.initCommand.contains("{MODULE_PATH}"))
+        XCTAssertTrue(defaults.initCommand.contains("{MODULE_SOURCE}"))
         XCTAssertEqual(defaults.moduleSourceKind, .gitRepo)
         XCTAssertEqual(defaults.moduleRepoURL, "https://github.com/lpalokan/bmad-marketing-growth")
         XCTAssertEqual(defaults.moduleRepoRef, "")
@@ -149,8 +149,29 @@ final class AppSettingsTests: XCTestCase {
                       "headless install must target an explicit directory")
         XCTAssertTrue(command.contains("{PROJECT_PATH}"),
                       "init command must thread the project path through")
-        XCTAssertTrue(command.contains("{MODULE_PATH}"),
-                      "init command must thread the unzipped module path through")
+        XCTAssertTrue(command.contains("'{MODULE_SOURCE}'"),
+                      "init command must pass the module source (URL for git) to --custom-source")
+        XCTAssertFalse(command.contains("{MODULE_PATH}"),
+                       "the default must use {MODULE_SOURCE} so git installs record the repo URL")
+    }
+
+    func testLegacyInitCommandWithModulePathStillDecodes() throws {
+        // Settings.json written before {MODULE_SOURCE} keeps its persisted
+        // {MODULE_PATH} command verbatim (no decoder migration); the user opts
+        // in to the new behaviour via "Reset to defaults".
+        let legacy = """
+        {
+            "projectsRoot": "/tmp/p",
+            "moduleZipPath": "",
+            "initCommand": "npx bmad-method install --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }
+        """
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: Data(legacy.utf8))
+        XCTAssertEqual(
+            decoded.initCommand,
+            "npx bmad-method install --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'")
     }
 
     func testCodableRoundTripLocalZip() throws {

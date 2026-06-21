@@ -19,7 +19,9 @@ enum ZipError: LocalizedError {
 struct LocalZipModuleSource: ModuleSource {
     let zipPath: String
 
-    func withModuleRoot<T>(_ body: (URL) async throws -> T) async throws -> T {
+    func withModuleRoot<T>(
+        _ body: (_ moduleRoot: URL, _ installerSource: String) async throws -> T
+    ) async throws -> T {
         let trimmed = zipPath.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
             throw ZipError.notConfigured
@@ -27,7 +29,9 @@ struct LocalZipModuleSource: ModuleSource {
         let tmpDir = try LocalZipModuleSource.extract(zipPath: trimmed)
         defer { LocalZipModuleSource.cleanup(tmpDir) }
         let root = LocalZipModuleSource.moduleRoot(in: tmpDir)
-        return try await body(root)
+        // A local zip has no remote URL — the installer source is the extracted
+        // module root, so the install is (correctly) recorded as a local source.
+        return try await body(root, root.path)
     }
 
     // MARK: - Internals (also exercised directly by LocalZipModuleSourceTests)

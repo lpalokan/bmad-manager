@@ -123,7 +123,7 @@ final class LocalZipModuleSourceTests: XCTestCase {
         XCTAssertEqual(zip.terminationStatus, 0)
 
         var captured: URL?
-        try await LocalZipModuleSource(zipPath: zipURL.path).withModuleRoot { root in
+        try await LocalZipModuleSource(zipPath: zipURL.path).withModuleRoot { root, _ in
             captured = root
             XCTAssertEqual(root.lastPathComponent, "repo-main")
             XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("hello.txt").path))
@@ -131,6 +131,29 @@ final class LocalZipModuleSourceTests: XCTestCase {
         if let captured {
             XCTAssertFalse(FileManager.default.fileExists(atPath: captured.deletingLastPathComponent().path),
                           "temp dir should be cleaned up")
+        }
+    }
+
+    func testWithModuleRootYieldsModuleRootAsInstallerSource() async throws {
+        // A local zip has no remote URL — the installer source must be the
+        // extracted local module root, so the install is recorded as local.
+        let sourceDir = workDir.appendingPathComponent("payload", isDirectory: true)
+        let wrapper = sourceDir.appendingPathComponent("repo-main", isDirectory: true)
+        try FileManager.default.createDirectory(at: wrapper, withIntermediateDirectories: true)
+        try "hi".write(to: wrapper.appendingPathComponent("hello.txt"), atomically: true, encoding: .utf8)
+
+        let zipURL = workDir.appendingPathComponent("installer-source.zip")
+        let zip = Process()
+        zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        zip.arguments = ["-q", "-r", zipURL.path, "repo-main"]
+        zip.currentDirectoryURL = sourceDir
+        try zip.run()
+        zip.waitUntilExit()
+        XCTAssertEqual(zip.terminationStatus, 0)
+
+        try await LocalZipModuleSource(zipPath: zipURL.path).withModuleRoot { root, installerSource in
+            XCTAssertEqual(installerSource, root.path,
+                           "installer source for a zip is the extracted module root path")
         }
     }
 
@@ -149,7 +172,7 @@ final class LocalZipModuleSourceTests: XCTestCase {
         XCTAssertEqual(zip.terminationStatus, 0)
 
         var captured: URL?
-        try await LocalZipModuleSource(zipPath: zipURL.path).withModuleRoot { root in
+        try await LocalZipModuleSource(zipPath: zipURL.path).withModuleRoot { root, _ in
             captured = root
             XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("flat.txt").path))
         }
@@ -176,7 +199,7 @@ final class LocalZipModuleSourceTests: XCTestCase {
         enum TestError: Error { case intentional }
         var tempDirExistsAfterThrow = false
         do {
-            try await LocalZipModuleSource(zipPath: zipURL.path).withModuleRoot { root in
+            try await LocalZipModuleSource(zipPath: zipURL.path).withModuleRoot { root, _ in
                 tempDirExistsAfterThrow = FileManager.default.fileExists(atPath: root.deletingLastPathComponent().path)
                 throw TestError.intentional
             }
@@ -203,7 +226,7 @@ final class LocalZipModuleSourceTests: XCTestCase {
         XCTAssertEqual(zip.terminationStatus, 0)
 
         var captured: URL?
-        try await LocalZipModuleSource(zipPath: zipURL.path).withModuleRoot { root in
+        try await LocalZipModuleSource(zipPath: zipURL.path).withModuleRoot { root, _ in
             captured = root
         }
         if let captured {
@@ -216,7 +239,7 @@ final class LocalZipModuleSourceTests: XCTestCase {
         let missing = "/tmp/bmad-manager-missing-\(UUID().uuidString).zip"
         var closureCalled = false
         do {
-            try await LocalZipModuleSource(zipPath: missing).withModuleRoot { _ in
+            try await LocalZipModuleSource(zipPath: missing).withModuleRoot { _, _ in
                 closureCalled = true
             }
             XCTFail("expected throw")
@@ -230,7 +253,7 @@ final class LocalZipModuleSourceTests: XCTestCase {
     func testWithModuleRootEmptyZipPath() async throws {
         var closureCalled = false
         do {
-            try await LocalZipModuleSource(zipPath: "   ").withModuleRoot { _ in
+            try await LocalZipModuleSource(zipPath: "   ").withModuleRoot { _, _ in
                 closureCalled = true
             }
             XCTFail("expected throw")

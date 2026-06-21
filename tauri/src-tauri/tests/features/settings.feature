@@ -10,7 +10,7 @@ Feature: AppSettings serialization and defaults
     When I read the default settings
     Then the projects root is non-empty and absolute
     And the init command contains "{PROJECT_PATH}"
-    And the init command contains "{MODULE_PATH}"
+    And the init command contains "{MODULE_SOURCE}"
     And the module source kind is "gitRepo"
     And the project sort order is "nameAscending"
     And the claude command is "claude"
