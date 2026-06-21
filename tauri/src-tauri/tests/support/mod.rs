@@ -55,6 +55,9 @@ pub struct TauriWorld {
     pub update_target: Option<PathBuf>,
     /// Result of the most recent `is_project_stale` check.
     pub update_available: Option<bool>,
+    /// Names of the projects the most recent end-to-end version check
+    /// (`read_latest_repo_module` + stale filter) flagged as behind.
+    pub stale_projects: Option<Vec<String>>,
 }
 
 impl TauriWorld {
@@ -145,6 +148,32 @@ impl TauriWorld {
             )
             .expect("start zip entry");
         writer.write_all(b"name: fixture").expect("write zip entry");
+        writer.finish().expect("finish zip");
+        path
+    }
+
+    /// Builds a module zip whose `skills/module.yaml` carries the
+    /// marketing-growth `code` and the given `module_version`, wrapped in a
+    /// single top-level folder (the GitHub "Download ZIP" layout that
+    /// `zip_source::module_root` descends into). Lets version-check scenarios
+    /// drive `read_latest_repo_module` against a real local source the same way
+    /// `check_for_updates` does in production.
+    pub fn build_marketing_growth_module_zip(&mut self, version: &str) -> PathBuf {
+        use std::io::Write as _;
+        let path = self
+            .ensure_tmp()
+            .join(format!("marketing-growth-{version}.zip"));
+        let file = std::fs::File::create(&path).expect("create zip fixture");
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file(
+                "module/skills/module.yaml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .expect("start zip entry");
+        writer
+            .write_all(format!("code: marketing-growth\nmodule_version: {version}\n").as_bytes())
+            .expect("write zip entry");
         writer.finish().expect("finish zip");
         path
     }

@@ -31,6 +31,28 @@ Feature: Update existing projects from the bmad-repo
     When I check it against repo module version "main"
     Then the project reports no update available
 
+  # --- Version check end-to-end (reads the latest version from the module
+  #     source, the path `check_for_updates` runs and the one a behind
+  #     project travels before its Update button appears) ---
+
+  Scenario: the version check reads the module source and flags a behind project
+    Given a project "behind" with installed module version "2.0.0"
+    And a marketing-growth module source at version "2.0.2"
+    When I run the version check
+    Then the version check reports "behind" needs an update
+
+  Scenario: the version check flags a branch-pinned project against a real semver source
+    Given a project "pinned" with installed module version "main"
+    And a marketing-growth module source at version "2.0.2"
+    When I run the version check
+    Then the version check reports "pinned" needs an update
+
+  Scenario: the version check clears a project already at the latest version
+    Given a project "current" with installed module version "2.0.2"
+    And a marketing-growth module source at version "2.0.2"
+    When I run the version check
+    Then the version check reports no projects need an update
+
   # --- Per-project update (re-install + AGENTS.md refresh) ---
 
   Scenario: updating re-installs and refreshes the bmad AGENTS.md block

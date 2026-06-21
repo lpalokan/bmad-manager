@@ -4,7 +4,7 @@ use cucumber::{given, then, when};
 
 use bmad_manager_lib::models::{AppSettings, ModuleSourceKind, ProjectItem};
 use bmad_manager_lib::services::module_manifest::{self, RepoModule};
-use bmad_manager_lib::services::{agents_file, project_updater};
+use bmad_manager_lib::services::{agents_file, project_service, project_updater};
 
 use crate::support::TauriWorld;
 
@@ -54,6 +54,61 @@ async fn reports_update_available(world: &mut TauriWorld) {
 #[then("the project reports no update available")]
 async fn reports_no_update(world: &mut TauriWorld) {
     assert_eq!(world.update_available, Some(false));
+}
+
+// --- Version check end-to-end (latest read from the module source) ------
+//
+// Unlike the steps above, which call `is_project_stale` with a hand-built
+// `RepoModule`, these drive the real `read_latest_repo_module` +
+// stale-filter pipeline that `commands::check_for_updates` runs — the path a
+// behind project actually travels before its Update button lights up.
+
+#[given(regex = r#"^a marketing-growth module source at version "([^"]+)"$"#)]
+async fn module_source_at_version(world: &mut TauriWorld, version: String) {
+    let zip = world.build_marketing_growth_module_zip(&version);
+    let root = world.ensure_projects_root();
+    let mut settings = AppSettings::defaults();
+    settings.projects_root = root.to_string_lossy().into_owned();
+    settings.module_source_kind = ModuleSourceKind::LocalZip;
+    settings.module_zip_path = zip.to_string_lossy().into_owned();
+    world.settings = Some(settings);
+}
+
+#[when("I run the version check")]
+async fn run_version_check(world: &mut TauriWorld) {
+    let settings = world.settings.clone().expect("module source prepared");
+    // Mirror `commands::check_for_updates`: read the latest version from the
+    // configured source once, then flag every project under the root behind it.
+    let stale = match project_updater::read_latest_repo_module(&settings) {
+        Some(repo) => {
+            let root = PathBuf::from(&settings.projects_root);
+            project_service::list_projects(&root, settings.project_sort_order)
+                .into_iter()
+                .filter(|p| module_manifest::is_project_stale(&p.path, &repo))
+                .map(|p| p.name)
+                .collect()
+        }
+        None => Vec::new(),
+    };
+    world.stale_projects = Some(stale);
+}
+
+#[then(regex = r#"^the version check reports "([^"]+)" needs an update$"#)]
+async fn version_check_flags(world: &mut TauriWorld, name: String) {
+    let stale = world.stale_projects.as_ref().expect("version check ran");
+    assert!(
+        stale.contains(&name),
+        "expected {name:?} to be flagged stale, got {stale:?}"
+    );
+}
+
+#[then("the version check reports no projects need an update")]
+async fn version_check_clears(world: &mut TauriWorld) {
+    let stale = world.stale_projects.as_ref().expect("version check ran");
+    assert!(
+        stale.is_empty(),
+        "expected no stale projects, got {stale:?}"
+    );
 }
 
 // --- Per-project update -------------------------------------------------
