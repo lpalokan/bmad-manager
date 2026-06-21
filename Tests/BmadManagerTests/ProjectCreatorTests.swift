@@ -6,16 +6,20 @@ import XCTest
 /// tests stay focused on `ProjectCreator`'s own behaviour.
 private struct FakeModuleSource: ModuleSource {
     let moduleRoot: URL
+    let installerSource: String
     let errorBeforeBody: Error?
 
-    init(moduleRoot: URL, errorBeforeBody: Error? = nil) {
+    init(moduleRoot: URL, installerSource: String? = nil, errorBeforeBody: Error? = nil) {
         self.moduleRoot = moduleRoot
+        self.installerSource = installerSource ?? moduleRoot.path
         self.errorBeforeBody = errorBeforeBody
     }
 
-    func withModuleRoot<T>(_ body: (URL) async throws -> T) async throws -> T {
+    func withModuleRoot<T>(
+        _ body: (_ moduleRoot: URL, _ installerSource: String) async throws -> T
+    ) async throws -> T {
         if let errorBeforeBody { throw errorBeforeBody }
-        return try await body(moduleRoot)
+        return try await body(moduleRoot, installerSource)
     }
 }
 
@@ -171,6 +175,31 @@ final class ProjectCreatorTests: XCTestCase {
         XCTAssertTrue(contents.contains(project.url.path))
         XCTAssertTrue(contents.contains("subst-project"))
         XCTAssertTrue(contents.contains(moduleRoot.path))
+    }
+
+    func testModuleSourcePlaceholderSubstitutesInstallerSource() async throws {
+        // `{MODULE_SOURCE}` carries the installer-source string (a GitHub URL
+        // for the git source), distinct from the local `{MODULE_PATH}`.
+        let installerSource = "https://github.com/o/r@v2.0.2"
+        let settings = makeSettings(
+            initCommand: "echo '{MODULE_SOURCE}' > marker.txt && echo '{MODULE_PATH}' >> marker.txt"
+        )
+        let creator = makeCreator(
+            source: FakeModuleSource(moduleRoot: moduleRoot, installerSource: installerSource))
+        let project = try await creator.create(
+            name: "module-source-project",
+            settings: settings
+        ) { command, cwd in
+            let (_, exitCode) = ShellProcess.run(command: command, cwd: cwd)
+            return await exitCode.value
+        }
+
+        let contents = try String(
+            contentsOf: project.url.appendingPathComponent("marker.txt"), encoding: .utf8)
+        XCTAssertTrue(contents.contains(installerSource),
+                      "{MODULE_SOURCE} should expand to the installer-source URL")
+        XCTAssertTrue(contents.contains(moduleRoot.path),
+                      "{MODULE_PATH} should still expand to the local module root")
     }
 
     func testFailureCleanupOnNonZeroExit() async throws {

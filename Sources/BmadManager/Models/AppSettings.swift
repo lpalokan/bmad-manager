@@ -80,15 +80,19 @@ struct AppSettings: Codable, Equatable {
         // marketing-growth bundle via `--custom-source` so its modules show
         // up as proper BMad modules (not just files dropped on the project).
         //
-        // If you upgrade an existing install, hit "Reset to defaults" in
-        // Settings so the persisted command picks up these flags.
+        // `{MODULE_SOURCE}` is the GitHub repo URL for the git source (so the
+        // installer records `repoUrl` + a real version) or the extracted local
+        // module path for the zip source. If you upgrade an existing install,
+        // hit "Reset to defaults" in Settings so the persisted command picks up
+        // these flags (a settings.json written before this change keeps the old
+        // `{MODULE_PATH}` command until then).
         AppSettings(
             projectsRoot: ("~/Projects" as NSString).expandingTildeInPath,
             moduleSourceKind: .gitRepo,
             moduleRepoURL: AppSettings.defaultModuleRepoURL,
             moduleRepoRef: "",
             moduleZipPath: "",
-            initCommand: "npx bmad-method install --yes --modules bmm,bmb,cis --tools claude-code,opencode,pi,codex --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'",
+            initCommand: "npx bmad-method install --yes --modules bmm,bmb,cis --tools claude-code,opencode,pi,codex --custom-source '{MODULE_SOURCE}' --directory '{PROJECT_PATH}'",
             claudeCommand: "claude",
             opencodeCommand: "opencode",
             piCommand: "pi",

@@ -68,3 +68,13 @@ Feature: Update existing projects from the bmad-repo
     When I update the project
     Then the update fails
     And the project folder still exists
+
+  # --- Git source: the repo URL (with resolved tag) reaches --custom-source ---
+
+  Scenario: a git-source update passes the repo URL and latest tag to custom-source
+    Given an existing project "git-proj" to update
+    And git update settings with a module repo tagged "v2.0.2"
+    When I update the project
+    Then the update succeeds
+    And the project file "module-source.txt" contains "@v2.0.2"
+    And the project file "module-source.txt" contains "file://"

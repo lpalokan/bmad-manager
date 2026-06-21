@@ -8,16 +8,20 @@ import XCTest
 /// partial-state/failure behaviour is pinned.
 private struct FakeModuleSource: ModuleSource {
     let moduleRoot: URL
+    let installerSource: String
     let errorBeforeBody: Error?
 
-    init(moduleRoot: URL, errorBeforeBody: Error? = nil) {
+    init(moduleRoot: URL, installerSource: String? = nil, errorBeforeBody: Error? = nil) {
         self.moduleRoot = moduleRoot
+        self.installerSource = installerSource ?? moduleRoot.path
         self.errorBeforeBody = errorBeforeBody
     }
 
-    func withModuleRoot<T>(_ body: (URL) async throws -> T) async throws -> T {
+    func withModuleRoot<T>(
+        _ body: (_ moduleRoot: URL, _ installerSource: String) async throws -> T
+    ) async throws -> T {
         if let errorBeforeBody { throw errorBeforeBody }
-        return try await body(moduleRoot)
+        return try await body(moduleRoot, installerSource)
     }
 }
 
@@ -116,6 +120,24 @@ final class ProjectUpdaterTests: XCTestCase {
             contentsOf: project.url.appendingPathComponent("marker.txt"), encoding: .utf8)
         XCTAssertTrue(contents.contains(project.url.path))
         XCTAssertTrue(contents.contains("subst"))
+        XCTAssertTrue(contents.contains(moduleRoot.path))
+    }
+
+    func testUpdateSubstitutesModuleSourcePlaceholder() async throws {
+        let project = try makeProject("module-source")
+        let installerSource = "https://github.com/o/r@v2.0.2"
+        let settings = makeSettings(
+            initCommand: "echo '{MODULE_SOURCE}' > marker.txt && echo '{MODULE_PATH}' >> marker.txt")
+        let updater = makeUpdater(
+            source: FakeModuleSource(moduleRoot: moduleRoot, installerSource: installerSource))
+
+        try await updater.update(project: project, settings: settings) { command, cwd in
+            await self.realRun(command, cwd)
+        }
+
+        let contents = try String(
+            contentsOf: project.url.appendingPathComponent("marker.txt"), encoding: .utf8)
+        XCTAssertTrue(contents.contains(installerSource))
         XCTAssertTrue(contents.contains(moduleRoot.path))
     }
 

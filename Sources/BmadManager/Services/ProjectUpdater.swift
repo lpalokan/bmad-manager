@@ -40,9 +40,10 @@ struct ProjectUpdater {
         let source = moduleSourceFor(settings)
         let projectURL = project.url
 
-        try await source.withModuleRoot { moduleRoot in
+        try await source.withModuleRoot { moduleRoot, installerSource in
             let command = settings.initCommand
                 .replacingOccurrences(of: "{PROJECT_PATH}", with: projectURL.path)
+                .replacingOccurrences(of: "{MODULE_SOURCE}", with: installerSource)
                 .replacingOccurrences(of: "{MODULE_PATH}", with: moduleRoot.path)
                 .replacingOccurrences(of: "{PROJECT_NAME}", with: project.name)
 

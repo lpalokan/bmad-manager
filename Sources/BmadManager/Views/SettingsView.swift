@@ -149,7 +149,7 @@ struct SettingsView: View {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(Color.gray.opacity(0.3))
                     )
-                Text("Placeholders: {PROJECT_PATH}, {MODULE_PATH}, {PROJECT_NAME}")
+                Text("Placeholders: {PROJECT_PATH}, {MODULE_SOURCE}, {MODULE_PATH}, {PROJECT_NAME}")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

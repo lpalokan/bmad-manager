@@ -177,7 +177,7 @@ final class ProjectCoordinator: ObservableObject {
     /// version check shouldn't nag. Reads `projects`, so call after `refresh`.
     func checkForUpdates(settings: AppSettings) async {
         let source = moduleSourceFor(settings)
-        let repoModule = try? await source.withModuleRoot { moduleRoot in
+        let repoModule = try? await source.withModuleRoot { moduleRoot, _ in
             ModuleManifest.readRepoModule(atModuleRoot: moduleRoot)
         }
         guard let repoModule = repoModule.flatMap({ $0 }) else {

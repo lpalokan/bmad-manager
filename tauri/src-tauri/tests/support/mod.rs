@@ -171,4 +171,42 @@ impl TauriWorld {
         writer.finish().expect("finish zip");
         path
     }
+
+    /// Builds a local git repository (with `skills/module.yaml` and a single
+    /// tag) and returns a `file://` URL. Lets git-source scenarios run fully
+    /// offline: both the clone and the `git ls-remote --tags` latest-tag
+    /// resolution work against a local file repo.
+    pub fn build_module_git_repo(&mut self, tag: &str) -> String {
+        use std::process::Command;
+        let repo = self.ensure_tmp().to_path_buf().join("module-git-repo");
+        let skills = repo.join("skills");
+        std::fs::create_dir_all(&skills).expect("create git repo skills dir");
+        std::fs::write(
+            skills.join("module.yaml"),
+            "code: marketing-growth\nmodule_version: 2.0.2\n",
+        )
+        .expect("write module.yaml");
+
+        let git = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .output()
+                .expect("run git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        git(&["init", "--quiet", "--initial-branch=main"]);
+        git(&["config", "user.email", "test@example.com"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["config", "commit.gpgsign", "false"]);
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", "initial"]);
+        git(&["tag", tag]);
+        format!("file://{}", repo.display())
+    }
 }

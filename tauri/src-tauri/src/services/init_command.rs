@@ -1,24 +1,33 @@
-/// Substitutes the `{PROJECT_NAME}`, `{PROJECT_PATH}`, and `{MODULE_PATH}`
-/// placeholders in an init-command template.
+/// Substitutes the `{PROJECT_NAME}`, `{PROJECT_PATH}`, `{MODULE_SOURCE}`, and
+/// `{MODULE_PATH}` placeholders in an init-command template.
 ///
-/// On Windows, the single-quoted forms `'{MODULE_PATH}'` /
-/// `'{PROJECT_PATH}'` (which the Swift default writes for POSIX shells)
-/// are rewritten to double-quoted forms because `cmd.exe` does not honour
-/// single quotes. The rewrite happens at substitution time so the same
-/// `settings.json` round-trips across operating systems.
+/// `{MODULE_SOURCE}` is the value handed to `--custom-source`: the repo URL for
+/// a git source (so the installer records `repoUrl` + a real version) or the
+/// local module path for a zip source. `{MODULE_PATH}` is always the local
+/// module path; it is retained so settings.json files written before
+/// `{MODULE_SOURCE}` keep working.
+///
+/// On Windows, the single-quoted forms `'{MODULE_SOURCE}'` / `'{MODULE_PATH}'` /
+/// `'{PROJECT_PATH}'` (which the Swift default writes for POSIX shells) are
+/// rewritten to double-quoted forms because `cmd.exe` does not honour single
+/// quotes. The rewrite happens at substitution time so the same `settings.json`
+/// round-trips across operating systems.
 pub fn substitute(
     template: &str,
     project_name: &str,
     project_path: &str,
+    module_source: &str,
     module_path: &str,
     windows: bool,
 ) -> String {
     let mut s = template.to_string();
     if windows {
+        s = s.replace("'{MODULE_SOURCE}'", "\"{MODULE_SOURCE}\"");
         s = s.replace("'{MODULE_PATH}'", "\"{MODULE_PATH}\"");
         s = s.replace("'{PROJECT_PATH}'", "\"{PROJECT_PATH}\"");
     }
     s = s.replace("{PROJECT_PATH}", project_path);
+    s = s.replace("{MODULE_SOURCE}", module_source);
     s = s.replace("{MODULE_PATH}", module_path);
     s = s.replace("{PROJECT_NAME}", project_name);
     s
@@ -96,15 +105,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn substitutes_all_three_placeholders() {
+    fn substitutes_all_placeholders() {
         let out = substitute(
-            "init {PROJECT_NAME} at {PROJECT_PATH} from {MODULE_PATH}",
+            "init {PROJECT_NAME} at {PROJECT_PATH} from {MODULE_SOURCE} ({MODULE_PATH})",
             "demo",
             "/p/demo",
+            "https://github.com/o/r@v1",
             "/m",
             false,
         );
-        assert_eq!(out, "init demo at /p/demo from /m");
+        assert_eq!(
+            out,
+            "init demo at /p/demo from https://github.com/o/r@v1 (/m)"
+        );
+    }
+
+    #[test]
+    fn substitutes_module_source_placeholder_on_posix() {
+        let out = substitute(
+            "npx bmad install --custom-source '{MODULE_SOURCE}' --directory '{PROJECT_PATH}'",
+            "demo",
+            "/p/demo",
+            "https://github.com/o/r@v2.0.2",
+            "/m",
+            false,
+        );
+        assert_eq!(
+            out,
+            "npx bmad install --custom-source 'https://github.com/o/r@v2.0.2' --directory '/p/demo'"
+        );
+    }
+
+    #[test]
+    fn rewrites_module_source_single_quotes_to_double_on_windows() {
+        // The URL form carries no spaces, but the quote rewrite still applies
+        // (keyed on the literal token) so the command is valid under cmd.exe.
+        let out = substitute(
+            "npx bmad install --custom-source '{MODULE_SOURCE}' --directory '{PROJECT_PATH}'",
+            "demo",
+            "C:\\p\\demo",
+            "https://github.com/o/r",
+            "C:\\m",
+            true,
+        );
+        assert_eq!(
+            out,
+            "npx bmad install --custom-source \"https://github.com/o/r\" --directory \"C:\\p\\demo\""
+        );
     }
 
     #[test]
@@ -113,6 +160,7 @@ mod tests {
             "npx bmad install --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'",
             "demo",
             "C:\\p\\demo",
+            "ignored",
             "C:\\m",
             true,
         );
@@ -128,6 +176,7 @@ mod tests {
             "npx bmad install --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'",
             "demo",
             "/p/demo",
+            "ignored",
             "/m",
             false,
         );

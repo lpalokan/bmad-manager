@@ -53,10 +53,14 @@ where
         &project_path.to_string_lossy(),
         cfg!(target_os = "windows"),
     );
+    // `{MODULE_SOURCE}`: repo URL for a git source (installer records repoUrl +
+    // a real version), local module path for a zip source. See project_creator.
+    let module_source = crate::services::project_creator::module_source_arg(settings, &module_arg);
     let command = init_command::substitute(
         &settings.init_command,
         &project.name,
         &project_path.to_string_lossy(),
+        &module_source,
         &module_arg,
         cfg!(target_os = "windows"),
     );

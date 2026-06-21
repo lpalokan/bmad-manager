@@ -186,7 +186,7 @@ impl AppSettings {
             module_repo_url: DEFAULT_MODULE_REPO_URL.to_string(),
             module_repo_ref: String::new(),
             module_zip_path: String::new(),
-            init_command: "npx bmad-method install --yes --modules bmm,bmb,cis --tools claude-code,opencode,pi,codex --custom-source '{MODULE_PATH}' --directory '{PROJECT_PATH}'".to_string(),
+            init_command: "npx bmad-method install --yes --modules bmm,bmb,cis --tools claude-code,opencode,pi,codex --custom-source '{MODULE_SOURCE}' --directory '{PROJECT_PATH}'".to_string(),
             claude_command: "claude".to_string(),
             opencode_command: "opencode".to_string(),
             pi_command: "pi".to_string(),
@@ -306,7 +306,8 @@ mod tests {
         assert!(!d.projects_root.is_empty());
         assert!(std::path::Path::new(&d.projects_root).is_absolute());
         assert!(d.init_command.contains("{PROJECT_PATH}"));
-        assert!(d.init_command.contains("{MODULE_PATH}"));
+        assert!(d.init_command.contains("{MODULE_SOURCE}"));
+        assert!(!d.init_command.contains("{MODULE_PATH}"));
         assert_eq!(d.module_source_kind, ModuleSourceKind::GitRepo);
         assert_eq!(d.module_repo_url, DEFAULT_MODULE_REPO_URL);
         assert_eq!(d.module_repo_ref, "");
@@ -335,7 +336,7 @@ mod tests {
             "--custom-source",
             "--directory",
             "{PROJECT_PATH}",
-            "{MODULE_PATH}",
+            "{MODULE_SOURCE}",
         ] {
             assert!(
                 cmd.contains(needle),

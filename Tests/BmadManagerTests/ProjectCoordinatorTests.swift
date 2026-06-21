@@ -40,9 +40,11 @@ private struct FakeModuleSource: ModuleSource {
     let moduleRoot: URL
     var errorBeforeBody: Error? = nil
 
-    func withModuleRoot<T>(_ body: (URL) async throws -> T) async throws -> T {
+    func withModuleRoot<T>(
+        _ body: (_ moduleRoot: URL, _ installerSource: String) async throws -> T
+    ) async throws -> T {
         if let errorBeforeBody { throw errorBeforeBody }
-        return try await body(moduleRoot)
+        return try await body(moduleRoot, moduleRoot.path)
     }
 }
 
