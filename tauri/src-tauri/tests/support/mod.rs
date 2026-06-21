@@ -55,6 +55,9 @@ pub struct TauriWorld {
     pub update_target: Option<PathBuf>,
     /// Result of the most recent `is_project_stale` check.
     pub update_available: Option<bool>,
+    /// Names of the projects the most recent end-to-end version check
+    /// (`read_latest_repo_module` + stale filter) flagged as behind.
+    pub stale_projects: Option<Vec<String>>,
 }
 
 impl TauriWorld {
@@ -149,6 +152,32 @@ impl TauriWorld {
         path
     }
 
+    /// Builds a module zip whose `skills/module.yaml` carries the
+    /// marketing-growth `code` and the given `module_version`, wrapped in a
+    /// single top-level folder (the GitHub "Download ZIP" layout that
+    /// `zip_source::module_root` descends into). Lets version-check scenarios
+    /// drive `read_latest_repo_module` against a real local source the same way
+    /// `check_for_updates` does in production.
+    pub fn build_marketing_growth_module_zip(&mut self, version: &str) -> PathBuf {
+        use std::io::Write as _;
+        let path = self
+            .ensure_tmp()
+            .join(format!("marketing-growth-{version}.zip"));
+        let file = std::fs::File::create(&path).expect("create zip fixture");
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file(
+                "module/skills/module.yaml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .expect("start zip entry");
+        writer
+            .write_all(format!("code: marketing-growth\nmodule_version: {version}\n").as_bytes())
+            .expect("write zip entry");
+        writer.finish().expect("finish zip");
+        path
+    }
+
     /// Like [`build_module_zip`], but also writes a
     /// `module/templates/agents-okf-block.md` so update scenarios can exercise
     /// the conditional okf-block injection.
@@ -207,6 +236,49 @@ impl TauriWorld {
         git(&["add", "."]);
         git(&["commit", "--quiet", "-m", "initial"]);
         git(&["tag", tag]);
+        format!("file://{}", repo.display())
+    }
+
+    /// Builds a local git repo whose `skills/module.yaml` carries the
+    /// marketing-growth `code` and the given `module_version`, returning a
+    /// `file://` URL for it. Unlike a "Download ZIP" archive, a git clone's
+    /// content sits at the clone *root* (here: only `skills/` at the top
+    /// level), so this drives the exact clone + `read_repo_module` path
+    /// `check_for_updates` runs for a GitHub source — the path PR #83's zip
+    /// fixture never exercised.
+    pub fn build_marketing_growth_git_repo(&mut self, version: &str) -> String {
+        use std::process::Command;
+        let repo = self
+            .ensure_tmp()
+            .to_path_buf()
+            .join(format!("marketing-growth-git-{version}"));
+        let skills = repo.join("skills");
+        std::fs::create_dir_all(&skills).expect("create git repo skills dir");
+        std::fs::write(
+            skills.join("module.yaml"),
+            format!("code: marketing-growth\nmodule_version: {version}\n"),
+        )
+        .expect("write module.yaml");
+
+        let git = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .output()
+                .expect("run git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        git(&["init", "--quiet", "--initial-branch=main"]);
+        git(&["config", "user.email", "test@example.com"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["config", "commit.gpgsign", "false"]);
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", "initial"]);
         format!("file://{}", repo.display())
     }
 }
