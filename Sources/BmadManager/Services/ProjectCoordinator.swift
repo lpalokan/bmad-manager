@@ -262,7 +262,7 @@ final class ProjectCoordinator: ObservableObject {
         case .app:
             do {
                 try appLauncher.open(
-                    bundleIdentifier: agent.bundleIdentifier,
+                    agent: agent,
                     projectPath: project.url.path
                 )
                 errorMessage = nil

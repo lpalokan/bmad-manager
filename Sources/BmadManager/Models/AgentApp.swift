@@ -22,6 +22,19 @@ enum AgentApp: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Filenames of the desktop app bundle as it lands in the standard
+    /// Applications folders. Used as a fallback when LaunchServices can't
+    /// resolve `bundleIdentifier` — e.g. a side-loaded Codex GUI whose real
+    /// `CFBundleIdentifier` differs from the stable key we hardcode, which
+    /// otherwise makes detection report "not installed" while
+    /// `/Applications/Codex.app` is sitting right there. See [[AppDetector]].
+    var appBundleNames: [String] {
+        switch self {
+        case .claude: return ["Claude.app"]
+        case .codex:  return ["Codex.app"]
+        }
+    }
+
     /// Human-facing name of the desktop app — e.g. for Settings captions
     /// ("Claude app detected"). The CLI keeps its own label in the UI.
     var appDisplayName: String {
@@ -40,7 +53,45 @@ enum AgentApp: String, CaseIterable, Identifiable {
     var appLaunchNote: String {
         switch self {
         case .claude: return "Opens the Claude desktop app — Code is a tab there, alongside Chat and Cowork."
-        case .codex:  return "Opens the project in the Codex app."
+        case .codex:  return "Opens the project in the Codex app — if Codex isn't running it's launched first, then switched to the project."
+        }
+    }
+
+    /// Deep link that opens this app *on* `projectPath` as its active
+    /// workspace, or `nil` for an app that has no such scheme.
+    ///
+    /// This is the crux of pointing a GUI at a project. Handing the Codex
+    /// app a bare folder argument (`open -a Codex.app <dir>`) does nothing —
+    /// the app ignores it. Codex instead registers the `codex://` scheme and
+    /// documents `codex://threads/new?path=<absolute-dir>` as the way to open
+    /// a local directory as the active workspace; it's the same mechanism the
+    /// `codex app PATH` CLI uses internally. The `path` must be absolute
+    /// (`projectPath` already is) and, per the docs, query values are
+    /// percent-encoded — we encode down to the RFC 3986 unreserved set so the
+    /// `/` separators and any spaces become `%2F` / `%20` rather than being
+    /// mistaken for URL structure.
+    ///
+    /// Claude returns `nil`: its desktop app exposes no public deep link to
+    /// force a tab/workspace (see `appLaunchNote`), so there's nothing to
+    /// target and the launcher just opens the app.
+    ///
+    /// Cold-start caveat (Codex Desktop ≤ 26.616.x): a Codex that *isn't*
+    /// already running boots into its last workspace before it can handle this
+    /// URL, so a deep link fired at a cold app is swallowed by session restore
+    /// — OpenAI's own `codex app PATH` launcher hits the same race. A *live*
+    /// Codex honours the URL immediately. [[AppLauncher]] works around the cold
+    /// case by launching the app first, waiting for it to come up, then
+    /// delivering this link, so the project lands either way.
+    func projectDeepLink(forProjectPath projectPath: String) -> URL? {
+        switch self {
+        case .claude:
+            return nil
+        case .codex:
+            var unreserved = CharacterSet.alphanumerics
+            unreserved.insert(charactersIn: "-._~")
+            let encoded = projectPath.addingPercentEncoding(withAllowedCharacters: unreserved)
+                ?? projectPath
+            return URL(string: "codex://threads/new?path=\(encoded)")
         }
     }
 }
