@@ -20,6 +20,16 @@ on:
     branches:
       - "main"
       - "integration/windows-and-codex"
+    # Path-gated so a Mac/Swift-only change doesn't trigger this heavy Windows
+    # build. The release flow is unaffected: release.yml builds Windows via
+    # workflow_call on a published release, and a release-please version bump
+    # touches tauri/** so the Release PR still exercises this. (The `windows-v*`
+    # tag below shares this push event's paths filter; that tag mechanism is
+    # currently unused — cut such a tag from a commit touching tauri/**, or use
+    # the workflow_dispatch button, if it's ever adopted.)
+    paths:
+      - "tauri/**"
+      - ".github/workflows/tauri-windows.yml"
     tags:
       - "windows-v*"
   workflow_dispatch:
