@@ -67,4 +67,66 @@ final class AppLauncherTests: XCTestCase {
 
         XCTAssertEqual(argv, ["-b", "com.anthropic.claudefordesktop", "/Users/me/Proj"])
     }
+
+    // MARK: - Launch plan: cold start vs warm
+
+    func testColdCodexLaunchesAppThenDeliversDeepLink() {
+        // Codex isn't running: a deep link fired at a cold app is swallowed by
+        // session restore, so launch the app first, wait for it to come up,
+        // then deliver the deep link to the now-live app.
+        let plan = AppLauncher.openPlan(
+            agent: .codex,
+            projectPath: "/Users/me/Proj",
+            resolvedAppURL: codexApp,
+            appRunning: false
+        )
+
+        XCTAssertEqual(plan.steps, [
+            ["-a", "/Applications/Codex.app"],
+            ["-a", "/Applications/Codex.app", "codex://threads/new?path=%2FUsers%2Fme%2FProj"],
+        ])
+        XCTAssertTrue(plan.waitForAppLaunch)
+    }
+
+    func testWarmCodexFiresDeepLinkInOneStep() {
+        // Codex already running: the live app honours the deep link immediately.
+        let plan = AppLauncher.openPlan(
+            agent: .codex,
+            projectPath: "/Users/me/Proj",
+            resolvedAppURL: codexApp,
+            appRunning: true
+        )
+
+        XCTAssertEqual(plan.steps, [
+            ["-a", "/Applications/Codex.app", "codex://threads/new?path=%2FUsers%2Fme%2FProj"],
+        ])
+        XCTAssertFalse(plan.waitForAppLaunch)
+    }
+
+    func testColdCodexWithoutResolvedAppFiresBareDeepLinkInOneStep() {
+        // We can't pre-launch an app we couldn't resolve by path, so fall back
+        // to the bare deep link and let scheme routing handle it.
+        let plan = AppLauncher.openPlan(
+            agent: .codex,
+            projectPath: "/Users/me/Proj",
+            resolvedAppURL: nil,
+            appRunning: false
+        )
+
+        XCTAssertEqual(plan.steps, [["codex://threads/new?path=%2FUsers%2Fme%2FProj"]])
+        XCTAssertFalse(plan.waitForAppLaunch)
+    }
+
+    func testColdClaudeOpensAppInOneStepNoWait() {
+        // Claude has no deep link, so there's no cold-start race to work around.
+        let plan = AppLauncher.openPlan(
+            agent: .claude,
+            projectPath: "/Users/me/Proj",
+            resolvedAppURL: claudeApp,
+            appRunning: false
+        )
+
+        XCTAssertEqual(plan.steps, [["-a", "/Applications/Claude.app", "/Users/me/Proj"]])
+        XCTAssertFalse(plan.waitForAppLaunch)
+    }
 }

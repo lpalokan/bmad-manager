@@ -53,7 +53,7 @@ enum AgentApp: String, CaseIterable, Identifiable {
     var appLaunchNote: String {
         switch self {
         case .claude: return "Opens the Claude desktop app — Code is a tab there, alongside Chat and Cowork."
-        case .codex:  return "Opens the project in the Codex app."
+        case .codex:  return "Opens the project in the Codex app — if Codex isn't running it's launched first, then switched to the project."
         }
     }
 
@@ -74,6 +74,14 @@ enum AgentApp: String, CaseIterable, Identifiable {
     /// Claude returns `nil`: its desktop app exposes no public deep link to
     /// force a tab/workspace (see `appLaunchNote`), so there's nothing to
     /// target and the launcher just opens the app.
+    ///
+    /// Cold-start caveat (Codex Desktop ≤ 26.616.x): a Codex that *isn't*
+    /// already running boots into its last workspace before it can handle this
+    /// URL, so a deep link fired at a cold app is swallowed by session restore
+    /// — OpenAI's own `codex app PATH` launcher hits the same race. A *live*
+    /// Codex honours the URL immediately. [[AppLauncher]] works around the cold
+    /// case by launching the app first, waiting for it to come up, then
+    /// delivering this link, so the project lands either way.
     func projectDeepLink(forProjectPath projectPath: String) -> URL? {
         switch self {
         case .claude:

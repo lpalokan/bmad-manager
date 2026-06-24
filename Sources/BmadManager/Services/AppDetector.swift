@@ -65,4 +65,52 @@ enum AppDetector {
     private static func defaultApplicationDirectories(_ fileManager: FileManager) -> [URL] {
         fileManager.urls(for: .applicationDirectory, in: [.localDomainMask, .userDomainMask])
     }
+
+    // MARK: - Running state (for the cold-start launch workaround)
+
+    /// The running instance of `agent`'s app, matched by the stable bundle ID
+    /// or by the resolved bundle path (so a side-loaded GUI whose real ID
+    /// differs still matches). `nil` when the app isn't running.
+    static func runningApplication(_ agent: AgentApp, resolvedAppURL: URL?) -> NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first { app in
+            if app.bundleIdentifier == agent.bundleIdentifier { return true }
+            if let want = resolvedAppURL?.standardizedFileURL.path,
+               let have = app.bundleURL?.standardizedFileURL.path,
+               want == have { return true }
+            return false
+        }
+    }
+
+    /// Whether `agent`'s app is currently running. Drives the two-phase launch
+    /// in [[AppLauncher]] (cold start launches first, then delivers the deep
+    /// link; a warm app gets the link immediately).
+    static func isRunning(_ agent: AgentApp, resolvedAppURL: URL?) -> Bool {
+        runningApplication(agent, resolvedAppURL: resolvedAppURL) != nil
+    }
+
+    /// Runs `then` once `agent`'s app has finished launching (or after
+    /// `timeout`), plus a short `settle` so a cold-started app has restored its
+    /// session and is ready to handle a deep link. Always off the main thread,
+    /// so the caller's UI never blocks while the app boots.
+    static func whenAppReady(
+        _ agent: AgentApp,
+        resolvedAppURL: URL?,
+        timeout: TimeInterval = 15,
+        settle: TimeInterval = 2.0,
+        pollInterval: TimeInterval = 0.25,
+        then: @escaping () -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                if let app = runningApplication(agent, resolvedAppURL: resolvedAppURL),
+                   app.isFinishedLaunching {
+                    break
+                }
+                Thread.sleep(forTimeInterval: pollInterval)
+            }
+            Thread.sleep(forTimeInterval: settle)
+            then()
+        }
+    }
 }
