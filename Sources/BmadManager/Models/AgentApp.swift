@@ -22,6 +22,19 @@ enum AgentApp: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Filenames of the desktop app bundle as it lands in the standard
+    /// Applications folders. Used as a fallback when LaunchServices can't
+    /// resolve `bundleIdentifier` — e.g. a side-loaded Codex GUI whose real
+    /// `CFBundleIdentifier` differs from the stable key we hardcode, which
+    /// otherwise makes detection report "not installed" while
+    /// `/Applications/Codex.app` is sitting right there. See [[AppDetector]].
+    var appBundleNames: [String] {
+        switch self {
+        case .claude: return ["Claude.app"]
+        case .codex:  return ["Codex.app"]
+        }
+    }
+
     /// Human-facing name of the desktop app — e.g. for Settings captions
     /// ("Claude app detected"). The CLI keeps its own label in the UI.
     var appDisplayName: String {

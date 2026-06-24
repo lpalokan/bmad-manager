@@ -17,6 +17,12 @@ final class AgentLaunchTests: XCTestCase {
         XCTAssertEqual(AgentApp.codex.bundleIdentifier, "com.openai.codex")
     }
 
+    func testCodexAppBundleNameDrivesApplicationsFolderFallback() {
+        // When LaunchServices can't resolve the bundle ID (a side-loaded
+        // GUI), detection scans the Applications folders for this name.
+        XCTAssertEqual(AgentApp.codex.appBundleNames, ["Codex.app"])
+    }
+
     // MARK: - Launch method defaults & coding
 
     func testLaunchMethodDefaultPrefersApp() {

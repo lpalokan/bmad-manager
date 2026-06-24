@@ -13,15 +13,22 @@ enum AppLauncherError: LocalizedError {
 /// Opens a macOS desktop app via LaunchServices. This is the App half of
 /// the launch story; the CLI half stays in [[TerminalLauncher]].
 enum AppLauncher {
-    /// Launches the app registered under `bundleIdentifier` and hands it
-    /// `projectPath`, the way `open -b <id> <path>` would by hand, so
-    /// project-aware apps (e.g. Codex) open on the project. Keyed on the
-    /// stable bundle ID so we open exactly the app [[AppDetector]] found.
-    static func open(bundleIdentifier: String, projectPath: String) throws {
-        let outcome = try Subprocess.run(
-            "/usr/bin/open",
-            arguments: ["-b", bundleIdentifier, projectPath]
-        )
+    /// Launches `agent`'s desktop app and hands it `projectPath`, so
+    /// project-aware apps (e.g. Codex) open on the project.
+    ///
+    /// Prefers the app [[AppDetector]] resolved — `open -a <path> <project>`
+    /// — which works for a side-loaded GUI whose bundle ID we can't predict.
+    /// Falls back to `open -b <id> <project>` when resolution finds nothing,
+    /// so an explicit "App" launch method is still honoured best-effort and
+    /// `open` surfaces any error rather than silently downgrading.
+    static func open(agent: AgentApp, projectPath: String) throws {
+        let arguments: [String]
+        if let appURL = AppDetector.resolveAppURL(agent) {
+            arguments = ["-a", appURL.path, projectPath]
+        } else {
+            arguments = ["-b", agent.bundleIdentifier, projectPath]
+        }
+        let outcome = try Subprocess.run("/usr/bin/open", arguments: arguments)
         if outcome.status != 0 {
             throw AppLauncherError.launchFailed(outcome.failureMessage)
         }
