@@ -1,10 +1,32 @@
 name: build
 
 on:
+  # Mac (Swift app) CI. Path-gated so a Windows/Tauri-only change doesn't
+  # trigger a macOS build — the release flow (release.yml) builds the DMG
+  # independently on a published release, so gating here never affects
+  # releases. A release-please version bump touches Resources/Info.plist, so
+  # the Release PR still exercises this. The sibling Windows pipeline is
+  # tauri-windows.yml.
   push:
     branches: [main, "integration/windows-and-codex"]
+    paths:
+      - "Sources/**"
+      - "Tests/**"
+      - "Package.swift"
+      - "Package.resolved"
+      - "Resources/**"
+      - "scripts/**"
+      - ".github/workflows/build.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "Sources/**"
+      - "Tests/**"
+      - "Package.swift"
+      - "Package.resolved"
+      - "Resources/**"
+      - "scripts/**"
+      - ".github/workflows/build.yml"
 
 jobs:
   build:
