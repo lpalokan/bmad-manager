@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.13](https://github.com/lpalokan/bmad-manager/compare/v0.1.12...v0.1.13) (2026-06-24)
+
+
+### Features
+
+* open Codex on the project (side-loaded detection, deep link, cold-start launch) ([c18305f](https://github.com/lpalokan/bmad-manager/commit/c18305f67731394420db324e42e97100fb3ae7d4))
+* open Codex on the project even when it isn't already running ([7a85b21](https://github.com/lpalokan/bmad-manager/commit/7a85b21994e785993d92041264131117f3245337))
+
+
+### Bug Fixes
+
+* detect side-loaded Codex GUI by Applications-folder scan ([24e09a7](https://github.com/lpalokan/bmad-manager/commit/24e09a796d4629a584f39165fa630f6893e59189))
+* open Codex GUI on the project via codex:// deep link ([4a1d918](https://github.com/lpalokan/bmad-manager/commit/4a1d9189efe1f7e9989d0668c21b1d285781b873))
+
 ## [0.1.12](https://github.com/lpalokan/bmad-manager/compare/v0.1.11...v0.1.12) (2026-06-21)
 
 
