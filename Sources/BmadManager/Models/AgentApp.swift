@@ -56,4 +56,34 @@ enum AgentApp: String, CaseIterable, Identifiable {
         case .codex:  return "Opens the project in the Codex app."
         }
     }
+
+    /// Deep link that opens this app *on* `projectPath` as its active
+    /// workspace, or `nil` for an app that has no such scheme.
+    ///
+    /// This is the crux of pointing a GUI at a project. Handing the Codex
+    /// app a bare folder argument (`open -a Codex.app <dir>`) does nothing —
+    /// the app ignores it. Codex instead registers the `codex://` scheme and
+    /// documents `codex://threads/new?path=<absolute-dir>` as the way to open
+    /// a local directory as the active workspace; it's the same mechanism the
+    /// `codex app PATH` CLI uses internally. The `path` must be absolute
+    /// (`projectPath` already is) and, per the docs, query values are
+    /// percent-encoded — we encode down to the RFC 3986 unreserved set so the
+    /// `/` separators and any spaces become `%2F` / `%20` rather than being
+    /// mistaken for URL structure.
+    ///
+    /// Claude returns `nil`: its desktop app exposes no public deep link to
+    /// force a tab/workspace (see `appLaunchNote`), so there's nothing to
+    /// target and the launcher just opens the app.
+    func projectDeepLink(forProjectPath projectPath: String) -> URL? {
+        switch self {
+        case .claude:
+            return nil
+        case .codex:
+            var unreserved = CharacterSet.alphanumerics
+            unreserved.insert(charactersIn: "-._~")
+            let encoded = projectPath.addingPercentEncoding(withAllowedCharacters: unreserved)
+                ?? projectPath
+            return URL(string: "codex://threads/new?path=\(encoded)")
+        }
+    }
 }

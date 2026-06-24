@@ -23,6 +23,27 @@ final class AgentLaunchTests: XCTestCase {
         XCTAssertEqual(AgentApp.codex.appBundleNames, ["Codex.app"])
     }
 
+    // MARK: - Project deep link
+
+    func testCodexProjectDeepLinkOpensFolderAsActiveWorkspace() {
+        // Codex's GUI opens on a project only via the `codex://threads/new`
+        // deep link with an absolute `path` — a bare folder argument is
+        // ignored. The query value is percent-encoded down to the unreserved
+        // set, so path separators and spaces survive as `%2F` / `%20` — the
+        // form OpenAI's own `codex app PATH` launcher uses.
+        let link = AgentApp.codex.projectDeepLink(forProjectPath: "/Users/me/My Project")
+        XCTAssertEqual(
+            link?.absoluteString,
+            "codex://threads/new?path=%2FUsers%2Fme%2FMy%20Project"
+        )
+    }
+
+    func testClaudeHasNoProjectDeepLink() {
+        // The Claude desktop app exposes no public deep link to force a
+        // target tab/workspace, so there's nothing to point at a project.
+        XCTAssertNil(AgentApp.claude.projectDeepLink(forProjectPath: "/Users/me/Proj"))
+    }
+
     // MARK: - Launch method defaults & coding
 
     func testLaunchMethodDefaultPrefersApp() {
