@@ -10,8 +10,14 @@
 //! source checkout.
 
 use std::ffi::OsString;
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+/// CREATE_NO_WINDOW — keeps a spawned console app (cmd/where/reg) from
+/// flashing a visible console window when the parent is a Tauri GUI app.
+/// See `services::command_runner` for the original rationale.
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 use tauri::path::BaseDirectory;
 use tauri::Manager;
@@ -62,6 +68,7 @@ fn wt_available() -> bool {
         .arg("wt.exe")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
@@ -127,6 +134,7 @@ pub fn codex_app_installed() -> bool {
         .args(["query", r"HKCR\codex\shell\open\command"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
@@ -145,6 +153,7 @@ pub fn open_app_url(url: &str) -> Result<(), String> {
     Command::new("cmd")
         .args(["/C", "start", "", url])
         .stdin(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())

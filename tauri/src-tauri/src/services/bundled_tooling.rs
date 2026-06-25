@@ -54,7 +54,17 @@ pub fn detect_version(binary: &Path, args: &[&str]) -> Option<String> {
     if !binary.exists() {
         return None;
     }
-    let output = Command::new(binary).args(args).output().ok()?;
+    let mut cmd = Command::new(binary);
+    cmd.args(args);
+    // Suppress the console-window flash on Windows when the parent is a
+    // Tauri GUI app (the Settings dialog runs these `--version` probes on
+    // mount). See command_runner.rs for the rationale.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let output = cmd.output().ok()?;
     if !output.status.success() {
         return None;
     }
