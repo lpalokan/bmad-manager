@@ -17,6 +17,7 @@
     terminalOptions,
     shellOptions,
     newSessionPlacementOptions,
+    agentLaunchMethodOptions,
     type AppSettings,
     type BundledTooling,
   } from "./types";
@@ -411,6 +412,18 @@
         {:else}
           <p class="hint detected">Detected at <code>{detections.claude}</code></p>
         {/if}
+        <label class="lbl sub" for="claude-launch">Launch as</label>
+        <div class="segmented" role="group" id="claude-launch">
+          {#each agentLaunchMethodOptions as opt (opt.value)}
+            <button
+              type="button"
+              class:active={draft.claudeLaunchMethod === opt.value}
+              onclick={() => (draft.claudeLaunchMethod = opt.value)}
+            >
+              {opt.label}
+            </button>
+          {/each}
+        </div>
       </div>
       <div>
         <label class="lbl" for="opencode-cmd">opencode command</label>
@@ -468,6 +481,22 @@
         {:else}
           <p class="hint detected">Detected at <code>{detections.codex}</code></p>
         {/if}
+        <label class="lbl sub" for="codex-launch">Launch as</label>
+        <div class="segmented" role="group" id="codex-launch">
+          {#each agentLaunchMethodOptions as opt (opt.value)}
+            <button
+              type="button"
+              class:active={draft.codexLaunchMethod === opt.value}
+              onclick={() => (draft.codexLaunchMethod = opt.value)}
+            >
+              {opt.label}
+            </button>
+          {/each}
+        </div>
+        <p class="hint">
+          "Desktop app" opens the Codex GUI on the project; "CLI in terminal"
+          runs the command above. "Auto" prefers the app when it's installed.
+        </p>
       </div>
     </section>
 

@@ -22,6 +22,10 @@ export type ShellKind = "cmd" | "powershell" | "pwsh";
 // dedicated Windows Terminal window.
 export type NewSessionPlacement = "newWindow" | "newTab";
 
+// How an agent that ships both a CLI and a desktop app (Claude, Codex) is
+// launched: auto (prefer the app when installed, else the CLI), app, or cli.
+export type AgentLaunchMethod = "auto" | "app" | "cli";
+
 export interface AppSettings {
   projectsRoot: string;
   moduleSourceKind: ModuleSourceKind;
@@ -33,6 +37,8 @@ export interface AppSettings {
   opencodeCommand: string;
   piCommand: string;
   codexCommand: string;
+  claudeLaunchMethod: AgentLaunchMethod;
+  codexLaunchMethod: AgentLaunchMethod;
   projectSortOrder: ProjectSortOrder;
   terminalKind: TerminalKind;
   shellKind: ShellKind;
@@ -165,4 +171,13 @@ export const newSessionPlacementOptions: {
 }[] = [
   { value: "newWindow", label: "New window" },
   { value: "newTab", label: "New tab" },
+];
+
+export const agentLaunchMethodOptions: {
+  value: AgentLaunchMethod;
+  label: string;
+}[] = [
+  { value: "auto", label: "Auto (app if installed, else CLI)" },
+  { value: "app", label: "Desktop app" },
+  { value: "cli", label: "CLI in terminal" },
 ];

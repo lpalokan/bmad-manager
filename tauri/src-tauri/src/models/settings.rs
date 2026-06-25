@@ -133,6 +133,36 @@ impl NewSessionPlacement {
     }
 }
 
+/// How a coding agent that ships both a CLI and a desktop app (Claude,
+/// Codex) is launched.
+///
+/// Mirrors the Swift `AgentLaunchMethod` (raw values `auto`/`app`/`cli`) so
+/// a settings.json round-trips across platforms. `Auto` is the product
+/// default: prefer the desktop app when it's installed, falling back to the
+/// CLI in the configured terminal; `App` and `Cli` are explicit overrides.
+/// The pure preference → concrete-decision mapping lives in
+/// [`crate::services::agent_launch`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum AgentLaunchMethod {
+    #[serde(rename = "auto")]
+    #[default]
+    Auto,
+    #[serde(rename = "app")]
+    App,
+    #[serde(rename = "cli")]
+    Cli,
+}
+
+impl AgentLaunchMethod {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            AgentLaunchMethod::Auto => "Auto",
+            AgentLaunchMethod::App => "App",
+            AgentLaunchMethod::Cli => "CLI",
+        }
+    }
+}
+
 pub const DEFAULT_MODULE_REPO_URL: &str = "https://github.com/lpalokan/bmad-marketing-growth";
 
 /// Default branch a skills repo is synced from when the user hasn't overridden
@@ -159,6 +189,12 @@ pub struct AppSettings {
     pub opencode_command: String,
     pub pi_command: String,
     pub codex_command: String,
+    /// How the Claude agent is launched: prefer the desktop app, the CLI,
+    /// or auto-detect. See [`AgentLaunchMethod`].
+    pub claude_launch_method: AgentLaunchMethod,
+    /// How the Codex agent is launched: prefer the desktop app, the CLI,
+    /// or auto-detect. See [`AgentLaunchMethod`].
+    pub codex_launch_method: AgentLaunchMethod,
     pub project_sort_order: ProjectSortOrder,
     pub terminal_kind: TerminalKind,
     /// Shell run inside a launched session on Windows (cmd / PowerShell).
@@ -191,6 +227,8 @@ impl AppSettings {
             opencode_command: "opencode".to_string(),
             pi_command: "pi".to_string(),
             codex_command: "codex".to_string(),
+            claude_launch_method: AgentLaunchMethod::Auto,
+            codex_launch_method: AgentLaunchMethod::Auto,
             project_sort_order: ProjectSortOrder::NameAscending,
             terminal_kind: TerminalKind::default_for_platform(),
             shell_kind: ShellKind::Cmd,
@@ -239,6 +277,10 @@ impl<'de> Deserialize<'de> for AppSettings {
             #[serde(default)]
             codex_command: Option<String>,
             #[serde(default)]
+            claude_launch_method: Option<AgentLaunchMethod>,
+            #[serde(default)]
+            codex_launch_method: Option<AgentLaunchMethod>,
+            #[serde(default)]
             project_sort_order: Option<ProjectSortOrder>,
             #[serde(default)]
             terminal_kind: Option<TerminalKind>,
@@ -278,6 +320,8 @@ impl<'de> Deserialize<'de> for AppSettings {
             opencode_command: raw.opencode_command,
             pi_command: raw.pi_command.unwrap_or_else(|| "pi".to_string()),
             codex_command: raw.codex_command.unwrap_or_else(|| "codex".to_string()),
+            claude_launch_method: raw.claude_launch_method.unwrap_or_default(),
+            codex_launch_method: raw.codex_launch_method.unwrap_or_default(),
             project_sort_order: raw
                 .project_sort_order
                 .unwrap_or(ProjectSortOrder::NameAscending),
@@ -496,6 +540,8 @@ mod tests {
             opencode_command: "opencode".to_string(),
             pi_command: "pi".to_string(),
             codex_command: "codex".to_string(),
+            claude_launch_method: AgentLaunchMethod::Auto,
+            codex_launch_method: AgentLaunchMethod::Auto,
             project_sort_order: ProjectSortOrder::DateNewestFirst,
             terminal_kind: TerminalKind::WindowsTerminal,
             shell_kind: ShellKind::PowerShell,
@@ -506,6 +552,51 @@ mod tests {
         let json = serde_json::to_string(&original).unwrap();
         let decoded: AppSettings = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn defaults_use_auto_launch_for_claude_and_codex() {
+        let d = AppSettings::defaults();
+        assert_eq!(d.claude_launch_method, AgentLaunchMethod::Auto);
+        assert_eq!(d.codex_launch_method, AgentLaunchMethod::Auto);
+    }
+
+    #[test]
+    fn legacy_without_launch_methods_default_to_auto() {
+        let legacy = r#"{
+            "projectsRoot": "/tmp/legacy",
+            "moduleZipPath": "",
+            "initCommand": "echo {PROJECT_PATH}",
+            "claudeCommand": "claude",
+            "opencodeCommand": "opencode"
+        }"#;
+        let decoded: AppSettings = serde_json::from_str(legacy).unwrap();
+        assert_eq!(decoded.claude_launch_method, AgentLaunchMethod::Auto);
+        assert_eq!(decoded.codex_launch_method, AgentLaunchMethod::Auto);
+    }
+
+    #[test]
+    fn round_trip_preserves_launch_methods() {
+        let mut original = AppSettings::defaults();
+        original.codex_launch_method = AgentLaunchMethod::App;
+        original.claude_launch_method = AgentLaunchMethod::Cli;
+        let json = serde_json::to_string(&original).unwrap();
+        let decoded: AppSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.codex_launch_method, AgentLaunchMethod::App);
+        assert_eq!(decoded.claude_launch_method, AgentLaunchMethod::Cli);
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn launch_method_serializes_to_camel_case_keys() {
+        let mut s = AppSettings::defaults();
+        s.codex_launch_method = AgentLaunchMethod::App;
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"codexLaunchMethod\":\"app\""), "got {json}");
+        assert!(
+            json.contains("\"claudeLaunchMethod\":\"auto\""),
+            "got {json}"
+        );
     }
 
     #[test]
