@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 
 use crate::models::{AppSettings, CompanyContext, ProjectItem};
 use crate::platform;
+use crate::services::agent_launch::{self, ResolvedAgentLaunch};
 use crate::services::bundled_tooling::{self, BundledTooling};
 use crate::services::command_runner::OutputEvent;
 use crate::services::github_client::GitHubClient;
@@ -239,9 +240,24 @@ pub fn open_in_pi(project_path: String, state: State<'_, AppState>) -> CmdResult
     open_in_terminal(&project_path, "pi", state)
 }
 
+/// Open a project in Codex. Honours the user's `codexLaunchMethod`: `App`
+/// fires the `codex://` deep link at the GUI, `Cli` runs the configured
+/// command in a terminal, and `Auto` prefers the GUI when it's installed
+/// (detected via its registered URL scheme), falling back to the CLI.
 #[tauri::command]
 pub fn open_in_codex(project_path: String, state: State<'_, AppState>) -> CmdResult<()> {
-    open_in_terminal(&project_path, "codex", state)
+    let settings = settings_store::load_or_init(&state.settings_path)?;
+    match agent_launch::resolve(
+        settings.codex_launch_method,
+        platform::codex_app_installed(),
+    ) {
+        ResolvedAgentLaunch::App => {
+            let url = agent_launch::codex_project_deep_link(&project_path);
+            platform::open_app_url(&url).map_err(IpcError)?;
+            Ok(())
+        }
+        ResolvedAgentLaunch::Cli => open_in_terminal(&project_path, "codex", state),
+    }
 }
 
 /// Reveal a project's folder in the OS file manager (Explorer on Windows).

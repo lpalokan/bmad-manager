@@ -64,6 +64,9 @@ pub struct TauriWorld {
     pub launch_method: Option<AgentLaunchMethod>,
     pub app_installed: Option<bool>,
     pub resolved_launch: Option<ResolvedAgentLaunch>,
+    /// Codex deep-link scenarios: the input project path and the built URL.
+    pub agent_project_path: Option<String>,
+    pub agent_deep_link: Option<String>,
 }
 
 impl TauriWorld {

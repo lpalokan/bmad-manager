@@ -117,6 +117,33 @@ pub fn open_folder(path: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Whether the Codex desktop GUI is installed, detected by the presence of
+/// its `codex://` URL-scheme registration. `HKEY_CLASSES_ROOT` merges the
+/// per-machine and per-user class roots, so this catches either install.
+/// Mirrors `wt_available`'s "ask the OS, don't guess an install path"
+/// approach — the scheme is exactly what we need to fire the deep link.
+pub fn codex_app_installed() -> bool {
+    Command::new("reg")
+        .args(["query", r"HKCR\codex\shell\open\command"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Hand `url` to the Windows shell so it resolves the registered protocol
+/// handler — e.g. `codex://threads/new?path=…` opens the Codex GUI on the
+/// project. Like `open_folder`, Explorer's exit code is unreliable, so we
+/// surface only failures to *spawn* the process, not its exit status.
+pub fn open_app_url(url: &str) -> Result<(), String> {
+    Command::new("explorer.exe")
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 /// `%APPDATA%\bmad-manager` — the user's roaming config directory.
 pub fn settings_dir() -> PathBuf {
     dirs::config_dir()
