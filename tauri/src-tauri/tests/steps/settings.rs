@@ -4,6 +4,7 @@ use bmad_manager_lib::models::{
     AppSettings, ModuleSourceKind, NewSessionPlacement, ProjectSortOrder, ShellKind, TerminalKind,
 };
 
+use crate::steps::agent_launch::parse_launch_method;
 use crate::support::TauriWorld;
 
 #[when("I read the default settings")]
@@ -215,6 +216,65 @@ async fn round_trip_with_codex_command(world: &mut TauriWorld, codex_command: St
 async fn decoded_codex_command_is(world: &mut TauriWorld, expected: String) {
     let decoded = world.decoded_settings.as_ref().expect("decoded");
     assert_eq!(decoded.codex_command, expected);
+}
+
+#[given("a legacy settings JSON without codexLaunchMethod")]
+async fn legacy_without_codex_launch_method(world: &mut TauriWorld) {
+    world.raw_json = Some(legacy_settings_json());
+}
+
+#[given("a legacy settings JSON without claudeLaunchMethod")]
+async fn legacy_without_claude_launch_method(world: &mut TauriWorld) {
+    world.raw_json = Some(legacy_settings_json());
+}
+
+#[then(regex = r#"^the codex launch method is "(auto|app|cli)"$"#)]
+async fn codex_launch_method_is(world: &mut TauriWorld, method: String) {
+    let s = settings_for_assertion(world);
+    assert_eq!(s.codex_launch_method, parse_launch_method(&method));
+}
+
+#[then(regex = r#"^the claude launch method is "(auto|app|cli)"$"#)]
+async fn claude_launch_method_is(world: &mut TauriWorld, method: String) {
+    let s = settings_for_assertion(world);
+    assert_eq!(s.claude_launch_method, parse_launch_method(&method));
+}
+
+#[when(regex = r#"^I round-trip the default settings with codex launch method "(auto|app|cli)"$"#)]
+async fn round_trip_with_codex_launch_method(world: &mut TauriWorld, method: String) {
+    let mut original = AppSettings::defaults();
+    original.codex_launch_method = parse_launch_method(&method);
+    round_trip(world, original);
+}
+
+#[then(regex = r#"^the decoded codex launch method is "(auto|app|cli)"$"#)]
+async fn decoded_codex_launch_method_is(world: &mut TauriWorld, method: String) {
+    let decoded = world.decoded_settings.as_ref().expect("decoded");
+    assert_eq!(decoded.codex_launch_method, parse_launch_method(&method));
+}
+
+#[when(regex = r#"^I round-trip the default settings with claude launch method "(auto|app|cli)"$"#)]
+async fn round_trip_with_claude_launch_method(world: &mut TauriWorld, method: String) {
+    let mut original = AppSettings::defaults();
+    original.claude_launch_method = parse_launch_method(&method);
+    round_trip(world, original);
+}
+
+#[then(regex = r#"^the decoded claude launch method is "(auto|app|cli)"$"#)]
+async fn decoded_claude_launch_method_is(world: &mut TauriWorld, method: String) {
+    let decoded = world.decoded_settings.as_ref().expect("decoded");
+    assert_eq!(decoded.claude_launch_method, parse_launch_method(&method));
+}
+
+#[then(regex = r#"^the encoded settings JSON has "([a-zA-Z]+)" set to "([a-z]+)"$"#)]
+async fn encoded_settings_json_has_key_value(world: &mut TauriWorld, key: String, value: String) {
+    let s = world.settings.as_ref().expect("settings loaded");
+    let json = serde_json::to_string(s).expect("encode");
+    let needle = format!("\"{key}\":\"{value}\"");
+    assert!(
+        json.contains(&needle),
+        "encoded JSON should contain {needle:?}, got {json}"
+    );
 }
 
 #[when("I decode it")]

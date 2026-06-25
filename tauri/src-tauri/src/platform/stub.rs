@@ -29,6 +29,16 @@ pub fn open_folder(_path: &Path) -> Result<(), String> {
     unimplemented!("platform::stub::open_folder — not implemented on this OS")
 }
 
+/// No desktop-app detection off-Windows; reporting "not installed" keeps the
+/// `auto` launch policy resolving to the CLI on Linux dev/CI hosts.
+pub fn codex_app_installed() -> bool {
+    false
+}
+
+pub fn open_app_url(_url: &str) -> Result<(), String> {
+    unimplemented!("platform::stub::open_app_url — not implemented on this OS")
+}
+
 pub fn settings_dir() -> PathBuf {
     dirs::config_dir()
         .map(|d| d.join("bmad-manager"))

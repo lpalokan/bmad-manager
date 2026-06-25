@@ -8,7 +8,8 @@
 
 use std::path::{Path, PathBuf};
 
-use bmad_manager_lib::models::{AppSettings, CompanyContext, ProjectItem};
+use bmad_manager_lib::models::{AgentLaunchMethod, AppSettings, CompanyContext, ProjectItem};
+use bmad_manager_lib::services::agent_launch::ResolvedAgentLaunch;
 use bmad_manager_lib::services::contribution::{ContributableSkill, PreparedFile};
 use bmad_manager_lib::services::project_service::InitTargetInfo;
 use cucumber::World;
@@ -58,6 +59,14 @@ pub struct TauriWorld {
     /// Names of the projects the most recent end-to-end version check
     /// (`read_latest_repo_module` + stale filter) flagged as behind.
     pub stale_projects: Option<Vec<String>>,
+    /// Launch-method resolution scenarios (issue #88): the chosen method,
+    /// whether the app is "installed", and the resolved concrete launch.
+    pub launch_method: Option<AgentLaunchMethod>,
+    pub app_installed: Option<bool>,
+    pub resolved_launch: Option<ResolvedAgentLaunch>,
+    /// Codex deep-link scenarios: the input project path and the built URL.
+    pub agent_project_path: Option<String>,
+    pub agent_deep_link: Option<String>,
 }
 
 impl TauriWorld {

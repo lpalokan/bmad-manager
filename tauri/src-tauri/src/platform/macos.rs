@@ -27,6 +27,14 @@ pub fn open_folder(_path: &Path) -> Result<(), String> {
     unimplemented!("platform::macos::open_folder — future macOS unification milestone")
 }
 
+pub fn codex_app_installed() -> bool {
+    unimplemented!("platform::macos::codex_app_installed — future macOS unification milestone")
+}
+
+pub fn open_app_url(_url: &str) -> Result<(), String> {
+    unimplemented!("platform::macos::open_app_url — future macOS unification milestone")
+}
+
 pub fn settings_dir() -> PathBuf {
     unimplemented!("platform::macos::settings_dir — future macOS unification milestone")
 }

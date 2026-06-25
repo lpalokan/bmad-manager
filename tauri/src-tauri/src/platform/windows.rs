@@ -10,8 +10,14 @@
 //! source checkout.
 
 use std::ffi::OsString;
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+/// CREATE_NO_WINDOW — keeps a spawned console app (cmd/where/reg) from
+/// flashing a visible console window when the parent is a Tauri GUI app.
+/// See `services::command_runner` for the original rationale.
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 use tauri::path::BaseDirectory;
 use tauri::Manager;
@@ -62,6 +68,7 @@ fn wt_available() -> bool {
         .arg("wt.exe")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
@@ -112,6 +119,41 @@ fn spawn_cmd(path: &Path, command: &str, shell: ShellKind) -> std::io::Result<()
 pub fn open_folder(path: &Path) -> Result<(), String> {
     Command::new("explorer.exe")
         .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Whether the Codex desktop GUI is installed, detected by the presence of
+/// its `codex://` URL-scheme registration. `HKEY_CLASSES_ROOT` merges the
+/// per-machine and per-user class roots, so this catches either install.
+/// Mirrors `wt_available`'s "ask the OS, don't guess an install path"
+/// approach — the scheme is exactly what we need to fire the deep link.
+pub fn codex_app_installed() -> bool {
+    Command::new("reg")
+        .args(["query", r"HKCR\codex\shell\open\command"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Open `url` with its registered protocol handler — e.g. `codex://…`
+/// launches the Codex GUI. Routed through `cmd /C start "" "<url>"` so the
+/// URL goes to **ShellExecute**, the same dispatch the Run dialog uses;
+/// `explorer.exe <url>` does NOT do this — it treats the string as a shell
+/// location and fails. The empty `""` is `start`'s window-title argument
+/// (so a quoted URL isn't taken as the title). cmd leaves the
+/// percent-encoded URL untouched — no defined `%VAR%` matches — so the deep
+/// link arrives intact. Exit status is unobservable through `start`, so we
+/// surface only failures to spawn the launcher.
+pub fn open_app_url(url: &str) -> Result<(), String> {
+    Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .stdin(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())

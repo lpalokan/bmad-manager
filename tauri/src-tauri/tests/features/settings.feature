@@ -61,6 +61,33 @@ Feature: AppSettings serialization and defaults
     When I round-trip the default settings with codex command "C:\\bin\\codex.exe"
     Then the decoded codex command is "C:\\bin\\codex.exe"
 
+  Scenario: defaults prefer auto launch for claude and codex
+    When I read the default settings
+    Then the codex launch method is "auto"
+    And the claude launch method is "auto"
+
+  Scenario: legacy settings without codex launch method default to auto
+    Given a legacy settings JSON without codexLaunchMethod
+    When I decode it
+    Then the codex launch method is "auto"
+
+  Scenario: round-trip preserves a chosen codex launch method
+    When I round-trip the default settings with codex launch method "app"
+    Then the decoded codex launch method is "app"
+
+  Scenario: legacy settings without claude launch method default to auto
+    Given a legacy settings JSON without claudeLaunchMethod
+    When I decode it
+    Then the claude launch method is "auto"
+
+  Scenario: round-trip preserves a chosen claude launch method
+    When I round-trip the default settings with claude launch method "cli"
+    Then the decoded claude launch method is "cli"
+
+  Scenario: launch method serializes to a portable camelCase key
+    When I round-trip the default settings with codex launch method "app"
+    Then the encoded settings JSON has "codexLaunchMethod" set to "app"
+
   Scenario: legacy settings without shell kind default to Command Prompt
     Given a legacy settings JSON without shellKind
     When I decode it

@@ -1,3 +1,4 @@
+pub mod agent_launch;
 pub mod bundled_tooling;
 pub mod company_context;
 pub mod contribution;

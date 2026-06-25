@@ -1,3 +1,4 @@
+pub mod agent_launch;
 pub mod agents_file;
 pub mod bundled_tooling;
 pub mod command_runner;
