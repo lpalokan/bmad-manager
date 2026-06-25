@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.14](https://github.com/lpalokan/bmad-manager/compare/v0.1.13...v0.1.14) (2026-06-25)
+
+
+### Features
+
+* add Codex/Claude launch-method setting and resolver (Tauri) ([3d7c3cc](https://github.com/lpalokan/bmad-manager/commit/3d7c3cc626adbe1bdd1d63dbf3daf55e52b19b66)), closes [#88](https://github.com/lpalokan/bmad-manager/issues/88)
+* launch Codex GUI on Windows when installed ([dc53e82](https://github.com/lpalokan/bmad-manager/commit/dc53e821ca1dcecc483ed3367a7d7163b501584c))
+* launch Codex GUI on Windows when installed (issue [#88](https://github.com/lpalokan/bmad-manager/issues/88)) ([cb933c8](https://github.com/lpalokan/bmad-manager/commit/cb933c8452ace82740351d7f72da3e207728f0ee))
+
+
+### Bug Fixes
+
+* drop unused AgentLaunchMethod import in settings steps ([d5e9eb1](https://github.com/lpalokan/bmad-manager/commit/d5e9eb191cc4c8bda9a0e9b4f95a4653374789d9))
+* open codex:// via ShellExecute (cmd start), not explorer.exe ([3a84ff5](https://github.com/lpalokan/bmad-manager/commit/3a84ff5fe73c582d655b3ddb91a032cfb99e4d39)), closes [#88](https://github.com/lpalokan/bmad-manager/issues/88)
+* suppress console-window flashes on Windows GUI subprocess spawns ([3fd75ee](https://github.com/lpalokan/bmad-manager/commit/3fd75eeaa7c3a496aac21dded520b4ad87c39074)), closes [#88](https://github.com/lpalokan/bmad-manager/issues/88)
+
 ## [0.1.13](https://github.com/lpalokan/bmad-manager/compare/v0.1.12...v0.1.13) (2026-06-24)
 
 
