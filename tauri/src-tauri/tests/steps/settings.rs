@@ -1,8 +1,7 @@
 use cucumber::{given, then, when};
 
 use bmad_manager_lib::models::{
-    AgentLaunchMethod, AppSettings, ModuleSourceKind, NewSessionPlacement, ProjectSortOrder,
-    ShellKind, TerminalKind,
+    AppSettings, ModuleSourceKind, NewSessionPlacement, ProjectSortOrder, ShellKind, TerminalKind,
 };
 
 use crate::steps::agent_launch::parse_launch_method;
