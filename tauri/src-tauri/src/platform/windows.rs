@@ -132,13 +132,19 @@ pub fn codex_app_installed() -> bool {
         .unwrap_or(false)
 }
 
-/// Hand `url` to the Windows shell so it resolves the registered protocol
-/// handler — e.g. `codex://threads/new?path=…` opens the Codex GUI on the
-/// project. Like `open_folder`, Explorer's exit code is unreliable, so we
-/// surface only failures to *spawn* the process, not its exit status.
+/// Open `url` with its registered protocol handler — e.g. `codex://…`
+/// launches the Codex GUI. Routed through `cmd /C start "" "<url>"` so the
+/// URL goes to **ShellExecute**, the same dispatch the Run dialog uses;
+/// `explorer.exe <url>` does NOT do this — it treats the string as a shell
+/// location and fails. The empty `""` is `start`'s window-title argument
+/// (so a quoted URL isn't taken as the title). cmd leaves the
+/// percent-encoded URL untouched — no defined `%VAR%` matches — so the deep
+/// link arrives intact. Exit status is unobservable through `start`, so we
+/// surface only failures to spawn the launcher.
 pub fn open_app_url(url: &str) -> Result<(), String> {
-    Command::new("explorer.exe")
-        .arg(url)
+    Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .stdin(Stdio::null())
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())
