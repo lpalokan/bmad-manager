@@ -96,3 +96,17 @@ The Swift macOS app under `Sources/BmadManager/` serves Mac users and the Tauri 
   ```
 
 See `docs/testing.md` for the full workflow, step catalogue, and maintenance guide.
+
+# Codebase knowledge graph (graphify)
+
+A queryable knowledge graph of this repo lives under `graphify-out/` (git-ignored). A `post-commit` hook auto-refreshes it after every commit — **code/AST only, in the background, no LLM** — so the structural graph stays current with no manual step.
+
+**Use it for comprehension, not editing.** Before grepping to understand how something works ("how does X work", "what calls Y", "trace the flow through Z"), query the graph first — it returns the relevant nodes and edges with `file:line` citations, faster than reconstructing structure by hand:
+
+```
+graphify query "how does the project-create flow work"
+```
+
+In Claude Code the `/graphify` skill wraps the same query. For making edits, still read the files directly: the graph is a map, not the source of truth, and brand-new code can lag until the background rebuild finishes.
+
+**Refreshing semantic content.** The commit hook re-extracts only code structure. Cross-file, doc, and image *semantic* edges refresh on a full `/graphify` run (LLM-backed) — run one after large doc or cross-cutting changes if you want the graph's prose understanding current.
