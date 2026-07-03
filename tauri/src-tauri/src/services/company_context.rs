@@ -14,6 +14,7 @@
 //! counts as a project folder; callers hand the resulting `ProjectItem`s
 //! in.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use thiserror::Error;
@@ -170,6 +171,192 @@ pub fn import_context(
             std::fs::create_dir_all(parent).map_err(ContextImportError::CreateDirFailed)?;
         }
         std::fs::copy(context.directory.join(file), &destination).map_err(|err| {
+            ContextImportError::CopyFailed {
+                file: file.clone(),
+                reason: err.to_string(),
+            }
+        })?;
+    }
+    Ok(())
+}
+
+// --- Context drift vs the skills repo (issue #92) -----------------------
+//
+// A project's company-context is seeded from a skills-repo context at
+// create time (see `import_context`) and drifts behind when the maintainer
+// edits that context. Drift is read from the OKF `last_updated` date the
+// context files carry (always bumped on edit), falling back to a byte
+// comparison for files without a date. A project is linked back to its
+// source context by the OKF `tags` slug its own files carry, so no marker
+// file is needed and existing projects work.
+
+/// The slice of an OKF context file's YAML frontmatter drift detection
+/// needs: the declared edit date and the tags (which carry the
+/// source-context slug). Absent fields stay empty.
+#[derive(Default)]
+struct OkfMeta {
+    last_updated: Option<String>,
+    tags: Vec<String>,
+}
+
+/// Parses the leading `---`-fenced YAML frontmatter for just `last_updated`
+/// and `tags`. Only a `---` on the first line opens the block; parsing stops
+/// at the closing `---`. `tags` is read as a flow sequence (`[a, b, c]`), the
+/// only form OKF uses. A file without frontmatter yields an empty meta.
+fn parse_okf_meta(text: &str) -> OkfMeta {
+    let mut meta = OkfMeta::default();
+    let mut lines = text.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return meta;
+    }
+    for raw in lines {
+        let line = raw.trim();
+        if line == "---" {
+            break;
+        }
+        if let Some(rest) = line.strip_prefix("last_updated:") {
+            let value = unquote(rest.trim());
+            if !value.is_empty() {
+                meta.last_updated = Some(value);
+            }
+        } else if let Some(rest) = line.strip_prefix("tags:") {
+            meta.tags = parse_flow_list(rest.trim());
+        }
+    }
+    meta
+}
+
+/// Splits an inline YAML flow sequence `[a, b, c]` into trimmed, unquoted,
+/// non-empty entries. A bare (non-bracketed) value becomes a single entry.
+fn parse_flow_list(value: &str) -> Vec<String> {
+    let inner = value
+        .strip_prefix('[')
+        .and_then(|v| v.strip_suffix(']'))
+        .unwrap_or(value);
+    inner
+        .split(',')
+        .map(|t| unquote(t.trim()))
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+fn unquote(value: &str) -> String {
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2 {
+        let (first, last) = (bytes[0], bytes[bytes.len() - 1]);
+        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+            return value[1..value.len() - 1].to_string();
+        }
+    }
+    value.to_string()
+}
+
+/// Parses an ISO `YYYY-MM-DD` date into a comparable tuple, or `None` when it
+/// isn't exactly three numeric components.
+fn parse_ymd(value: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = value.trim().split('-');
+    let y = parts.next()?.parse().ok()?;
+    let m = parts.next()?.parse().ok()?;
+    let d = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((y, m, d))
+}
+
+/// Resolves which of `sources` a project's context was seeded from, by
+/// matching the OKF `tags` slug embedded in the project's own files against
+/// the source context names. Returns `None` when nothing matches or the match
+/// is ambiguous — the project then has no upstream to refresh from and is
+/// treated as not context-stale (module-only).
+pub fn source_context_for<'a>(
+    project_ctx: &CompanyContext,
+    sources: &'a [CompanyContext],
+) -> Option<&'a CompanyContext> {
+    if sources.is_empty() {
+        return None;
+    }
+    let mut tags: HashSet<String> = HashSet::new();
+    for file in &project_ctx.files {
+        if let Ok(text) = std::fs::read_to_string(project_ctx.directory.join(file)) {
+            tags.extend(parse_okf_meta(&text).tags);
+        }
+    }
+    let mut matches = sources.iter().filter(|s| tags.contains(&s.project_name));
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        return None; // ambiguous — don't guess
+    }
+    Some(first)
+}
+
+/// True when the project's context has drifted behind `source`: any file the
+/// source carries that the project lacks, or whose source OKF `last_updated`
+/// is a strictly later date than the project's copy. Files without a
+/// comparable date on either side fall back to a byte comparison, so an edit
+/// that didn't bump the date is still caught. Project-only files never count
+/// — refresh is overwrite+add, never delete.
+pub fn is_context_stale(project_ctx: &CompanyContext, source: &CompanyContext) -> bool {
+    for file in &source.files {
+        let dest = project_ctx.directory.join(file);
+        if !dest.exists() {
+            return true;
+        }
+        let (Ok(src_text), Ok(dst_text)) = (
+            std::fs::read_to_string(source.directory.join(file)),
+            std::fs::read_to_string(&dest),
+        ) else {
+            continue;
+        };
+        let src_date = parse_okf_meta(&src_text)
+            .last_updated
+            .and_then(|d| parse_ymd(&d));
+        let dst_date = parse_okf_meta(&dst_text)
+            .last_updated
+            .and_then(|d| parse_ymd(&d));
+        match (src_date, dst_date) {
+            (Some(s), Some(d)) => {
+                if s > d {
+                    return true;
+                }
+            }
+            // A missing/unparseable date on either side: trust the bytes.
+            _ => {
+                if src_text != dst_text {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// True when `project_path`'s context should be offered a refresh from the
+/// skills-repo `sources`: it resolves to one of them and has drifted behind
+/// it. Drives the single Update button alongside module staleness.
+pub fn is_project_context_stale(project_path: &Path, sources: &[CompanyContext]) -> bool {
+    let Some(project_ctx) = context_in_project(project_path) else {
+        return false;
+    };
+    let Some(source) = source_context_for(&project_ctx, sources) else {
+        return false;
+    };
+    is_context_stale(&project_ctx, source)
+}
+
+/// Overwrites `dest_dir`'s context with `source`'s files — copying every
+/// source file over the destination's copy and adding any it lacks, but never
+/// deleting destination-only files. The refresh counterpart to
+/// [`import_context`] (which skips existing files at create time): the "bring
+/// an existing project current with the skills repo" path.
+pub fn refresh_context(source: &CompanyContext, dest_dir: &Path) -> Result<(), ContextImportError> {
+    std::fs::create_dir_all(dest_dir).map_err(ContextImportError::CreateDirFailed)?;
+    for file in &source.files {
+        let destination = dest_dir.join(file);
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent).map_err(ContextImportError::CreateDirFailed)?;
+        }
+        std::fs::copy(source.directory.join(file), &destination).map_err(|err| {
             ContextImportError::CopyFailed {
                 file: file.clone(),
                 reason: err.to_string(),

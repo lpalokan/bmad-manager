@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use bmad_manager_lib::models::{AgentLaunchMethod, AppSettings, CompanyContext, ProjectItem};
 use bmad_manager_lib::services::agent_launch::ResolvedAgentLaunch;
+use bmad_manager_lib::services::company_context::{github_contexts_in, import_context};
 use bmad_manager_lib::services::contribution::{ContributableSkill, PreparedFile};
 use bmad_manager_lib::services::project_service::InitTargetInfo;
 use cucumber::World;
@@ -67,6 +68,9 @@ pub struct TauriWorld {
     /// Codex deep-link scenarios: the input project path and the built URL.
     pub agent_project_path: Option<String>,
     pub agent_deep_link: Option<String>,
+    /// Result of the most recent project company-context drift check
+    /// (issue #92).
+    pub context_update_available: Option<bool>,
 }
 
 impl TauriWorld {
@@ -130,6 +134,72 @@ impl TauriWorld {
             std::fs::write(dir.join(file), format!("content of {file}"))
                 .expect("write skills repo context file");
         }
+    }
+
+    /// Writes an OKF-style context file: YAML frontmatter carrying the source
+    /// `slug` as a tag (so a seeded project links back to it) and an optional
+    /// `last_updated` date, followed by `body`. Intermediate folders are made.
+    pub fn write_okf_context_file(path: &Path, slug: &str, date: Option<&str>, body: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create okf file dir");
+        }
+        let mut text = String::from("---\n");
+        text.push_str(&format!("tags: [company-context, {slug}]\n"));
+        if let Some(d) = date {
+            text.push_str(&format!("last_updated: {d}\n"));
+        }
+        text.push_str("---\n");
+        text.push_str(body);
+        text.push('\n');
+        std::fs::write(path, text).expect("write okf context file");
+    }
+
+    /// Seeds or overwrites an OKF file in the skills-repo `context/<name>/`.
+    /// Used both to publish a context and to model a maintainer editing it.
+    pub fn put_skills_okf(&mut self, name: &str, file: &str, date: Option<&str>, body: &str) {
+        let path = self
+            .skills_repo_root()
+            .join("context")
+            .join(name)
+            .join(file);
+        Self::write_okf_context_file(&path, name, date, body);
+    }
+
+    /// Removes a whole skills-repo context folder (models an unpublished source).
+    pub fn remove_skills_context(&mut self, name: &str) {
+        let dir = self.skills_repo_root().join("context").join(name);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The skills-repo contexts, resolved the way the picker/update check does.
+    pub fn skills_repo_sources(&mut self) -> Vec<CompanyContext> {
+        let repo = self.skills_repo_root();
+        github_contexts_in(&repo)
+    }
+
+    /// Imports the named skills-repo context into a project under the root,
+    /// mirroring create-time seeding so the project's copies carry the source
+    /// tags and dates.
+    pub fn seed_project_from_skills_context(&mut self, name: &str, project: &str) {
+        let source = self
+            .skills_repo_sources()
+            .into_iter()
+            .find(|c| c.project_name == name)
+            .unwrap_or_else(|| panic!("no skills repo context named {name:?}"));
+        let dest = self.ensure_projects_root().join(project);
+        std::fs::create_dir_all(&dest).expect("create project dir");
+        import_context(&source, &dest).expect("seed project context");
+    }
+
+    /// Writes a plain (non-source) project-local context file, to prove refresh
+    /// keeps user-added files.
+    pub fn add_local_context_file(&mut self, project: &str, file: &str) {
+        let dir = self
+            .ensure_projects_root()
+            .join(project)
+            .join("_bmad-output/company-context");
+        std::fs::create_dir_all(&dir).expect("create context dir");
+        std::fs::write(dir.join(file), format!("local {file}")).expect("write local context file");
     }
 
     /// Fake home directory for contribution scenarios.

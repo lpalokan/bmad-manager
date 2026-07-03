@@ -116,3 +116,34 @@ Feature: Update existing projects from the bmad-repo
     Then the update succeeds
     And the project file "module-source.txt" contains "@v2.0.2"
     And the project file "module-source.txt" contains "file://"
+
+  # --- The single Update button also covers context drift (issue #92) ---
+  #
+  # The same per-project Update button lights up (and its action syncs) for
+  # a project that is current on its module but behind on the skills-repo
+  # company-context — the user never needs to know which one changed.
+
+  Scenario: a project current on its module but behind on context still needs an update
+    Given a project "current-module" with installed module version "2.1.0"
+    And a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And project "current-module" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I run the combined update check against repo module version "2.1.0"
+    Then the project reports an update is available
+
+  Scenario: a project current on both its module and its context needs no update
+    Given a project "all-current" with installed module version "2.1.0"
+    And a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And project "all-current" seeded from the "digital-workforce" skills repo context
+    When I run the combined update check against repo module version "2.1.0"
+    Then the project reports no update available
+
+  Scenario: updating also refreshes drifted company-context from the skills repo
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And an existing project "proj" to update
+    And project "proj" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    And update settings whose init command succeeds
+    When I update the project
+    Then the update succeeds
+    And project "proj" context file "positioning.md" is dated "2026-07-03"

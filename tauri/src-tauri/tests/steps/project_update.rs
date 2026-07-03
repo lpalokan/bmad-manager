@@ -189,9 +189,31 @@ async fn project_has_user_file(world: &mut TauriWorld, rel: String, content: Str
 async fn update_the_project(world: &mut TauriWorld) {
     let project = world.update_target.clone().expect("project seeded");
     let settings = world.settings.clone().expect("update settings prepared");
+    // Empty unless a scenario published skills-repo contexts — matching how the
+    // command resolves them from the managed clone before calling `update`.
+    let sources = world.skills_repo_sources();
     let item = ProjectItem::new(project, None);
-    let result = project_updater::update(&item, &settings, |_event| {}).await;
+    let result = project_updater::update(&item, &settings, &sources, |_event| {}).await;
     world.last_string_error = result.err().map(|e| e.to_string());
+}
+
+/// Mirrors `commands::check_for_updates`' per-project verdict for one project:
+/// the union of module staleness (against a hand-built `RepoModule`) and
+/// company-context drift (against the skills-repo sources). Stored in
+/// `update_available` so the existing update/no-update `Then`s apply.
+#[when(regex = r#"^I run the combined update check against repo module version "([^"]+)"$"#)]
+async fn run_combined_check(world: &mut TauriWorld, version: String) {
+    let project = world.update_target.clone().expect("project seeded");
+    let repo = RepoModule {
+        code: "marketing-growth".to_string(),
+        version,
+    };
+    let sources = world.skills_repo_sources();
+    world.update_available = Some(project_updater::needs_update(
+        &project,
+        Some(&repo),
+        &sources,
+    ));
 }
 
 #[then("the update succeeds")]
