@@ -149,6 +149,7 @@ final class ProjectCoordinator: ObservableObject {
     func updateProject(
         _ project: ProjectItem,
         settings: AppSettings,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
         runCommand: @escaping (String, URL) async -> Int32
     ) async {
         isUpdating = true
@@ -161,12 +162,28 @@ final class ProjectCoordinator: ObservableObject {
                 settings: settings,
                 runCommand: runCommand
             )
+            // Bring the company-context current with the skills repo too, so the
+            // one Update button clears both module and context drift.
+            refreshProjectContext(project, home: home)
             errorMessage = nil
-            refresh(root: settings.projectsRoot, sortOrder: settings.projectSortOrder)
-            await checkForUpdates(settings: settings)
+            refresh(root: settings.projectsRoot, sortOrder: settings.projectSortOrder, home: home)
+            await checkForUpdates(settings: settings, home: home)
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// After a successful re-install, overwrites the project's company-context
+    /// with the newer files from the skills-repo context it was seeded from
+    /// (overwrite+add, never delete). Best-effort — like the AGENTS.md refresh,
+    /// a context hiccup shouldn't undo an otherwise-good re-install — and a
+    /// no-op when the project has no context or no resolved source.
+    private func refreshProjectContext(_ project: ProjectItem, home: URL) {
+        guard let projectContext = contextService.context(inProject: project.url) else { return }
+        let sources = discoveredGithubContexts(home: home)
+        guard let source = contextService.sourceContext(for: projectContext, in: sources)
+        else { return }
+        try? contextService.refreshContext(source, into: projectContext.directoryURL)
     }
 
     /// Recomputes which projects are behind the module repo. Materialises the
@@ -175,17 +192,26 @@ final class ProjectCoordinator: ObservableObject {
     /// version is older. Best-effort: any failure (offline, git missing,
     /// unreadable repo) clears the set rather than surfacing an error — a
     /// version check shouldn't nag. Reads `projects`, so call after `refresh`.
-    func checkForUpdates(settings: AppSettings) async {
+    func checkForUpdates(
+        settings: AppSettings,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) async {
         let source = moduleSourceFor(settings)
         let repoModule = try? await source.withModuleRoot { moduleRoot, _ in
             ModuleManifest.readRepoModule(atModuleRoot: moduleRoot)
         }
-        guard let repoModule = repoModule.flatMap({ $0 }) else {
-            updateAvailable = []
-            return
-        }
-        let stale = projects.filter {
-            ModuleManifest.isProjectStale(projectURL: $0.url, repoModule: repoModule)
+        // A module fetch failure no longer clears everything — it just skips the
+        // module axis, so a project drifted only on its company-context is still
+        // flagged. `latest` is nil when offline / unreadable.
+        let latest = repoModule.flatMap { $0 }
+        let sources = discoveredGithubContexts(home: home)
+        let stale = projects.filter { project in
+            let moduleStale = latest.map {
+                ModuleManifest.isProjectStale(projectURL: project.url, repoModule: $0)
+            } ?? false
+            let contextStale = contextService.isProjectContextStale(
+                projectURL: project.url, sources: sources)
+            return moduleStale || contextStale
         }
         updateAvailable = Set(stale.map(\.url))
     }

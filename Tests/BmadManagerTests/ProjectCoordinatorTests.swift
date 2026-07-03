@@ -156,7 +156,12 @@ final class ProjectCoordinatorTests: XCTestCase {
     private func refresh(_ coordinator: ProjectCoordinator) {
         coordinator.refresh(
             root: settings.settings.projectsRoot,
-            sortOrder: settings.settings.projectSortOrder
+            sortOrder: settings.settings.projectSortOrder,
+            // Isolate from the real ~/.claude/skills-managed clone: point `home`
+            // at an empty throwaway dir so a developer's actual managed contexts
+            // never leak into `availableContexts` assertions. Tests that DO
+            // exercise github contexts pass their own seeded `home` directly.
+            home: supportRoot
         )
     }
 
@@ -579,6 +584,77 @@ final class ProjectCoordinatorTests: XCTestCase {
         XCTAssertNotNil(coordinator.errorMessage)
         XCTAssertTrue(coordinator.errorMessage?.contains("42") ?? false)
         XCTAssertFalse(coordinator.isUpdating)
+    }
+
+    // MARK: - Update & version check (company-context drift, issue #92)
+
+    /// Writes (or overwrites) an OKF file into the managed skills-repo clone's
+    /// `context/<name>/`, carrying the slug tag and an optional date.
+    private func seedManagedOKF(
+        home: URL, context name: String, file: String, date: String?, body: String = "v1"
+    ) throws {
+        let dir = SkillsSyncService.managedRepoDir(for: .claudeCode, home: home)
+            .appendingPathComponent("context/\(name)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var text = "---\ntags: [company-context, \(name)]\n"
+        if let date { text += "last_updated: \(date)\n" }
+        text += "---\n\(body)\n"
+        try text.write(to: dir.appendingPathComponent(file), atomically: true, encoding: .utf8)
+    }
+
+    /// Imports the managed skills-repo context `name` into an existing project,
+    /// the way create-time seeding does.
+    private func importManagedContext(into projectURL: URL, from name: String, home: URL) throws {
+        let repo = SkillsSyncService.managedRepoDir(for: .claudeCode, home: home)
+        let source = try XCTUnwrap(
+            CompanyContextService().githubContexts(inRepoRoot: repo).first { $0.projectName == name })
+        try CompanyContextService().importContext(source, into: projectURL)
+    }
+
+    func testCheckForUpdatesFlagsContextDriftEvenWhenModuleIsCurrent() async throws {
+        let home = makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        // Module pinned at the latest version — not stale on the module axis.
+        let proj = try seedProject("investor-day", marketingGrowthVersion: "2.1.0")
+        try seedManagedOKF(home: home, context: "digital-workforce", file: "positioning.md", date: "2026-06-26")
+        try importManagedContext(into: proj, from: "digital-workforce", home: home)
+        // The maintainer edits the shared context after the project was seeded.
+        try seedManagedOKF(home: home, context: "digital-workforce", file: "positioning.md", date: "2026-07-03", body: "v2")
+
+        let coordinator = makeCoordinator(
+            source: FakeModuleSource(moduleRoot: try makeModuleRoot(moduleVersion: "2.1.0")))
+        refresh(coordinator)
+
+        await coordinator.checkForUpdates(settings: settings.settings, home: home)
+
+        let listed = try XCTUnwrap(coordinator.projects.first { $0.name == "investor-day" })
+        XCTAssertTrue(
+            coordinator.updateAvailable.contains(listed.url),
+            "module is current (2.1.0) but the context drifted → the one Update button still lights up")
+    }
+
+    func testUpdateProjectAlsoRefreshesDriftedContext() async throws {
+        let home = makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let proj = try seedProject("to-update", marketingGrowthVersion: "2.0.0")
+        try seedManagedOKF(home: home, context: "digital-workforce", file: "positioning.md", date: "2026-06-26")
+        try importManagedContext(into: proj, from: "digital-workforce", home: home)
+        try seedManagedOKF(home: home, context: "digital-workforce", file: "positioning.md", date: "2026-07-03", body: "v2")
+
+        let coordinator = makeCoordinator(
+            source: FakeModuleSource(moduleRoot: try makeModuleRoot(moduleVersion: "2.1.0")))
+
+        await coordinator.updateProject(
+            ProjectItem(url: proj), settings: settings.settings, home: home
+        ) { _, _ in 0 }
+
+        XCTAssertNil(coordinator.errorMessage)
+        let text = try String(
+            contentsOf: proj.appendingPathComponent("_bmad-output/company-context/positioning.md"),
+            encoding: .utf8)
+        XCTAssertTrue(
+            text.contains("last_updated: 2026-07-03"),
+            "clicking Update brought the drifted company-context current too")
     }
 
     // MARK: - Terminal
