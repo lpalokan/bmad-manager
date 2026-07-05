@@ -138,17 +138,20 @@ pub async fn update_project(
         let _ = app.emit("project-create-output", event);
     };
     let project = ProjectItem::new(PathBuf::from(path), None);
-    project_updater::update(&project, &settings, emit)
+    let sources = github_contexts_from_repo();
+    project_updater::update(&project, &settings, &sources, emit)
         .await
         .map_err(|e| IpcError(e.to_string()))
 }
 
-/// Returns the paths of projects whose installed module version is behind the
-/// repo's latest. One repo fetch + N local manifest reads. Best-effort: any
-/// failure (offline, git missing, unreadable repo) yields an empty list so the
-/// UI shows no stale badges rather than an error — but the *reason* is streamed
-/// to the output panel (the `project-create-output` channel) so a silent check
-/// failure on Windows is diagnosable instead of looking like "up to date".
+/// Returns the paths of projects that need the single per-project Update
+/// button: either their installed module version is behind the repo's latest,
+/// or their company-context has drifted behind the skills repo. One repo fetch
+/// + N local manifest/context reads. Best-effort: a module fetch failure
+/// (offline, git missing, unreadable repo) no longer hides context drift — it
+/// just skips the module half — and the *reason* for each verdict is streamed
+/// to the output panel so a silent check is diagnosable instead of looking like
+/// "up to date".
 #[tauri::command]
 pub async fn check_for_updates(
     app: AppHandle,
@@ -158,25 +161,35 @@ pub async fn check_for_updates(
     let mut emit = move |event: OutputEvent| {
         let _ = app.emit("project-create-output", event);
     };
-    let Some(repo_module) = project_updater::read_latest_repo_module_logged(&settings, &mut emit)
-    else {
-        return Ok(Vec::new());
-    };
+    let repo_module = project_updater::read_latest_repo_module_logged(&settings, &mut emit);
+    let sources = github_contexts_from_repo();
     let root = expand_tilde(&settings.projects_root);
     let mut stale = Vec::new();
     for project in project_service::list_projects(&root, settings.project_sort_order) {
-        let installed = module_manifest::installed_version(&repo_module.code, &project.path);
-        let is_stale = module_manifest::is_project_stale(&project.path, &repo_module);
+        let module_stale = repo_module
+            .as_ref()
+            .is_some_and(|m| module_manifest::is_project_stale(&project.path, m));
+        let context_stale = company_context::is_project_context_stale(&project.path, &sources);
+        let installed = repo_module
+            .as_ref()
+            .and_then(|m| module_manifest::installed_version(&m.code, &project.path));
+        let latest = repo_module.as_ref().map(|m| m.version.as_str());
         emit(OutputEvent::Stderr {
             line: format!(
-                "[bmad] update check: {} installed={} latest={} -> {}",
+                "[bmad] update check: {} module(installed={} latest={})={} context={} -> {}",
                 project.name,
                 installed.as_deref().unwrap_or("<none>"),
-                repo_module.version,
-                if is_stale { "UPDATE" } else { "current" }
+                latest.unwrap_or("<none>"),
+                if module_stale { "behind" } else { "current" },
+                if context_stale { "drift" } else { "current" },
+                if module_stale || context_stale {
+                    "UPDATE"
+                } else {
+                    "current"
+                }
             ),
         });
-        if is_stale {
+        if module_stale || context_stale {
             stale.push(project.path.to_string_lossy().into_owned());
         }
     }

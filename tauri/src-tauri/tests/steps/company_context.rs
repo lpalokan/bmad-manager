@@ -6,7 +6,8 @@ use bmad_manager_lib::models::{
     AppSettings, CompanyContext, ContextSource, ModuleSourceKind, ProjectItem,
 };
 use bmad_manager_lib::services::company_context::{
-    context_in_project, contexts_in, github_contexts_in, import_context,
+    context_in_project, contexts_in, github_contexts_in, import_context, is_project_context_stale,
+    refresh_context, source_context_for,
 };
 use bmad_manager_lib::services::project_creator;
 
@@ -333,4 +334,107 @@ fn expect_context(world: &TauriWorld) -> &CompanyContext {
         .expect("resolution ran")
         .as_ref()
         .expect("a context was found")
+}
+
+// --- Context drift vs the skills repo (issue #92) -----------------------
+
+#[given(regex = r#"^a skills repo context "([^"]+)" with OKF file "([^"]+)" dated "([^"]+)"$"#)]
+async fn skills_okf_dated(world: &mut TauriWorld, name: String, file: String, date: String) {
+    world.put_skills_okf(&name, &file, Some(&date), "v1");
+}
+
+#[given(
+    regex = r#"^the skills repo context "([^"]+)" also has dateless OKF file "([^"]+)" containing "([^"]+)"$"#
+)]
+async fn skills_okf_dateless(world: &mut TauriWorld, name: String, file: String, body: String) {
+    world.put_skills_okf(&name, &file, None, &body);
+}
+
+#[given(regex = r#"^(?:a )?project "([^"]+)" seeded from the "([^"]+)" skills repo context$"#)]
+async fn project_seeded_from_context(world: &mut TauriWorld, project: String, name: String) {
+    world.seed_project_from_skills_context(&name, &project);
+}
+
+#[given(
+    regex = r#"^the skills repo context "([^"]+)" file "([^"]+)" is edited and dated "([^"]+)"$"#
+)]
+async fn skills_okf_edited_dated(world: &mut TauriWorld, name: String, file: String, date: String) {
+    world.put_skills_okf(&name, &file, Some(&date), "v2 edited");
+}
+
+#[given(
+    regex = r#"^the skills repo context "([^"]+)" dateless file "([^"]+)" is edited to contain "([^"]+)"$"#
+)]
+async fn skills_okf_dateless_edited(
+    world: &mut TauriWorld,
+    name: String,
+    file: String,
+    body: String,
+) {
+    world.put_skills_okf(&name, &file, None, &body);
+}
+
+#[given(regex = r#"^the skills repo context "([^"]+)" gains OKF file "([^"]+)" dated "([^"]+)"$"#)]
+async fn skills_okf_gains(world: &mut TauriWorld, name: String, file: String, date: String) {
+    world.put_skills_okf(&name, &file, Some(&date), "added file");
+}
+
+#[given(regex = r#"^the skills repo context "([^"]+)" is removed$"#)]
+async fn skills_context_removed(world: &mut TauriWorld, name: String) {
+    world.remove_skills_context(&name);
+}
+
+#[given(regex = r#"^project "([^"]+)" has a local context file "([^"]+)"$"#)]
+async fn project_local_context_file(world: &mut TauriWorld, project: String, file: String) {
+    world.add_local_context_file(&project, &file);
+}
+
+#[when(regex = r#"^I check whether project "([^"]+)" has a context update$"#)]
+async fn check_context_update(world: &mut TauriWorld, project: String) {
+    let dir = world.ensure_projects_root().join(&project);
+    let sources = world.skills_repo_sources();
+    world.context_update_available = Some(is_project_context_stale(&dir, &sources));
+}
+
+#[when(regex = r#"^I refresh project "([^"]+)" from the skills repo$"#)]
+async fn refresh_project_from_skills(world: &mut TauriWorld, project: String) {
+    let dir = world.ensure_projects_root().join(&project);
+    let sources = world.skills_repo_sources();
+    let project_ctx = context_in_project(&dir).expect("project has a context to refresh");
+    let source =
+        source_context_for(&project_ctx, &sources).expect("project resolves to a source context");
+    match refresh_context(source, &project_ctx.directory) {
+        Ok(()) => world.last_string_error = None,
+        Err(err) => world.last_string_error = Some(err.to_string()),
+    }
+}
+
+#[then(regex = r#"^project "([^"]+)" reports a context update is available$"#)]
+async fn reports_context_update(world: &mut TauriWorld, _project: String) {
+    assert_eq!(world.context_update_available, Some(true));
+}
+
+#[then(regex = r#"^project "([^"]+)" reports no context update$"#)]
+async fn reports_no_context_update(world: &mut TauriWorld, _project: String) {
+    assert_eq!(world.context_update_available, Some(false));
+}
+
+#[then(regex = r#"^project "([^"]+)" context file "([^"]+)" is dated "([^"]+)"$"#)]
+async fn context_file_dated(world: &mut TauriWorld, project: String, file: String, date: String) {
+    let path = world
+        .ensure_projects_root()
+        .join(&project)
+        .join(PREFERRED_CONTEXT_SUBPATH)
+        .join(&file);
+    let text = std::fs::read_to_string(&path).expect("read refreshed context file");
+    let found = text.lines().find_map(|l| {
+        l.trim()
+            .strip_prefix("last_updated:")
+            .map(|v| v.trim().to_string())
+    });
+    assert_eq!(
+        found.as_deref(),
+        Some(date.as_str()),
+        "expected {path:?} to carry last_updated {date:?}"
+    );
 }

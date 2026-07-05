@@ -147,3 +147,79 @@ Feature: Company context discovery and import
     And the context file "icp.md" of project "acme" has vanished
     When I create a project "fresh" importing the context of "acme"
     Then the creation fails mentioning "importing the context from 'acme' failed"
+
+  # --- Context drift vs the skills repo (issue #92) ---
+  #
+  # A project's company-context is copied from a skills-repo context at
+  # create time and then falls behind when the maintainer edits that
+  # context. Drift is read from the OKF `last_updated` date (always bumped
+  # on edit); the project's source context is resolved from the OKF `tags`
+  # slug its own files carry; a refresh overwrites the drifted files while
+  # keeping project-only additions.
+
+  Scenario: a project matching its source context reports no drift
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    When I check whether project "investor-day" has a context update
+    Then project "investor-day" reports no context update
+
+  Scenario: an admin edit that bumps last_updated flags the project
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I check whether project "investor-day" has a context update
+    Then project "investor-day" reports a context update is available
+
+  Scenario: an older or equal source date is not drift
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-07-03"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-06-01"
+    When I check whether project "investor-day" has a context update
+    Then project "investor-day" reports no context update
+
+  Scenario: a changed dateless file is caught by the content fallback
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And the skills repo context "digital-workforce" also has dateless OKF file "index.md" containing "one link"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" dateless file "index.md" is edited to contain "two links"
+    When I check whether project "investor-day" has a context update
+    Then project "investor-day" reports a context update is available
+
+  Scenario: a source context that added a new file flags the project
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" gains OKF file "kpis.md" dated "2026-06-26"
+    When I check whether project "investor-day" has a context update
+    Then project "investor-day" reports a context update is available
+
+  Scenario: a project whose source context is no longer published is left alone
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "orphan" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" is removed
+    When I check whether project "orphan" has a context update
+    Then project "orphan" reports no context update
+
+  Scenario: refreshing overwrites drifted files with the skills repo version
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I refresh project "investor-day" from the skills repo
+    Then project "investor-day" context file "positioning.md" is dated "2026-07-03"
+
+  Scenario: refreshing adds new source files and keeps project-only files
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And project "investor-day" has a local context file "notes-local.md"
+    And the skills repo context "digital-workforce" gains OKF file "kpis.md" dated "2026-07-03"
+    When I refresh project "investor-day" from the skills repo
+    Then project "investor-day" contains context files "positioning.md, kpis.md, notes-local.md"
+
+  # The canonical loop (issue #92): seeded in sync, admin bumps the date,
+  # the project shows drift, a refresh brings it current, drift clears.
+  Scenario: refreshing then re-checking clears the context update
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I refresh project "investor-day" from the skills repo
+    And I check whether project "investor-day" has a context update
+    Then project "investor-day" reports no context update

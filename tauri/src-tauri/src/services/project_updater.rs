@@ -9,11 +9,12 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use crate::models::{AppSettings, ModuleSourceKind, ProjectItem};
+use crate::models::{AppSettings, CompanyContext, ModuleSourceKind, ProjectItem};
 use crate::platform;
 use crate::services::command_runner::OutputEvent;
 use crate::services::{
-    agents_file, command_runner, git_source, init_command, module_manifest, zip_source,
+    agents_file, command_runner, company_context, git_source, init_command, module_manifest,
+    zip_source,
 };
 
 const OKF_NAMESPACE: &str = "marketing-growth:okf";
@@ -37,6 +38,7 @@ pub enum ProjectUpdateError {
 pub async fn update<F>(
     project: &ProjectItem,
     settings: &AppSettings,
+    sources: &[CompanyContext],
     mut on_event: F,
 ) -> Result<(), ProjectUpdateError>
 where
@@ -69,8 +71,10 @@ where
 
     if exit_code == 0 {
         // Refresh both managed AGENTS.md blocks from the fresh clone while it's
-        // still on disk.
+        // still on disk, then bring the company-context current with the skills
+        // repo so the one Update button clears both module and context drift.
         refresh_agents_sections(project_path, &module_root_path);
+        refresh_project_context(project_path, sources, &mut on_event);
     }
 
     // Clean up the temp module dir whether init succeeded or not.
@@ -103,6 +107,46 @@ fn inject_okf_block(module_root: &Path, project_path: &Path) {
         return;
     }
     let _ = agents_file::ensure_managed_section(project_path, "AGENTS.md", OKF_NAMESPACE, trimmed);
+}
+
+/// After a successful re-install, brings the project's company-context current
+/// with the skills-repo context it was seeded from: resolves the project's
+/// source among `sources` and overwrites the drifted files (overwrite+add,
+/// never delete). Best-effort — like the AGENTS.md refresh, a context hiccup
+/// shouldn't fail an otherwise-good re-install — and a no-op for projects with
+/// no context or no resolved source.
+fn refresh_project_context<F: FnMut(OutputEvent)>(
+    project_path: &Path,
+    sources: &[CompanyContext],
+    on_event: &mut F,
+) {
+    let Some(project_ctx) = company_context::context_in_project(project_path) else {
+        return;
+    };
+    let Some(source) = company_context::source_context_for(&project_ctx, sources) else {
+        return;
+    };
+    match company_context::refresh_context(source, &project_ctx.directory) {
+        Ok(()) => emit_diag(
+            on_event,
+            format!("refreshed company-context from '{}'", source.project_name),
+        ),
+        Err(err) => emit_diag(on_event, format!("company-context refresh skipped: {err}")),
+    }
+}
+
+/// True when a project should be offered the single per-project Update button:
+/// its installed module is behind `repo_module` (when one could be read), or
+/// its company-context has drifted behind the skills-repo `sources`. Unifying
+/// both causes here keeps `check_for_updates` a thin loop and lets the union be
+/// tested without the platform-bound module fetch.
+pub fn needs_update(
+    project_path: &Path,
+    repo_module: Option<&module_manifest::RepoModule>,
+    sources: &[CompanyContext],
+) -> bool {
+    repo_module.is_some_and(|m| module_manifest::is_project_stale(project_path, m))
+        || company_context::is_project_context_stale(project_path, sources)
 }
 
 /// Materialises the module repo once and reads its `module_version`, emitting
