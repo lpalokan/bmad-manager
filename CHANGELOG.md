@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.15](https://github.com/lpalokan/bmad-manager/compare/v0.1.14...v0.1.15) (2026-07-05)
+
+
+### Features
+
+* refresh drifted company-context under the Update button ([b3a992f](https://github.com/lpalokan/bmad-manager/commit/b3a992f7197dc494b368472fbb23526d6024beec)), closes [#92](https://github.com/lpalokan/bmad-manager/issues/92)
+* refresh drifted company-context under the Update button (Swift) ([959e3a6](https://github.com/lpalokan/bmad-manager/commit/959e3a634570420f910cf16324df7201227fc58e))
+* refresh drifted company-context under the Update button (Swift) ([bfe91fe](https://github.com/lpalokan/bmad-manager/commit/bfe91fe098177976070feec8fe05074027480d28)), closes [#92](https://github.com/lpalokan/bmad-manager/issues/92)
+* refresh drifted company-context under the Update button (Tauri) ([496848d](https://github.com/lpalokan/bmad-manager/commit/496848dff9543dbd3b8cc0aded2fe6fe6bdc7bd1))
+
 ## [0.1.14](https://github.com/lpalokan/bmad-manager/compare/v0.1.13...v0.1.14) (2026-06-25)
 
 
