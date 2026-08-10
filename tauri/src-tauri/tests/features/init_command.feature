@@ -25,6 +25,36 @@ Feature: Init command substitution and shell quoting
     When I substitute for Windows with project "demo", project path "C:\p\demo", module source "https://github.com/o/r", module path "C:\m"
     Then the substituted command is "npx bmad install --custom-source "https://github.com/o/r" --directory "C:\p\demo""
 
+  # --- Create-path output folder (issue #99) ---
+  #
+  # New projects install with `--output-folder output`, so core, bmm/bmb/cis
+  # and marketing-growth all write under one folder instead of core keeping
+  # its own `_bmad-output`. This is a create-path-only addition: the updater
+  # re-runs the same template over an existing project, and a CLI flag beats
+  # the project's remembered answer, so appending it there would silently
+  # flip `[core] output_folder` on every existing project.
+
+  Scenario: appends the output folder flag to a create-time command
+    Given the init command template "npx bmad-method install --yes --directory '{PROJECT_PATH}'"
+    When I add the create-time output folder
+    Then the result is "npx bmad-method install --yes --directory '{PROJECT_PATH}' --output-folder output"
+
+  Scenario: appending the flag leaves quoted placeholders untouched
+    Given the init command template "npx bmad-method install --custom-source '{MODULE_SOURCE}' --directory '{PROJECT_PATH}'"
+    When I add the create-time output folder
+    And I substitute for POSIX with project "my demo", project path "/p/my demo", module source "https://github.com/o/r@v1", module path "/m"
+    Then the substituted command is "npx bmad-method install --custom-source 'https://github.com/o/r@v1' --directory '/p/my demo' --output-folder output"
+
+  Scenario: a command that already sets --output-folder is left alone
+    Given the init command template "npx bmad-method install --output-folder docs --directory '{PROJECT_PATH}'"
+    When I add the create-time output folder
+    Then the result is "npx bmad-method install --output-folder docs --directory '{PROJECT_PATH}'"
+
+  Scenario: a command that already sets core.output_folder is left alone
+    Given the init command template "npx bmad-method install --set core.output_folder=docs"
+    When I add the create-time output folder
+    Then the result is "npx bmad-method install --set core.output_folder=docs"
+
   Scenario: pins a git URL to an explicit ref
     When I pin url "https://github.com/o/r" to ref "v1.2.3"
     Then the result is "https://github.com/o/r@v1.2.3"

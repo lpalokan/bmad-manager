@@ -144,6 +144,15 @@ async fn update_settings_with_okf(world: &mut TauriWorld, okf: String) {
     set_update_settings(world, zip, "exit 0");
 }
 
+/// Update settings whose init command writes its own arguments to
+/// `init-args.txt`, so a scenario can assert what the updater passed — in
+/// particular that it did *not* pass the create-path output-folder flag.
+#[given("update settings whose init command records its arguments")]
+async fn update_settings_recording_args(world: &mut TauriWorld) {
+    let zip = world.build_module_zip();
+    set_update_settings(world, zip, "echo init > init-args.txt");
+}
+
 #[given("update settings whose init command fails")]
 async fn update_settings_fails(world: &mut TauriWorld) {
     let zip = world.build_module_zip();
@@ -263,6 +272,16 @@ async fn project_file_contains(world: &mut TauriWorld, rel: String, needle: Stri
     assert!(
         got.contains(&needle),
         "expected {rel} to contain {needle:?}, got {got:?}"
+    );
+}
+
+#[then(regex = r#"^the project file "([^"]+)" does not contain "([^"]+)"$"#)]
+async fn project_file_lacks(world: &mut TauriWorld, rel: String, needle: String) {
+    let project = world.update_target.as_ref().expect("project seeded");
+    let got = std::fs::read_to_string(project.join(&rel)).expect("file present");
+    assert!(
+        !got.contains(&needle),
+        "expected {rel} not to contain {needle:?}, got {got:?}"
     );
 }
 

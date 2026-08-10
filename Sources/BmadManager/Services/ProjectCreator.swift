@@ -50,7 +50,13 @@ struct ProjectCreator {
         let source = moduleSourceFor(settings)
 
         try await source.withModuleRoot { moduleRoot, installerSource in
-            let command = settings.initCommand
+            // New projects install with `--output-folder output` so core and
+            // every module share one folder (issue #99). Appended here, at
+            // command-build time, and nowhere else: the stored `initCommand`
+            // setting keeps its own text, and `ProjectUpdater` re-runs it
+            // without the flag so an existing project's remembered
+            // `[core] output_folder` survives an update.
+            let command = InitCommand.withCreateOutputFolder(settings.initCommand)
                 .replacingOccurrences(of: "{PROJECT_PATH}", with: projectURL.path)
                 .replacingOccurrences(of: "{MODULE_SOURCE}", with: installerSource)
                 .replacingOccurrences(of: "{MODULE_PATH}", with: moduleRoot.path)

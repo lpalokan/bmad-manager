@@ -202,6 +202,87 @@ final class ProjectCreatorTests: XCTestCase {
                       "{MODULE_PATH} should still expand to the local module root")
     }
 
+    // MARK: - Output folder on create (#99)
+
+    /// Runs a creation with a fake init and returns the command it was handed.
+    private func capturedCreateCommand(
+        initCommand: String, name: String
+    ) async throws -> String {
+        let settings = makeSettings(initCommand: initCommand)
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
+        var captured: String?
+        try await creator.create(name: name, settings: settings) { command, _ in
+            captured = command
+            return 0
+        }
+        return try XCTUnwrap(captured)
+    }
+
+    func testCreateAppendsOutputFolderFlagToInitCommand() async throws {
+        let command = try await capturedCreateCommand(
+            initCommand: "npx bmad-method install --yes --directory '{PROJECT_PATH}'",
+            name: "one-output-folder")
+        XCTAssertTrue(command.hasSuffix(" --output-folder output"),
+                      "new projects install into `output/`, got \(command)")
+    }
+
+    func testCreateAppendsOutputFolderAfterPlaceholderSubstitution() async throws {
+        // The flag lands after a fully substituted (and still correctly quoted)
+        // command, including for a project path with a space in it.
+        let existing = projectsRoot.appendingPathComponent("my project", isDirectory: true)
+        try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: true)
+        let settings = makeSettings(
+            initCommand: "npx bmad-method install --custom-source '{MODULE_SOURCE}' --directory '{PROJECT_PATH}'")
+        let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))
+
+        var captured: String?
+        try await creator.create(
+            name: "my project",
+            settings: settings,
+            destination: existing
+        ) { command, _ in
+            captured = command
+            return 0
+        }
+
+        let command = try XCTUnwrap(captured)
+        XCTAssertEqual(
+            command,
+            "npx bmad-method install --custom-source '\(moduleRoot.path)' --directory '\(existing.path)' --output-folder output")
+    }
+
+    func testCreateKeepsAConfiguredOutputFolderFlag() async throws {
+        // A deliberate choice in settings.json wins — the command runs as written.
+        let configured = "npx bmad-method install --output-folder docs --directory '{PROJECT_PATH}'"
+        let command = try await capturedCreateCommand(
+            initCommand: configured, name: "custom-output-folder")
+        XCTAssertFalse(command.contains("--output-folder output"))
+        XCTAssertTrue(command.contains("--output-folder docs"))
+    }
+
+    func testCreateKeepsAConfiguredSetCoreOutputFolder() async throws {
+        let command = try await capturedCreateCommand(
+            initCommand: "npx bmad-method install --set core.output_folder=docs",
+            name: "custom-set-output-folder")
+        XCTAssertFalse(command.contains("--output-folder"))
+        XCTAssertTrue(command.hasSuffix("--set core.output_folder=docs"))
+    }
+
+    func testRepeatedCreatesAppendTheFlagExactlyOnce() async throws {
+        // The flag decorates the command being built, never the stored setting,
+        // so a second project gets the same one-flag command rather than an
+        // accumulated one.
+        let configured = "npx bmad-method install --yes --directory '{PROJECT_PATH}'"
+        let first = try await capturedCreateCommand(initCommand: configured, name: "first")
+        let second = try await capturedCreateCommand(initCommand: configured, name: "second")
+
+        for command in [first, second] {
+            XCTAssertEqual(
+                command.components(separatedBy: "--output-folder").count - 1, 1,
+                "expected exactly one --output-folder in \(command)")
+        }
+    }
+
     func testFailureCleanupOnNonZeroExit() async throws {
         let settings = makeSettings(initCommand: "exit 42")
         let creator = makeCreator(source: FakeModuleSource(moduleRoot: moduleRoot))

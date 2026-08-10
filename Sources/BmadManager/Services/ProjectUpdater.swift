@@ -42,6 +42,11 @@ struct ProjectUpdater {
         let projectURL = project.url
 
         try await source.withModuleRoot { moduleRoot, installerSource in
+            // The configured command runs as written — deliberately without the
+            // creator's `--output-folder output` (issue #99). A CLI flag beats
+            // the project's remembered answer in the installer, so adding it
+            // here would flip `[core] output_folder` on an existing project
+            // while its files stayed in `_bmad-output/`.
             let command = settings.initCommand
                 .replacingOccurrences(of: "{PROJECT_PATH}", with: projectURL.path)
                 .replacingOccurrences(of: "{MODULE_SOURCE}", with: installerSource)

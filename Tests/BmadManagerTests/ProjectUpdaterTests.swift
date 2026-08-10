@@ -141,6 +141,31 @@ final class ProjectUpdaterTests: XCTestCase {
         XCTAssertTrue(contents.contains(moduleRoot.path))
     }
 
+    // MARK: - Output folder is a create-path-only flag (#99)
+
+    func testUpdateDoesNotPassTheOutputFolderFlag() async throws {
+        // The installer lets a CLI flag override a project's remembered answer,
+        // so passing `--output-folder` here would silently flip an existing
+        // project's `[core] output_folder` while its files stayed put.
+        let project = try makeProject("output-folder-untouched")
+        let configured = "npx bmad-method install --yes --directory '{PROJECT_PATH}'"
+        let settings = makeSettings(initCommand: configured)
+        let updater = makeUpdater(source: FakeModuleSource(moduleRoot: moduleRoot))
+
+        var captured: String?
+        try await updater.update(project: project, settings: settings) { command, _ in
+            captured = command
+            return 0
+        }
+
+        let command = try XCTUnwrap(captured)
+        XCTAssertFalse(command.contains("--output-folder"),
+                       "the update must run the configured command as written, got \(command)")
+        XCTAssertEqual(
+            command,
+            "npx bmad-method install --yes --directory '\(project.url.path)'")
+    }
+
     // MARK: - AGENTS.md block refresh
 
     func testUpdateRefreshesBmadBlockPreservingUserContent() async throws {

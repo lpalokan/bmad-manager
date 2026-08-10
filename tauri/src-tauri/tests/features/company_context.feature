@@ -174,6 +174,14 @@ Feature: Company context discovery and import
     Then the creation fails mentioning "exited with code"
     And project "fresh" has no context folder
 
+  # A new project installs with `--output-folder output` (issue #99) so core
+  # and every module write under the same folder the company-context lives in.
+  Scenario: create runs the init command with the output folder flag
+    Given creation settings whose init command records its arguments
+    When I create a project "fresh" without importing a context
+    Then the creation succeeds
+    And project "fresh" file "init-args.txt" contains "--output-folder output"
+
   Scenario: create surfaces a context import failure with the source project name
     Given a project "acme" with context files "icp.md" under "_bmad-output/company-context"
     And creation settings whose init command succeeds
