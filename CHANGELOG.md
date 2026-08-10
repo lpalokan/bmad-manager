@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.17](https://github.com/lpalokan/bmad-manager/compare/v0.1.16...v0.1.17) (2026-08-10)
+
+
+### Features
+
+* append --output-folder output to create-path init commands ([f71a14d](https://github.com/lpalokan/bmad-manager/commit/f71a14d352ffc51776bd64bc0b98f642714a3f07))
+* create new projects with output_folder = output ([6f94859](https://github.com/lpalokan/bmad-manager/commit/6f948590778b22cb5b0192df6efe14445e4055e8)), closes [#99](https://github.com/lpalokan/bmad-manager/issues/99)
+
 ## [0.1.16](https://github.com/lpalokan/bmad-manager/compare/v0.1.15...v0.1.16) (2026-08-10)
 
 
