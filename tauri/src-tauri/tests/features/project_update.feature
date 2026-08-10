@@ -108,6 +108,17 @@ Feature: Update existing projects from the bmad-repo
     Then the update succeeds
     And the project file "_bmad-output/work/notes.md" still has content "keep me"
 
+  # The create path appends `--output-folder output` (issue #99); the update
+  # path must not. The installer lets a CLI flag override a project's
+  # remembered answer, so an existing project would silently flip
+  # `[core] output_folder` to a folder its files are not in.
+  Scenario: updating does not pass the create-path output folder flag
+    Given an existing project "proj" to update
+    And update settings whose init command records its arguments
+    When I update the project
+    Then the update succeeds
+    And the project file "init-args.txt" does not contain "--output-folder"
+
   Scenario: a failing update surfaces an error and leaves the project inspectable
     Given an existing project "proj" to update
     And update settings whose init command fails

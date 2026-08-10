@@ -259,7 +259,13 @@ script or call `./scripts/make_icon.sh` directly.
      temp dir. The clone root is the module root.
    - **Local zip**: extract with `/usr/bin/unzip`, then descend into the
      single wrapper folder if the archive has GitHub's "Download ZIP" shape.
-5. Substitute placeholders in the init command.
+5. Substitute placeholders in the init command, and append
+   `--output-folder output` so BMAD core installs into the same `output/`
+   folder the modules and the company context use, instead of its own
+   `_bmad-output/` default. Skipped when your configured command already
+   sets `--output-folder` or `--set core.output_folder=`. This is a
+   create-only step: **Update** re-runs your command as written, so an
+   existing project keeps whichever output folder it was installed with.
 6. Run the command in `/bin/zsh -lc '...'` with the project folder as the
    working directory (so `npx`, Homebrew, nvm, etc. resolve from your shell PATH).
    Output streams into the bottom panel.

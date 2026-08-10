@@ -33,6 +33,34 @@ pub fn substitute(
     s
 }
 
+/// The output folder new projects are installed with. `bmad-method`'s own
+/// default is `_bmad-output`, which leaves a project that also uses
+/// marketing-growth with two output folders — the deliverables under `output/`
+/// and core's artifacts under `_bmad-output/`. Installing with this value puts
+/// core, bmm/bmb/cis and marketing-growth in one place.
+pub const CREATE_OUTPUT_FOLDER: &str = "output";
+
+/// Appends `--output-folder output` to an init-command template.
+///
+/// **Create path only.** The installer lets a CLI flag override a project's
+/// remembered answer (`tools/installer/ui.js`: the collected CLI config is
+/// spread over the loaded existing config), so passing this on the update path
+/// would silently flip an existing project's `[core] output_folder` from
+/// `_bmad-output` to `output` while its files stayed put. `project_updater`
+/// therefore calls [`substitute`] directly and never this — which is also why
+/// the append lives here rather than inside `substitute`, which both paths use.
+///
+/// A template that already chooses an output folder — via `--output-folder` or
+/// `--set core.output_folder=` — is returned unchanged: a deliberate user
+/// choice in `settings.json` wins. The stored setting is never rewritten; the
+/// flag exists only in the command handed to the shell for this one install.
+pub fn with_create_output_folder(template: &str) -> String {
+    if template.contains("--output-folder") || template.contains("--set core.output_folder=") {
+        return template.to_string();
+    }
+    format!("{template} --output-folder {CREATE_OUTPUT_FOLDER}")
+}
+
 /// Builds the value for the init command's `--custom-source` argument.
 ///
 /// `bmad-method`'s custom-source parser only recognises a *local* path when it
@@ -183,6 +211,45 @@ mod tests {
         assert_eq!(
             out,
             "npx bmad install --custom-source '/m' --directory '/p/demo'"
+        );
+    }
+
+    #[test]
+    fn appends_output_folder_for_create() {
+        assert_eq!(
+            with_create_output_folder("npx bmad-method install --yes --directory '{PROJECT_PATH}'"),
+            "npx bmad-method install --yes --directory '{PROJECT_PATH}' --output-folder output"
+        );
+    }
+
+    #[test]
+    fn keeps_an_explicit_output_folder_choice() {
+        let template = "npx bmad-method install --output-folder docs";
+        assert_eq!(with_create_output_folder(template), template);
+    }
+
+    #[test]
+    fn keeps_an_explicit_set_core_output_folder_choice() {
+        let template = "npx bmad-method install --set core.output_folder=docs";
+        assert_eq!(with_create_output_folder(template), template);
+    }
+
+    #[test]
+    fn appending_leaves_placeholder_quoting_intact() {
+        let extended = with_create_output_folder(
+            "npx bmad-method install --custom-source '{MODULE_SOURCE}' --directory '{PROJECT_PATH}'",
+        );
+        let out = substitute(
+            &extended,
+            "my demo",
+            "/p/my demo",
+            "https://github.com/o/r@v1",
+            "/m",
+            false,
+        );
+        assert_eq!(
+            out,
+            "npx bmad-method install --custom-source 'https://github.com/o/r@v1' --directory '/p/my demo' --output-folder output"
         );
     }
 

@@ -1,7 +1,9 @@
 use cucumber::{given, then, when};
 
 use bmad_manager_lib::services::git_source::{latest_semver_tag, pinned_url};
-use bmad_manager_lib::services::init_command::{posix_shell_quote, substitute};
+use bmad_manager_lib::services::init_command::{
+    posix_shell_quote, substitute, with_create_output_folder,
+};
 
 use crate::support::TauriWorld;
 
@@ -71,6 +73,17 @@ async fn substitute_posix(
         &module_path,
         false,
     ));
+}
+
+/// Applies the create-path-only output-folder append. The result replaces the
+/// stored template so a scenario can go on to substitute placeholders in it,
+/// mirroring what `project_creator` does.
+#[when("I add the create-time output folder")]
+async fn add_create_output_folder(world: &mut TauriWorld) {
+    let template = world.init_template.as_ref().expect("template set");
+    let extended = with_create_output_folder(template);
+    world.init_template = Some(extended.clone());
+    world.last_string = Some(extended);
 }
 
 #[then(regex = r#"^the substituted command is "(.*)"$"#)]

@@ -105,8 +105,14 @@ where
     // relative-path conversion, which is meaningless for a URL. For a zip it's
     // the local module path, same as `{MODULE_PATH}`.
     let module_source = module_source_arg(settings, &module_arg);
+    // New projects install with `--output-folder output` so core and every
+    // module share one folder (issue #99). Appended here, at command-build
+    // time, and nowhere else: the stored `init_command` setting keeps its own
+    // text, and `project_updater` re-runs it without the flag so an existing
+    // project's remembered `[core] output_folder` survives an update.
+    let template = init_command::with_create_output_folder(&settings.init_command);
     let command = init_command::substitute(
-        &settings.init_command,
+        &template,
         name,
         &project_path.to_string_lossy(),
         &module_source,

@@ -124,12 +124,31 @@ async fn creation_settings(world: &mut TauriWorld, outcome: String) {
     settings.projects_root = root.to_string_lossy().into_owned();
     settings.module_source_kind = ModuleSourceKind::LocalZip;
     settings.module_zip_path = zip_path.to_string_lossy().into_owned();
+    // The creator appends `--output-folder output` (issue #99), so the fixture
+    // commands have to tolerate a trailing argument on both shells: `echo`
+    // ignores extras, and an unknown command fails whatever follows it (a bare
+    // `exit 0` would turn into "too many arguments" and stop succeeding).
     settings.init_command = if outcome == "succeeds" {
-        "exit 0"
+        "echo init"
     } else {
-        "exit 1"
+        "bmad-manager-no-such-init-command"
     }
     .to_string();
+    world.settings = Some(settings);
+}
+
+/// Init command that writes its own arguments to `init-args.txt` in the
+/// project, so a scenario can assert what the creator actually passed. The
+/// redirection is consumed by the shell, leaving the appended flag in the echo.
+#[given("creation settings whose init command records its arguments")]
+async fn creation_settings_recording_args(world: &mut TauriWorld) {
+    let root = world.ensure_projects_root();
+    let zip_path = world.build_module_zip();
+    let mut settings = AppSettings::defaults();
+    settings.projects_root = root.to_string_lossy().into_owned();
+    settings.module_source_kind = ModuleSourceKind::LocalZip;
+    settings.module_zip_path = zip_path.to_string_lossy().into_owned();
+    settings.init_command = "echo init > init-args.txt".to_string();
     world.settings = Some(settings);
 }
 
@@ -299,6 +318,21 @@ async fn project_contains_context_files_under(
             "expected {file} to exist under {dir:?}"
         );
     }
+}
+
+#[then(regex = r#"^project "([^"]+)" file "([^"]+)" contains "([^"]+)"$"#)]
+async fn project_file_contains(
+    world: &mut TauriWorld,
+    project: String,
+    file: String,
+    fragment: String,
+) {
+    let path = world.ensure_projects_root().join(&project).join(&file);
+    let content = std::fs::read_to_string(&path).expect("read project file");
+    assert!(
+        content.contains(&fragment),
+        "expected {path:?} content {content:?} to contain {fragment:?}"
+    );
 }
 
 #[then(regex = r#"^project "([^"]+)" has no "([^"]+)" folder$"#)]
