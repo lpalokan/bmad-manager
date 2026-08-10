@@ -13,7 +13,17 @@ use bmad_manager_lib::services::project_creator;
 
 use crate::support::TauriWorld;
 
-const PREFERRED_CONTEXT_SUBPATH: &str = "_bmad-output/company-context";
+/// Where the manager writes a seeded context — the canonical
+/// marketing-growth layout (issue #96). Reading also accepts the legacy
+/// `_bmad-output/company-context` and a bare top-level `company-context`.
+const PREFERRED_CONTEXT_SUBPATH: &str = "output/company-context";
+
+/// Every layout a context can be read from, canonical first.
+const ALL_CONTEXT_SUBPATHS: [&str; 3] = [
+    "output/company-context",
+    "_bmad-output/company-context",
+    "company-context",
+];
 
 fn split_list(list: &str) -> Vec<String> {
     if list.trim().is_empty() {
@@ -81,15 +91,22 @@ async fn project_has_existing_context_file(
 
 /// Resolves (and caches) the source context BEFORE deleting the file, so
 /// the import step works from a stale snapshot — mirroring the Swift
-/// "source file vanished between scan and import" test.
+/// "source file vanished between scan and import" test. The file is removed
+/// from wherever the context actually resolved, so this works for a source
+/// in any of the supported layouts.
 #[given(regex = r#"^the context file "([^"]+)" of project "([^"]+)" has vanished$"#)]
 async fn context_file_vanished(world: &mut TauriWorld, file: String, project: String) {
     let project_dir = world.ensure_projects_root().join(&project);
     if world.resolved_context.is_none() {
         world.resolved_context = Some(context_in_project(&project_dir));
     }
-    std::fs::remove_file(project_dir.join(PREFERRED_CONTEXT_SUBPATH).join(&file))
-        .expect("remove source context file");
+    let dir = world
+        .resolved_context
+        .clone()
+        .flatten()
+        .map(|c| c.directory)
+        .expect("source context resolves before the file vanishes");
+    std::fs::remove_file(dir.join(&file)).expect("remove source context file");
 }
 
 #[given(regex = r#"^a skills repo context "([^"]+)" with files "([^"]*)"$"#)]
@@ -266,6 +283,30 @@ async fn project_contains_context_files(world: &mut TauriWorld, project: String,
     }
 }
 
+/// Same assertion, but naming the layout explicitly — used where the point
+/// of the scenario is *which* folder the files landed in (issue #96).
+#[then(regex = r#"^project "([^"]+)" contains context files "([^"]*)" under "([^"]+)"$"#)]
+async fn project_contains_context_files_under(
+    world: &mut TauriWorld,
+    project: String,
+    list: String,
+    subpath: String,
+) {
+    let dir = world.ensure_projects_root().join(&project).join(&subpath);
+    for file in split_list(&list) {
+        assert!(
+            dir.join(&file).is_file(),
+            "expected {file} to exist under {dir:?}"
+        );
+    }
+}
+
+#[then(regex = r#"^project "([^"]+)" has no "([^"]+)" folder$"#)]
+async fn project_has_no_folder(world: &mut TauriWorld, project: String, folder: String) {
+    let path = world.ensure_projects_root().join(&project).join(&folder);
+    assert!(!path.exists(), "expected {path:?} not to exist");
+}
+
 #[then(regex = r#"^project "([^"]+)" does not contain context file "([^"]+)"$"#)]
 async fn project_lacks_context_file(world: &mut TauriWorld, project: String, file: String) {
     let path = world
@@ -321,7 +362,7 @@ async fn creation_fails_mentioning(world: &mut TauriWorld, fragment: String) {
 #[then(regex = r#"^project "([^"]+)" has no context folder$"#)]
 async fn project_has_no_context_folder(world: &mut TauriWorld, project: String) {
     let project_dir = world.ensure_projects_root().join(&project);
-    for subpath in [PREFERRED_CONTEXT_SUBPATH, "company-context"] {
+    for subpath in ALL_CONTEXT_SUBPATHS {
         let dir = project_dir.join(subpath);
         assert!(!dir.exists(), "expected {dir:?} not to exist");
     }
@@ -353,6 +394,20 @@ async fn skills_okf_dateless(world: &mut TauriWorld, name: String, file: String,
 #[given(regex = r#"^(?:a )?project "([^"]+)" seeded from the "([^"]+)" skills repo context$"#)]
 async fn project_seeded_from_context(world: &mut TauriWorld, project: String, name: String) {
     world.seed_project_from_skills_context(&name, &project);
+}
+
+/// Seeds a project whose bundle sits in a named layout — models a project
+/// created before the manager defaulted to `output/` (issue #96).
+#[given(
+    regex = r#"^(?:a )?project "([^"]+)" seeded from the "([^"]+)" skills repo context under "([^"]+)"$"#
+)]
+async fn project_seeded_from_context_under(
+    world: &mut TauriWorld,
+    project: String,
+    name: String,
+    subpath: String,
+) {
+    world.seed_project_from_skills_context_at(&name, &project, &subpath);
 }
 
 #[given(

@@ -399,8 +399,8 @@ struct ContentView: View {
     /// Per-project "Update": confirm, then re-install the latest module over
     /// the existing folder and refresh its managed AGENTS.md blocks. Mirrors
     /// `initializeExistingFolder`'s confirm-then-run shape (NSAlert gate, then
-    /// the coordinator streams init output into the panel). `_bmad-output/`
-    /// user data is left untouched.
+    /// the coordinator streams init output into the panel). The user's own
+    /// files in the project folder are left untouched.
     private func updateProject(_ project: ProjectItem) async {
         guard confirmUpdate(project) else { return }
         guard ensureModuleZipIfNeeded() else { return }
@@ -418,7 +418,7 @@ struct ContentView: View {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Update '\(project.name)' to the latest module?"
-        alert.informativeText = "This re-runs BMAD init in the project folder and refreshes the managed AGENTS.md sections. Your own files and notes under _bmad-output/ are preserved."
+        alert.informativeText = "This re-runs BMAD init in the project folder and refreshes the managed AGENTS.md sections. Your own files and notes in the project folder are preserved."
         alert.addButton(withTitle: "Update")
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn

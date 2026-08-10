@@ -253,7 +253,7 @@ final class ProjectCreatorTests: XCTestCase {
         let sourceProject = projectsRoot
             .appendingPathComponent("source-project", isDirectory: true)
         let contextDir = sourceProject
-            .appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+            .appendingPathComponent("output/company-context", isDirectory: true)
         try FileManager.default.createDirectory(at: contextDir, withIntermediateDirectories: true)
         for file in files {
             try "imported \(file)".write(to: contextDir.appendingPathComponent(file),
@@ -275,12 +275,16 @@ final class ProjectCreatorTests: XCTestCase {
             importingContextFrom: context
         ) { _, _ in 0 }
 
-        let destDir = project.url.appendingPathComponent("_bmad-output/company-context")
+        let destDir = project.url.appendingPathComponent("output/company-context")
         let icp = try String(
             contentsOf: destDir.appendingPathComponent("icp.md"), encoding: .utf8)
         XCTAssertEqual(icp, "imported icp.md")
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: destDir.appendingPathComponent("kpis.md").path))
+        // The seed lands on the canonical folder only — the legacy one is
+        // never created for a new project (issue #96).
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: project.url.appendingPathComponent("_bmad-output").path))
     }
 
     func testCreateWithoutContextSelectionDoesNotCreateContextFolder() async throws {
@@ -292,8 +296,12 @@ final class ProjectCreatorTests: XCTestCase {
             settings: settings
         ) { _, _ in 0 }
 
-        let destDir = project.url.appendingPathComponent("_bmad-output/company-context")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: destDir.path))
+        for subpath in ["output/company-context", "_bmad-output/company-context", "company-context"] {
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: project.url.appendingPathComponent(subpath).path),
+                "expected no context folder at '\(subpath)'")
+        }
     }
 
     func testCreateDoesNotImportContextWhenInitFails() async throws {
@@ -313,7 +321,7 @@ final class ProjectCreatorTests: XCTestCase {
         }
 
         let destDir = projectsRoot
-            .appendingPathComponent("failed-seed/_bmad-output/company-context")
+            .appendingPathComponent("failed-seed/output/company-context")
         XCTAssertFalse(FileManager.default.fileExists(atPath: destDir.path))
     }
 

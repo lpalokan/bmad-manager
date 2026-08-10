@@ -14,7 +14,7 @@ enum ProjectUpdateError: LocalizedError {
 /// Re-installs the latest module over an existing project and refreshes the
 /// managed AGENTS.md blocks. Sibling of `ProjectCreator`: it shares the same
 /// `ModuleSource` seam and `runCommand` convention, but targets a folder that
-/// already exists and never touches the user's data under `_bmad-output/`.
+/// already exists and never touches the user's own files in it.
 struct ProjectUpdater {
     let projectService: ProjectService
     let moduleSourceFor: (AppSettings) -> ModuleSource
@@ -31,7 +31,8 @@ struct ProjectUpdater {
     /// existing project folder, then re-injects both managed AGENTS.md blocks
     /// from that clone. The install is idempotent over an existing project
     /// (the same path the "Initialize existing folder…" flow exercises), so
-    /// user content under `_bmad-output/` is left intact.
+    /// user content in the project folder — `output/`, the legacy
+    /// `_bmad-output/`, anything else — is left intact.
     func update(
         project: ProjectItem,
         settings: AppSettings,

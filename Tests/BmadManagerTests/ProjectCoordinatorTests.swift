@@ -280,10 +280,15 @@ final class ProjectCoordinatorTests: XCTestCase {
     // MARK: - Company contexts
 
     /// Drops a company context with the given files into an existing or new
-    /// project folder under the projects root.
-    private func seedContext(project: String, files: [String]) throws {
+    /// project folder under the projects root, in the canonical layout unless
+    /// another one is named.
+    private func seedContext(
+        project: String,
+        files: [String],
+        at subpath: String = "output/company-context"
+    ) throws {
         let contextDir = projectsRoot
-            .appendingPathComponent("\(project)/_bmad-output/company-context", isDirectory: true)
+            .appendingPathComponent("\(project)/\(subpath)", isDirectory: true)
         try FileManager.default.createDirectory(at: contextDir, withIntermediateDirectories: true)
         for file in files {
             try "from \(project)".write(to: contextDir.appendingPathComponent(file),
@@ -303,6 +308,21 @@ final class ProjectCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.availableContexts.map(\.projectName),
                        ["campaign-a", "campaign-b"])
+    }
+
+    func testRefreshDiscoversContextsInEveryLayoutIncludingLegacyOnes() throws {
+        // A project the module has relocated to `output/`, one still on the
+        // pre-v2.4 `_bmad-output/`, and one on the bare fallback all stay
+        // usable as seeding sources (issue #96).
+        try seedContext(project: "canonical", files: ["icp.md"])
+        try seedContext(project: "legacy", files: ["icp.md"], at: "_bmad-output/company-context")
+        try seedContext(project: "bare", files: ["icp.md"], at: "company-context")
+
+        let coordinator = makeCoordinator()
+        refresh(coordinator)
+
+        XCTAssertEqual(coordinator.availableContexts.map(\.projectName),
+                       ["bare", "canonical", "legacy"])
     }
 
     func testRefreshReturnsNoContextsWhenProjectsHaveNone() async {
@@ -328,7 +348,7 @@ final class ProjectCoordinatorTests: XCTestCase {
 
         XCTAssertNil(coordinator.errorMessage)
         let destDir = projectsRoot
-            .appendingPathComponent("recipient/_bmad-output/company-context")
+            .appendingPathComponent("recipient/output/company-context")
         let icp = try String(
             contentsOf: destDir.appendingPathComponent("icp.md"), encoding: .utf8)
         XCTAssertEqual(icp, "from donor")
@@ -350,7 +370,7 @@ final class ProjectCoordinatorTests: XCTestCase {
 
         XCTAssertNil(coordinator.errorMessage)
         let destDir = projectsRoot
-            .appendingPathComponent("scratch/_bmad-output/company-context")
+            .appendingPathComponent("scratch/output/company-context")
         XCTAssertFalse(FileManager.default.fileExists(atPath: destDir.path))
     }
 
@@ -650,7 +670,7 @@ final class ProjectCoordinatorTests: XCTestCase {
 
         XCTAssertNil(coordinator.errorMessage)
         let text = try String(
-            contentsOf: proj.appendingPathComponent("_bmad-output/company-context/positioning.md"),
+            contentsOf: proj.appendingPathComponent("output/company-context/positioning.md"),
             encoding: .utf8)
         XCTAssertTrue(
             text.contains("last_updated: 2026-07-03"),

@@ -1,7 +1,7 @@
 //! Re-installs the latest module over an existing project and refreshes the
 //! managed AGENTS.md blocks. Sibling of `project_creator`: it shares the same
 //! module-materialisation and `on_event` streaming, but targets a folder that
-//! already exists and never touches the user's data under `_bmad-output/`.
+//! already exists and never touches the user's own files in it.
 //!
 //! Mirrors the Swift `ProjectUpdater`.
 
@@ -33,8 +33,9 @@ pub enum ProjectUpdateError {
 /// Materialises a fresh module clone, re-runs the init command over the
 /// existing project folder, then re-injects both managed AGENTS.md blocks from
 /// that clone. The install is idempotent over an existing project (the same
-/// path the "initialize existing folder" flow exercises), so user content
-/// under `_bmad-output/` is left intact.
+/// path the "initialize existing folder" flow exercises), so user content in
+/// the project folder — `output/`, the legacy `_bmad-output/`, anything else
+/// — is left intact.
 pub async fn update<F>(
     project: &ProjectItem,
     settings: &AppSettings,
