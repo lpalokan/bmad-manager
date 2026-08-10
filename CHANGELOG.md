@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.16](https://github.com/lpalokan/bmad-manager/compare/v0.1.15...v0.1.16) (2026-08-10)
+
+
+### Features
+
+* default company-context to output/, keep reading _bmad-output/ ([610434e](https://github.com/lpalokan/bmad-manager/commit/610434e2cbc6d911103fbb3715e0e29bb65e22f0))
+* default company-context to output/, keep reading _bmad-output/ ([8562ae6](https://github.com/lpalokan/bmad-manager/commit/8562ae63e8af064f0ebd6d5924c9e73afc942e1c)), closes [#96](https://github.com/lpalokan/bmad-manager/issues/96)
+
 ## [0.1.15](https://github.com/lpalokan/bmad-manager/compare/v0.1.14...v0.1.15) (2026-07-05)
 
 
