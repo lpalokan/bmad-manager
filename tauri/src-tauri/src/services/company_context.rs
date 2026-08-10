@@ -3,11 +3,17 @@
 //!
 //! The resolution order inside each project mirrors the
 //! company-context-bootstrap workflow's own rules: prefer
-//! `_bmad-output/company-context`, fall back to a top-level
+//! `output/company-context` (the canonical marketing-growth layout since
+//! v2.4), then the legacy `_bmad-output/company-context`, then a top-level
 //! `company-context`. A project counts as having a context when its
 //! context folder holds at least one file — every file is part of the
 //! context, not just the canonical names, so user-added files seed across
 //! too.
+//!
+//! Reading is deliberately broad and writing is not: a seeded context
+//! always lands in `output/company-context` (see [`import_context`]), so
+//! new projects start on the canonical name while projects on either older
+//! layout keep resolving in place. Nothing is ever moved.
 //!
 //! Walking the projects folder is deliberately NOT this module's job —
 //! `project_service::list_projects` is the one place that knows what
@@ -22,7 +28,13 @@ use thiserror::Error;
 use crate::models::company_context::RECOGNIZED_FILE_NAMES;
 use crate::models::{CompanyContext, ContextSource, ProjectItem};
 
-const CONTEXT_SUBPATHS: [&str; 2] = ["_bmad-output/company-context", "company-context"];
+/// Every layout a context is read from, canonical first. The first entry is
+/// also the one [`import_context`] writes to.
+const CONTEXT_SUBPATHS: [&str; 3] = [
+    "output/company-context",
+    "_bmad-output/company-context",
+    "company-context",
+];
 
 #[derive(Debug, Error)]
 pub enum ContextImportError {
@@ -149,15 +161,16 @@ fn collect_context_files(root: &Path, dir: &Path, out: &mut Vec<String>) {
 }
 
 /// Copies all of the context's files into
-/// `<project_path>/_bmad-output/company-context/`. Files already present
-/// at the destination are left untouched — the manager never overwrites
-/// silently (the bootstrap workflow's behavioural contract); re-running
-/// the workflow in the new project handles refreshes interactively.
+/// `<project_path>/output/company-context/` — the canonical layout,
+/// whichever layout the source used. Files already present at the
+/// destination are left untouched — the manager never overwrites silently
+/// (the bootstrap workflow's behavioural contract); re-running the workflow
+/// in the new project handles refreshes interactively.
 pub fn import_context(
     context: &CompanyContext,
     project_path: &Path,
 ) -> Result<(), ContextImportError> {
-    let dest_dir = project_path.join("_bmad-output").join("company-context");
+    let dest_dir = project_path.join("output").join("company-context");
     std::fs::create_dir_all(&dest_dir).map_err(ContextImportError::CreateDirFailed)?;
 
     for file in &context.files {

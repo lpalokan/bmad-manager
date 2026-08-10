@@ -16,16 +16,25 @@ enum ContextImportError: LocalizedError {
 ///
 /// The resolution order inside each project mirrors the
 /// company-context-bootstrap workflow's own rules: prefer
-/// `_bmad-output/company-context`, fall back to a top-level
+/// `output/company-context` (the canonical marketing-growth layout since
+/// v2.4), then the legacy `_bmad-output/company-context`, then a top-level
 /// `company-context`. A project counts as having a context when its context
 /// folder holds at least one file — every file is part of the context, not
 /// just the five canonical names, so user-added files seed across too.
+///
+/// Reading is deliberately broad and writing is not: a seeded context always
+/// lands in `output/company-context` (see `importContext`), so new projects
+/// start on the canonical name while projects on either older layout keep
+/// resolving in place. Nothing is ever moved.
 ///
 /// Walking the projects folder is deliberately NOT this module's job —
 /// `ProjectService.listProjects` is the one place that knows what counts
 /// as a project folder; callers hand the resulting `ProjectItem`s in.
 struct CompanyContextService {
+    /// Every layout a context is read from, canonical first. The first entry
+    /// is also the one `importContext` writes to.
     private static let contextSubpaths = [
+        "output/company-context",
         "_bmad-output/company-context",
         "company-context",
     ]
@@ -126,14 +135,15 @@ struct CompanyContextService {
     }
 
     /// Copies all of the context's files into
-    /// `<projectURL>/_bmad-output/company-context/`. Files already present
-    /// at the destination are left untouched — the manager never
-    /// overwrites silently (the bootstrap workflow's behavioural
-    /// contract); re-running the workflow in the new project handles
-    /// refreshes interactively.
+    /// `<projectURL>/output/company-context/` — the canonical layout,
+    /// whichever layout the source used. Files already present at the
+    /// destination are left untouched — the manager never overwrites
+    /// silently (the bootstrap workflow's behavioural contract);
+    /// re-running the workflow in the new project handles refreshes
+    /// interactively.
     func importContext(_ context: CompanyContext, into projectURL: URL) throws {
         let destDir = projectURL
-            .appendingPathComponent("_bmad-output", isDirectory: true)
+            .appendingPathComponent("output", isDirectory: true)
             .appendingPathComponent("company-context", isDirectory: true)
         try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
 

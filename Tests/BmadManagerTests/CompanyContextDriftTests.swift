@@ -52,12 +52,29 @@ final class CompanyContextDriftTests: XCTestCase {
         return url
     }
 
+    /// Same, but copying the files into an explicit layout instead of the one
+    /// `importContext` writes to — models a project seeded before `output/`
+    /// became the manager's write target (issue #96).
+    @discardableResult
+    private func seedProject(_ project: String, from name: String, at subpath: String) throws -> URL {
+        let url = root.appendingPathComponent("projects/\(project)", isDirectory: true)
+        let dest = url.appendingPathComponent(subpath, isDirectory: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let source = try XCTUnwrap(sources().first { $0.projectName == name })
+        for file in source.files {
+            try FileManager.default.copyItem(
+                at: source.directoryURL.appendingPathComponent(file),
+                to: dest.appendingPathComponent(file))
+        }
+        return url
+    }
+
     private func hasContextUpdate(_ projectURL: URL) -> Bool {
         service.isProjectContextStale(projectURL: projectURL, sources: sources())
     }
 
     private func contextDir(_ projectURL: URL) -> URL {
-        projectURL.appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+        projectURL.appendingPathComponent("output/company-context", isDirectory: true)
     }
 
     // MARK: - Drift detection
@@ -141,6 +158,26 @@ final class CompanyContextDriftTests: XCTestCase {
                 FileManager.default.fileExists(atPath: contextDir(proj).appendingPathComponent(file).path),
                 "expected '\(file)' to survive the refresh")
         }
+    }
+
+    /// A project still on the legacy layout is refreshed where it already
+    /// lives — the manager never relocates an existing bundle (issue #96).
+    func testRefreshingALegacyBmadOutputProjectRewritesItInPlace() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("legacy", from: "digital-workforce",
+                                   at: "_bmad-output/company-context")
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+        XCTAssertTrue(hasContextUpdate(proj))
+
+        try refresh(proj)
+
+        let text = try String(
+            contentsOf: proj.appendingPathComponent("_bmad-output/company-context/positioning.md"),
+            encoding: .utf8)
+        XCTAssertTrue(text.contains("last_updated: 2026-07-03"))
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: proj.appendingPathComponent("output").path),
+            "a refresh must not relocate the bundle into output/")
     }
 
     /// The canonical loop (issue #92): seeded in sync, admin bumps the date,

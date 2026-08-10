@@ -23,7 +23,8 @@ The UI is intentionally tiny:
   if you switch to local-zip without one configured, the app pops a file
   picker, remembers your choice, and continues.
 - When other projects already carry a company context
-  (`_bmad-output/company-context/` with the marketing-growth module's
+  (`output/company-context/`, the legacy `_bmad-output/company-context/`,
+  or a top-level `company-context/`, holding the marketing-growth module's
   recognized files — `icp.md`, `positioning.md`, `brand-voice.md`,
   `kpis.md`, `tech-stack.md`), a **Context** menu appears under the create
   row. Pick a source project to copy its context files into the new
@@ -264,9 +265,10 @@ script or call `./scripts/make_icon.sh` directly.
    Output streams into the bottom panel.
 7. Clean up the `/tmp` materialisation directory.
 8. If a source context was selected in the **Context** menu, copy its
-   recognized files into `<project>/_bmad-output/company-context/` (files
-   the init command already created there are never overwritten). This
-   step is skipped when the init command failed.
+   recognized files into `<project>/output/company-context/` — the
+   canonical folder, whichever layout the source used (files the init
+   command already created there are never overwritten). This step is
+   skipped when the init command failed.
 
 On failure the partial project folder is kept so you can inspect it; delete it
 from the list with the trash button when you're done.

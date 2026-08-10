@@ -224,12 +224,12 @@
 
   // Per-project "Update": confirm, then re-install the latest module over the
   // existing folder and refresh its managed AGENTS.md blocks. Init output
-  // streams into the same panel as create. _bmad-output/ user data is kept.
+  // streams into the same panel as create. The user's own files are kept.
   async function onUpdateProject(project: ProjectItem) {
     if (isCreating || isUpdating) return;
     if (
       !confirm(
-        `Update '${project.name}' to the latest module? This re-runs BMAD init in the project folder and refreshes the managed AGENTS.md sections. Your files under _bmad-output/ are preserved.`,
+        `Update '${project.name}' to the latest module? This re-runs BMAD init in the project folder and refreshes the managed AGENTS.md sections. Your own files in the project folder are preserved.`,
       )
     ) {
       return;

@@ -41,7 +41,7 @@ impl ContextSource {
 /// A company context discovered inside an existing project or the skills repo.
 ///
 /// The bmad-marketing-growth module's company-context-bootstrap workflow
-/// seeds a set of canonical files under `_bmad-output/company-context/`
+/// seeds a set of canonical files under `output/company-context/`
 /// (every v2 agent reads them on activation), but a user is free to drop
 /// additional files into that folder. The manager scans the projects
 /// folder — and the skills repo's top-level `context/` folder — and treats
@@ -54,7 +54,7 @@ pub struct CompanyContext {
     /// Name of the project folder (or skills-repo `context/` subfolder) the
     /// context was found in.
     pub project_name: String,
-    /// The context folder itself (e.g. `<project>/_bmad-output/company-context`).
+    /// The context folder itself (e.g. `<project>/output/company-context`).
     pub directory: PathBuf,
     /// All files present in the source: canonical names first, then extras.
     pub files: Vec<String>,

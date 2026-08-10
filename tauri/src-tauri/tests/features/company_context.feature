@@ -1,16 +1,24 @@
 Feature: Company context discovery and import
 
   Mirrors the Swift CompanyContextService: existing projects are scanned
-  for a company-context folder under `_bmad-output/company-context/`
-  (preferred) or a top-level `company-context/` fallback. Every file there
-  is part of the context — the canonical names (icp.md, positioning.md,
-  brand-voice.md, kpis.md, tech-stack.md) first, then any extra files the
-  user added — so a new project can be seeded with the complete folder
-  instead of starting from scratch.
+  for a company-context folder under `output/company-context/` (the
+  canonical marketing-growth layout), then the legacy
+  `_bmad-output/company-context/`, then a top-level `company-context/`
+  fallback. Every file there is part of the context — the canonical names
+  (icp.md, positioning.md, brand-voice.md, kpis.md, tech-stack.md) first,
+  then any extra files the user added — so a new project can be seeded with
+  the complete folder instead of starting from scratch. Reading is broad;
+  writing is always to `output/company-context/`.
 
   # --- Resolution ---
 
-  Scenario: finds a context under _bmad-output/company-context
+  Scenario: finds a context under output/company-context
+    Given a project "acme" with context files "icp.md, kpis.md" under "output/company-context"
+    When I resolve the context of project "acme"
+    Then a context from project "acme" is found
+    And the context directory ends with "output/company-context"
+
+  Scenario: finds a context under the legacy _bmad-output/company-context
     Given a project "acme" with context files "icp.md, kpis.md" under "_bmad-output/company-context"
     When I resolve the context of project "acme"
     Then a context from project "acme" is found
@@ -21,6 +29,13 @@ Feature: Company context discovery and import
     When I resolve the context of project "acme"
     Then a context from project "acme" is found
     And the context directory ends with "company-context"
+
+  Scenario: prefers output over the legacy _bmad-output location
+    Given a project "acme" with context files "icp.md" under "output/company-context"
+    And the project "acme" also has context files "positioning.md" under "_bmad-output/company-context"
+    When I resolve the context of project "acme"
+    Then the context directory ends with "output/company-context"
+    And the context files are exactly "icp.md"
 
   Scenario: prefers the _bmad-output location over the top-level fallback
     Given a project "acme" with context files "icp.md" under "_bmad-output/company-context"
@@ -85,12 +100,30 @@ Feature: Company context discovery and import
     And the resolved contexts all come from the skills repo
 
   # --- Import ---
+  #
+  # The write side is unconditional: whatever layout the source uses, the
+  # seeded copy lands in the canonical `output/company-context/`. Nothing
+  # is moved and no legacy folder is created (issue #96).
 
   Scenario: import copies the context files into the new project
     Given a project "acme" with context files "icp.md, kpis.md" under "_bmad-output/company-context"
     And an empty project "fresh"
     When I import the context of "acme" into project "fresh"
     Then project "fresh" contains context files "icp.md, kpis.md"
+
+  Scenario: import writes into the canonical output folder
+    Given a project "acme" with context files "icp.md, kpis.md" under "output/company-context"
+    And an empty project "fresh"
+    When I import the context of "acme" into project "fresh"
+    Then project "fresh" contains context files "icp.md, kpis.md" under "output/company-context"
+    And project "fresh" has no "_bmad-output" folder
+
+  Scenario: a legacy source still seeds into the canonical output folder
+    Given a project "acme" with context files "icp.md" under "_bmad-output/company-context"
+    And an empty project "fresh"
+    When I import the context of "acme" into project "fresh"
+    Then project "fresh" contains context files "icp.md" under "output/company-context"
+    And project "fresh" has no "_bmad-output" folder
 
   Scenario: import carries every file over, including user-added extras
     Given a project "acme" with context files "icp.md, bootstrap-summary.md" under "_bmad-output/company-context"
@@ -213,6 +246,16 @@ Feature: Company context discovery and import
     And the skills repo context "digital-workforce" gains OKF file "kpis.md" dated "2026-07-03"
     When I refresh project "investor-day" from the skills repo
     Then project "investor-day" contains context files "positioning.md, kpis.md, notes-local.md"
+
+  # A project still on the legacy layout is refreshed where it already
+  # lives — the manager never relocates an existing bundle (issue #96).
+  Scenario: refreshing a legacy _bmad-output project rewrites it in place
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "legacy" seeded from the "digital-workforce" skills repo context under "_bmad-output/company-context"
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I refresh project "legacy" from the skills repo
+    Then project "legacy" contains context files "positioning.md" under "_bmad-output/company-context"
+    And project "legacy" has no "output" folder
 
   # The canonical loop (issue #92): seeded in sync, admin bumps the date,
   # the project shows drift, a refresh brings it current, drift clears.

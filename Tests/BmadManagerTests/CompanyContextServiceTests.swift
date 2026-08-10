@@ -3,9 +3,11 @@ import XCTest
 
 /// Scenario-style coverage for resolving company contexts inside projects
 /// and importing one into a newly created project. The recognized file set
-/// and the resolution order (`_bmad-output/company-context` then
-/// `company-context`) mirror the bmad-marketing-growth module's
-/// company-context-bootstrap workflow.
+/// and the resolution order (`output/company-context`, then the legacy
+/// `_bmad-output/company-context`, then a bare `company-context`) mirror the
+/// bmad-marketing-growth module's company-context-bootstrap workflow.
+/// Reading spans all three layouts; importing always writes the canonical
+/// `output/company-context` (issue #96).
 ///
 /// Walking the projects folder is `ProjectService.listProjects`'
 /// responsibility (and tested there) — this suite hands the service
@@ -13,6 +15,11 @@ import XCTest
 final class CompanyContextServiceTests: XCTestCase {
     private var projectsRoot: URL!
     private let service = CompanyContextService()
+
+    /// The layout the manager writes to and prefers when reading.
+    private let canonicalSubpath = "output/company-context"
+    /// The pre-v2.4 layout, still read so existing projects keep working.
+    private let legacySubpath = "_bmad-output/company-context"
 
     override func setUpWithError() throws {
         projectsRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -29,7 +36,7 @@ final class CompanyContextServiceTests: XCTestCase {
     @discardableResult
     private func makeProject(
         _ name: String,
-        contextAt subpath: String? = "_bmad-output/company-context",
+        contextAt subpath: String? = "output/company-context",
         files: [String] = []
     ) throws -> URL {
         let projectURL = projectsRoot.appendingPathComponent(name, isDirectory: true)
@@ -53,13 +60,45 @@ final class CompanyContextServiceTests: XCTestCase {
 
     // MARK: - Resolution
 
-    func testFindsContextUnderBmadOutputCompanyContext() throws {
+    func testFindsContextUnderOutputCompanyContext() throws {
         let acme = try makeProject("acme", files: ["icp.md", "positioning.md"])
 
         let context = try XCTUnwrap(service.context(inProject: acme))
 
         XCTAssertEqual(context.projectName, "acme")
         XCTAssertEqual(context.files, ["icp.md", "positioning.md"])
+    }
+
+    func testFindsContextUnderLegacyBmadOutputCompanyContext() throws {
+        // Projects created before the module renamed its output folder keep
+        // their bundle under `_bmad-output/` — they must stay visible in the
+        // Context picker.
+        let acme = try makeProject("acme", contextAt: legacySubpath,
+                                   files: ["icp.md", "positioning.md"])
+
+        let context = try XCTUnwrap(service.context(inProject: acme))
+
+        XCTAssertEqual(context.projectName, "acme")
+        XCTAssertEqual(context.files, ["icp.md", "positioning.md"])
+    }
+
+    func testPrefersOutputLocationOverLegacyBmadOutput() throws {
+        // A project the module has relocated may still carry a stale copy in
+        // the old folder; the canonical one wins.
+        let projectURL = try makeProject("both", files: ["icp.md"])
+        let legacyDir = projectURL.appendingPathComponent(legacySubpath, isDirectory: true)
+        try FileManager.default.createDirectory(at: legacyDir, withIntermediateDirectories: true)
+        try "legacy".write(to: legacyDir.appendingPathComponent("kpis.md"),
+                           atomically: true, encoding: .utf8)
+
+        let context = try XCTUnwrap(service.context(inProject: projectURL))
+
+        XCTAssertEqual(context.files, ["icp.md"])
+        XCTAssertEqual(
+            context.directoryURL.resolvingSymlinksInPath().path,
+            projectURL.appendingPathComponent(canonicalSubpath)
+                .resolvingSymlinksInPath().path
+        )
     }
 
     func testFindsContextUnderTopLevelCompanyContextFallback() throws {
@@ -73,7 +112,7 @@ final class CompanyContextServiceTests: XCTestCase {
     }
 
     func testPrefersBmadOutputLocationOverTopLevelFallback() throws {
-        let projectURL = try makeProject("both", files: ["icp.md"])
+        let projectURL = try makeProject("both", contextAt: legacySubpath, files: ["icp.md"])
         let fallbackDir = projectURL.appendingPathComponent("company-context", isDirectory: true)
         try FileManager.default.createDirectory(at: fallbackDir, withIntermediateDirectories: true)
         try "fallback".write(to: fallbackDir.appendingPathComponent("kpis.md"),
@@ -87,7 +126,7 @@ final class CompanyContextServiceTests: XCTestCase {
         // /private/var path.
         XCTAssertEqual(
             context.directoryURL.resolvingSymlinksInPath().path,
-            projectURL.appendingPathComponent("_bmad-output/company-context")
+            projectURL.appendingPathComponent(legacySubpath)
                 .resolvingSymlinksInPath().path
         )
     }
@@ -132,7 +171,7 @@ final class CompanyContextServiceTests: XCTestCase {
     func testSkipsHiddenFilesAndHiddenDirectories() throws {
         let project = try makeProject("with-extras", files: ["icp.md", "extra.md"])
         let contextDir = project
-            .appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+            .appendingPathComponent(canonicalSubpath, isDirectory: true)
         try "hidden".write(to: contextDir.appendingPathComponent(".DS_Store"),
                            atomically: true, encoding: .utf8)
         // A hidden directory (e.g. a stray .git) must not be descended into.
@@ -151,7 +190,7 @@ final class CompanyContextServiceTests: XCTestCase {
         // sort first; nested files follow alphabetically by relative path.
         let project = try makeProject("nested-ctx", files: ["icp.md"])
         let contextDir = project
-            .appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+            .appendingPathComponent(canonicalSubpath, isDirectory: true)
         let research = contextDir.appendingPathComponent("research", isDirectory: true)
         try FileManager.default.createDirectory(at: research, withIntermediateDirectories: true)
         try "n".write(to: research.appendingPathComponent("notes.md"),
@@ -176,6 +215,39 @@ final class CompanyContextServiceTests: XCTestCase {
     }
 
     // MARK: - Import
+    //
+    // The write side is unconditional: whatever layout the source uses, the
+    // seeded copy lands in the canonical `output/company-context/`. Nothing
+    // is moved and no legacy folder is created (issue #96).
+
+    func testImportWritesIntoCanonicalOutputFolder() throws {
+        let source = try makeProject("source", files: ["icp.md"])
+        let target = try makeProject("target", contextAt: nil)
+        let context = try XCTUnwrap(service.context(inProject: source))
+
+        try service.importContext(context, into: target)
+
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: target.appendingPathComponent("\(canonicalSubpath)/icp.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: target.appendingPathComponent("_bmad-output").path),
+            "seeding must not create the legacy output folder")
+    }
+
+    func testImportFromLegacySourceStillWritesIntoOutputFolder() throws {
+        // Seeding from a project the module hasn't relocated yet still lands
+        // the new project on the canonical name.
+        let source = try makeProject("source", contextAt: legacySubpath, files: ["icp.md"])
+        let target = try makeProject("target", contextAt: nil)
+        let context = try XCTUnwrap(service.context(inProject: source))
+
+        try service.importContext(context, into: target)
+
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: target.appendingPathComponent("\(canonicalSubpath)/icp.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: target.appendingPathComponent("_bmad-output").path))
+    }
 
     func testImportCopiesRecognizedFilesIntoNewProject() throws {
         let source = try makeProject("source", files: ["icp.md", "kpis.md"])
@@ -184,7 +256,7 @@ final class CompanyContextServiceTests: XCTestCase {
 
         try service.importContext(context, into: target)
 
-        let destDir = target.appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+        let destDir = target.appendingPathComponent(canonicalSubpath, isDirectory: true)
         let icp = try String(
             contentsOf: destDir.appendingPathComponent("icp.md"), encoding: .utf8)
         XCTAssertEqual(icp, "content of icp.md from source")
@@ -202,7 +274,7 @@ final class CompanyContextServiceTests: XCTestCase {
 
         try service.importContext(context, into: target)
 
-        let destDir = target.appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+        let destDir = target.appendingPathComponent(canonicalSubpath, isDirectory: true)
         for file in ["icp.md", "bootstrap-summary.md", "extra-notes.md"] {
             XCTAssertTrue(
                 FileManager.default.fileExists(atPath: destDir.appendingPathComponent(file).path),
@@ -213,7 +285,7 @@ final class CompanyContextServiceTests: XCTestCase {
     func testImportRecreatesSubfoldersInNewProject() throws {
         let source = try makeProject("source", files: ["icp.md"])
         let contextDir = source
-            .appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+            .appendingPathComponent(canonicalSubpath, isDirectory: true)
         let research = contextDir.appendingPathComponent("research", isDirectory: true)
         try FileManager.default.createDirectory(at: research, withIntermediateDirectories: true)
         try "nested note".write(to: research.appendingPathComponent("notes.md"),
@@ -223,7 +295,7 @@ final class CompanyContextServiceTests: XCTestCase {
 
         try service.importContext(context, into: target)
 
-        let destDir = target.appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+        let destDir = target.appendingPathComponent(canonicalSubpath, isDirectory: true)
         let nested = destDir.appendingPathComponent("research/notes.md")
         XCTAssertTrue(FileManager.default.fileExists(atPath: nested.path))
         XCTAssertEqual(try String(contentsOf: nested, encoding: .utf8), "nested note")
@@ -238,7 +310,7 @@ final class CompanyContextServiceTests: XCTestCase {
 
         try service.importContext(context, into: target)
 
-        let destDir = target.appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+        let destDir = target.appendingPathComponent(canonicalSubpath, isDirectory: true)
         let icp = try String(
             contentsOf: destDir.appendingPathComponent("icp.md"), encoding: .utf8)
         XCTAssertEqual(icp, "content of icp.md from the-target")
@@ -266,7 +338,7 @@ final class CompanyContextServiceTests: XCTestCase {
         // denominator to flag a partial context against — just name + marker.
         let context = CompanyContext(
             projectName: "acme",
-            directoryURL: URL(fileURLWithPath: "/tmp/acme/_bmad-output/company-context"),
+            directoryURL: URL(fileURLWithPath: "/tmp/acme/output/company-context"),
             files: ["icp.md", "kpis.md", "custom.md"]
         )
         XCTAssertEqual(context.displayName, "acme 📂")
@@ -349,7 +421,7 @@ final class CompanyContextServiceTests: XCTestCase {
 
         try service.importContext(context, into: target)
 
-        let destDir = target.appendingPathComponent("_bmad-output/company-context", isDirectory: true)
+        let destDir = target.appendingPathComponent(canonicalSubpath, isDirectory: true)
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: destDir.appendingPathComponent("icp.md").path))
     }

@@ -92,7 +92,15 @@ Feature: Update existing projects from the bmad-repo
     Then the update succeeds
     And the project AGENTS.md has no okf block
 
-  Scenario: updating preserves user data under _bmad-output
+  Scenario: updating preserves user data under output
+    Given an existing project "proj" to update
+    And the project has a user file "output/work/notes.md" with content "keep me"
+    And update settings whose init command succeeds
+    When I update the project
+    Then the update succeeds
+    And the project file "output/work/notes.md" still has content "keep me"
+
+  Scenario: updating preserves user data under the legacy _bmad-output
     Given an existing project "proj" to update
     And the project has a user file "_bmad-output/work/notes.md" with content "keep me"
     And update settings whose init command succeeds

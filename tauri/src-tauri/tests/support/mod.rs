@@ -191,13 +191,40 @@ impl TauriWorld {
         import_context(&source, &dest).expect("seed project context");
     }
 
+    /// Same, but copying the files into an explicit layout instead of the one
+    /// `import_context` writes to — models a project seeded before `output/`
+    /// became the manager's write target (issue #96).
+    pub fn seed_project_from_skills_context_at(
+        &mut self,
+        name: &str,
+        project: &str,
+        subpath: &str,
+    ) {
+        let source = self
+            .skills_repo_sources()
+            .into_iter()
+            .find(|c| c.project_name == name)
+            .unwrap_or_else(|| panic!("no skills repo context named {name:?}"));
+        let dest = self.ensure_projects_root().join(project).join(subpath);
+        std::fs::create_dir_all(&dest).expect("create project context dir");
+        for file in &source.files {
+            let destination = dest.join(file);
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent).expect("create context subfolder");
+            }
+            std::fs::copy(source.directory.join(file), &destination)
+                .expect("seed project context file");
+        }
+    }
+
     /// Writes a plain (non-source) project-local context file, to prove refresh
-    /// keeps user-added files.
+    /// keeps user-added files. Lands in the canonical layout, alongside what
+    /// `import_context` seeds.
     pub fn add_local_context_file(&mut self, project: &str, file: &str) {
         let dir = self
             .ensure_projects_root()
             .join(project)
-            .join("_bmad-output/company-context");
+            .join("output/company-context");
         std::fs::create_dir_all(&dir).expect("create context dir");
         std::fs::write(dir.join(file), format!("local {file}")).expect("write local context file");
     }
