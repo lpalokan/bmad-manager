@@ -88,9 +88,18 @@ jobs:
       # Reconcile only the workspace member versions — offline, so every
       # third-party pin is left byte-for-byte untouched and the `--locked`
       # steps still enforce full dependency determinism for the build.
+      #
+      # `--offline` resolves against the local registry only, so it needs one
+      # to exist: on a cold cache (GitHub evicts entries after ~7 days idle,
+      # and the restore-key fallback misses too) `~/.cargo/registry` is empty
+      # and the step dies with "no matching package named `dirs` found".
+      # `cargo fetch` populates it first from the checked-in lock, leaving
+      # the offline sync below to do the version-only reconciliation.
       - name: Sync Cargo.lock workspace version
         working-directory: tauri/src-tauri
-        run: cargo update --workspace --offline
+        run: |
+          cargo fetch
+          cargo update --workspace --offline
 
       - name: Cargo clippy
         working-directory: tauri/src-tauri
