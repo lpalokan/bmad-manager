@@ -382,7 +382,7 @@ fn tally<'a>(
         };
         let tags = parse_okf_meta(&text).tags;
         for source in sources {
-            if tags.iter().any(|t| *t == source.project_name) {
+            if tags.contains(&source.project_name) {
                 *votes.entry(source.project_name.as_str()).or_default() += 1;
             }
         }
