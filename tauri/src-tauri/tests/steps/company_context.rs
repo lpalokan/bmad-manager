@@ -524,9 +524,7 @@ async fn project_local_context_file_tagged(
     world.add_local_context_file_tagged(&project, &file, &refs);
 }
 
-#[given(
-    regex = r#"^project "([^"]+)" bundles the "([^"]+)" skills repo context in a sub-folder$"#
-)]
+#[given(regex = r#"^project "([^"]+)" bundles the "([^"]+)" skills repo context in a sub-folder$"#)]
 async fn project_bundles_context(world: &mut TauriWorld, project: String, name: String) {
     world.bundle_skills_context_into_project(&name, &project);
 }
