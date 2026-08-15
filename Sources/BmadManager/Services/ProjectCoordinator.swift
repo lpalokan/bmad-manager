@@ -183,7 +183,17 @@ final class ProjectCoordinator: ObservableObject {
         let sources = discoveredGithubContexts(home: home)
         guard let source = contextService.sourceContext(for: projectContext, in: sources)
         else { return }
-        try? contextService.refreshContext(source, into: projectContext.directoryURL)
+        try? contextService.refreshContext(
+            source,
+            into: projectContext.directoryURL,
+            backupStamp: Self.backupStamp()
+        )
+    }
+
+    /// Names this refresh's backup folder. Seconds since the epoch —
+    /// sortable, collision-free between runs, and free of date formatting.
+    private static func backupStamp() -> String {
+        String(Int(Date().timeIntervalSince1970))
     }
 
     /// Recomputes which projects are behind the module repo. Materialises the

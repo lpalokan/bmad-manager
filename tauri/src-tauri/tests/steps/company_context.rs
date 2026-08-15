@@ -492,8 +492,10 @@ async fn refresh_project_from_skills(world: &mut TauriWorld, project: String) {
     let project_ctx = context_in_project(&dir).expect("project has a context to refresh");
     let source =
         source_context_for(&project_ctx, &sources).expect("project resolves to a source context");
-    match refresh_context(source, &project_ctx.directory) {
-        Ok(()) => world.last_string_error = None,
+    // A fixed stamp keeps the backup folder deterministic across runs; the
+    // app passes a real timestamp.
+    match refresh_context(source, &project_ctx.directory, "20260815-000000") {
+        Ok(_) => world.last_string_error = None,
         Err(err) => world.last_string_error = Some(err.to_string()),
     }
 }
@@ -506,6 +508,82 @@ async fn reports_context_update(world: &mut TauriWorld, _project: String) {
 #[then(regex = r#"^project "([^"]+)" reports no context update$"#)]
 async fn reports_no_context_update(world: &mut TauriWorld, _project: String) {
     assert_eq!(world.context_update_available, Some(false));
+}
+
+// --- Source resolution and refresh backups (issue #103) -----------------
+
+#[given(regex = r#"^project "([^"]+)" has a local context file "([^"]+)" tagged "([^"]*)"$"#)]
+async fn project_local_context_file_tagged(
+    world: &mut TauriWorld,
+    project: String,
+    file: String,
+    tags: String,
+) {
+    let tags = split_list(&tags);
+    let refs: Vec<&str> = tags.iter().map(String::as_str).collect();
+    world.add_local_context_file_tagged(&project, &file, &refs);
+}
+
+#[given(
+    regex = r#"^project "([^"]+)" bundles the "([^"]+)" skills repo context in a sub-folder$"#
+)]
+async fn project_bundles_context(world: &mut TauriWorld, project: String, name: String) {
+    world.bundle_skills_context_into_project(&name, &project);
+}
+
+#[given(
+    regex = r#"^project "([^"]+)" context file "([^"]+)" is locally edited to contain "([^"]+)"$"#
+)]
+async fn project_context_file_edited(
+    world: &mut TauriWorld,
+    project: String,
+    file: String,
+    body: String,
+) {
+    world.edit_project_context_file(&project, &file, &body);
+}
+
+#[then(regex = r#"^project "([^"]+)" records "([^"]+)" as its context source$"#)]
+async fn project_records_context_source(world: &mut TauriWorld, project: String, name: String) {
+    assert_eq!(
+        world.context_source_marker(&project).as_deref(),
+        Some(name.as_str()),
+        "expected {project:?} to record {name:?} as its context source"
+    );
+}
+
+#[then(regex = r#"^project "([^"]+)" has a context backup of "([^"]+)" containing "([^"]+)"$"#)]
+async fn project_has_context_backup(
+    world: &mut TauriWorld,
+    project: String,
+    file: String,
+    body: String,
+) {
+    let backups = world.context_backups(&project);
+    let found = backups
+        .iter()
+        .find(|(rel, _)| rel == &file)
+        .unwrap_or_else(|| panic!("no backup of {file:?}, got {backups:?}"));
+    assert!(
+        found.1.contains(&body),
+        "backup of {file:?} should contain {body:?}, got {:?}",
+        found.1
+    );
+}
+
+#[then(regex = r#"^project "([^"]+)" has no context backup$"#)]
+async fn project_has_no_context_backup(world: &mut TauriWorld, project: String) {
+    let backups = world.context_backups(&project);
+    assert!(backups.is_empty(), "expected no backups, got {backups:?}");
+}
+
+#[then(regex = r#"^project "([^"]+)" has no context backup of "([^"]+)"$"#)]
+async fn project_has_no_context_backup_of(world: &mut TauriWorld, project: String, file: String) {
+    let backups = world.context_backups(&project);
+    assert!(
+        !backups.iter().any(|(rel, _)| rel == &file),
+        "expected no backup of {file:?}, got {backups:?}"
+    );
 }
 
 #[then(regex = r#"^project "([^"]+)" context file "([^"]+)" is dated "([^"]+)"$"#)]

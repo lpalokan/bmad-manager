@@ -125,10 +125,14 @@ final class CompanyContextDriftTests: XCTestCase {
 
     // MARK: - Refresh
 
-    private func refresh(_ proj: URL) throws {
+    @discardableResult
+    private func refresh(_ proj: URL) throws -> RefreshSummary {
         let projectContext = try XCTUnwrap(service.context(inProject: proj))
         let source = try XCTUnwrap(service.sourceContext(for: projectContext, in: sources()))
-        try service.refreshContext(source, into: projectContext.directoryURL)
+        // A fixed stamp keeps the backup folder deterministic; the app passes
+        // a timestamp.
+        return try service.refreshContext(
+            source, into: projectContext.directoryURL, backupStamp: "20260815-000000")
     }
 
     func testRefreshingOverwritesDriftedFiles() throws {
@@ -191,5 +195,183 @@ final class CompanyContextDriftTests: XCTestCase {
         try refresh(proj)
 
         XCTAssertFalse(hasContextUpdate(proj))
+    }
+
+    // MARK: - Resolving which context a project was seeded from (issue #103)
+    //
+    // OKF `tags` carry two different things: the pack's own identity slug and
+    // subject keywords. A file naming another vertical as its subject must not
+    // cost the project its upstream link, and a pack bundled inside the context
+    // folder must not outvote the pack the project was seeded from.
+
+    /// Writes a project-local context file carrying explicit tags — models an
+    /// OKF file that names another pack as subject matter, not identity.
+    private func putLocalTagged(_ proj: URL, _ file: String, tags: [String]) throws {
+        let dir = contextDir(proj)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let text = "---\ntags: [company-context, \(tags.joined(separator: ", "))]\n---\nlocal\n"
+        try text.write(to: dir.appendingPathComponent(file), atomically: true, encoding: .utf8)
+    }
+
+    /// Copies a whole skills-repo pack into a sub-folder of the project's own
+    /// context — a project bundling a second pack beside the one it was seeded
+    /// from.
+    private func bundlePack(_ proj: URL, _ name: String) throws {
+        let source = try XCTUnwrap(sources().first { $0.projectName == name })
+        let dest = contextDir(proj).appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        for file in source.files {
+            try FileManager.default.copyItem(
+                at: source.directoryURL.appendingPathComponent(file),
+                to: dest.appendingPathComponent(file))
+        }
+    }
+
+    func testSubjectMatterTagNamingAnotherPackDoesNotBlockResolution() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        try putSkillsOKF("healthcare", "positioning.md", date: "2026-06-26")
+        // Seeded the pre-#103 way, so the tag vote itself is under test.
+        let proj = try seedProject("investor-day", from: "digital-workforce",
+                                   at: "output/company-context")
+        try putLocalTagged(proj, "offerings.md", tags: ["digital-workforce", "healthcare"])
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+
+        XCTAssertTrue(hasContextUpdate(proj))
+    }
+
+    func testBundledSubPackDoesNotOutvoteTheSeededPack() throws {
+        try putSkillsOKF("enterprise-public-sector", "positioning.md", date: "2026-06-26")
+        try putSkillsOKF("agent-workforce", "positioning.md", date: "2026-06-26")
+        try putSkillsOKF("agent-workforce", "icp.md", date: "2026-06-26")
+        try putSkillsOKF("agent-workforce", "kpis.md", date: "2026-06-26")
+        let proj = try seedProject("gtm", from: "enterprise-public-sector",
+                                   at: "output/company-context")
+        try bundlePack(proj, "agent-workforce")
+        try putSkillsOKF("enterprise-public-sector", "positioning.md", date: "2026-07-03", body: "v2")
+
+        XCTAssertTrue(hasContextUpdate(proj))
+    }
+
+    func testEvenlySplitVoteStaysUnresolved() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        try putSkillsOKF("healthcare", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("split", from: "digital-workforce",
+                                   at: "output/company-context")
+        try putLocalTagged(proj, "vertical.md", tags: ["healthcare"])
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+
+        XCTAssertFalse(hasContextUpdate(proj))
+    }
+
+    func testSeedMarkerResolvesTheSourceEvenWhenTheVoteIsTied() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        try putSkillsOKF("healthcare", "positioning.md", date: "2026-06-26")
+        // Seeded through importContext, which records the marker.
+        let proj = try seedProject("marked", from: "digital-workforce")
+        try putLocalTagged(proj, "vertical.md", tags: ["healthcare"])
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+
+        XCTAssertTrue(hasContextUpdate(proj))
+    }
+
+    func testSeedingRecordsTheSourceMarker() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("fresh", from: "digital-workforce")
+
+        XCTAssertEqual(
+            CompanyContextService.contextSource(in: contextDir(proj)), "digital-workforce")
+    }
+
+    func testSeedMarkerIsNotTreatedAsContextContent() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("fresh", from: "digital-workforce")
+
+        let context = try XCTUnwrap(service.context(inProject: proj))
+        XCTAssertEqual(context.files, ["positioning.md"])
+    }
+
+    // MARK: - Backing up edits a refresh would overwrite (issue #103)
+
+    /// Rewrites the body of a project's copy while leaving its frontmatter (and
+    /// so its `last_updated`) intact — a user edit that does not bump the date.
+    private func editProjectCopy(_ proj: URL, _ file: String, body: String) throws {
+        let url = contextDir(proj).appendingPathComponent(file)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        var head: [String] = []
+        var fences = 0
+        for line in text.components(separatedBy: "\n") {
+            head.append(line)
+            if line.trimmingCharacters(in: .whitespaces) == "---" {
+                fences += 1
+                if fences == 2 { break }
+            }
+        }
+        let updated = (head + [body, ""]).joined(separator: "\n")
+        try updated.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private func backupDir(_ proj: URL) -> URL {
+        contextDir(proj)
+            .appendingPathComponent(CompanyContextService.backupDirName, isDirectory: true)
+            .appendingPathComponent("20260815-000000", isDirectory: true)
+    }
+
+    func testRefreshBacksUpALocallyEditedFileBeforeOverwritingIt() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("investor-day", from: "digital-workforce")
+        try editProjectCopy(proj, "positioning.md", body: "my own wording")
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+
+        try refresh(proj)
+
+        let backup = try String(
+            contentsOf: backupDir(proj).appendingPathComponent("positioning.md"), encoding: .utf8)
+        XCTAssertTrue(backup.contains("my own wording"))
+        let current = try String(
+            contentsOf: contextDir(proj).appendingPathComponent("positioning.md"), encoding: .utf8)
+        XCTAssertTrue(current.contains("last_updated: 2026-07-03"))
+    }
+
+    func testRefreshingAnUnchangedProjectBacksNothingUp() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("investor-day", from: "digital-workforce")
+        try putSkillsOKF("digital-workforce", "kpis.md", date: "2026-06-26")
+
+        let summary = try refresh(proj)
+
+        XCTAssertEqual(summary.backedUp, [])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backupDir(proj).path))
+    }
+
+    /// A file the source pack does not carry is outside the refresh entirely:
+    /// not overwritten, so nothing to preserve.
+    func testProjectOnlyFileIsNeverOverwrittenOrBackedUp() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("investor-day", from: "digital-workforce")
+        try "local".write(
+            to: contextDir(proj).appendingPathComponent("notes-local.md"),
+            atomically: true, encoding: .utf8)
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+
+        let summary = try refresh(proj)
+
+        XCTAssertFalse(summary.backedUp.contains("notes-local.md"))
+        XCTAssertEqual(
+            try String(
+                contentsOf: contextDir(proj).appendingPathComponent("notes-local.md"),
+                encoding: .utf8),
+            "local")
+    }
+
+    func testBackupsAreNotTreatedAsContextContent() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("investor-day", from: "digital-workforce")
+        try editProjectCopy(proj, "positioning.md", body: "my own wording")
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+
+        try refresh(proj)
+
+        let context = try XCTUnwrap(service.context(inProject: proj))
+        XCTAssertEqual(context.files, ["positioning.md"])
     }
 }

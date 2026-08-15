@@ -20,7 +20,7 @@
 //! counts as a project folder; callers hand the resulting `ProjectItem`s
 //! in.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::Path;
 
 use thiserror::Error;
@@ -35,6 +35,16 @@ const CONTEXT_SUBPATHS: [&str; 3] = [
     "_bmad-output/company-context",
     "company-context",
 ];
+
+/// Hidden folder inside a context holding copies of files a refresh was about
+/// to overwrite, one sub-folder per refresh. Dot-prefixed so `context_files`
+/// skips it — backups must never become part of the context they protect.
+pub const BACKUP_DIR_NAME: &str = ".bmad-context-backup";
+
+/// Hidden marker recording which skills-repo pack a context was seeded from,
+/// so resolution is a lookup rather than an inference. Also dot-prefixed, and
+/// for the same reason.
+pub const SOURCE_MARKER_NAME: &str = ".bmad-context-source.json";
 
 #[derive(Debug, Error)]
 pub enum ContextImportError {
@@ -190,7 +200,38 @@ pub fn import_context(
             }
         })?;
     }
+    // Record where these files came from, so a later drift check is a lookup
+    // instead of a guess at the tags. Only meaningful for a skills-repo pack —
+    // seeding from another project carries no upstream to refresh from.
+    if context.source == ContextSource::Github {
+        write_context_source(&dest_dir, &context.project_name)?;
+    }
     Ok(())
+}
+
+/// Reads the pack name recorded by [`write_context_source`], or `None` when no
+/// marker is present (every project seeded before #103) or it can't be parsed.
+pub fn read_context_source(context_dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(context_dir.join(SOURCE_MARKER_NAME)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let name = value.get("name")?.as_str()?.trim().to_string();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+/// Records `name` as the skills-repo pack this context was seeded from.
+fn write_context_source(context_dir: &Path, name: &str) -> Result<(), ContextImportError> {
+    std::fs::create_dir_all(context_dir).map_err(ContextImportError::CreateDirFailed)?;
+    let body = serde_json::json!({ "name": name }).to_string();
+    std::fs::write(context_dir.join(SOURCE_MARKER_NAME), body).map_err(|err| {
+        ContextImportError::CopyFailed {
+            file: SOURCE_MARKER_NAME.to_string(),
+            reason: err.to_string(),
+        }
+    })
 }
 
 // --- Context drift vs the skills repo (issue #92) -----------------------
@@ -289,18 +330,64 @@ pub fn source_context_for<'a>(
     if sources.is_empty() {
         return None;
     }
-    let mut tags: HashSet<String> = HashSet::new();
-    for file in &project_ctx.files {
-        if let Ok(text) = std::fs::read_to_string(project_ctx.directory.join(file)) {
-            tags.extend(parse_okf_meta(&text).tags);
+    // A marker written at seed/refresh time settles it outright. A marker
+    // naming a pack that is no longer published falls through to the vote
+    // rather than giving up — the tags may still resolve it.
+    if let Some(name) = read_context_source(&project_ctx.directory) {
+        if let Some(found) = sources.iter().find(|s| s.project_name == name) {
+            return Some(found);
         }
     }
-    let mut matches = sources.iter().filter(|s| tags.contains(&s.project_name));
-    let first = matches.next()?;
-    if matches.next().is_some() {
-        return None; // ambiguous — don't guess
+    // Otherwise vote, top-level files first: a pack bundled in a sub-folder
+    // carries its own identity tags and would otherwise outvote the pack the
+    // project was actually seeded from. Falling back to every file keeps a
+    // context whose files all live in sub-folders resolvable.
+    let top_level: Vec<&String> = project_ctx
+        .files
+        .iter()
+        .filter(|f| !f.contains('/'))
+        .collect();
+    let mut votes = tally(project_ctx, sources, &top_level);
+    // Only when the top level named nothing at all — a context whose files
+    // all live in sub-folders. A top-level *tie* is a genuine ambiguity and
+    // must not be broken by letting sub-folders vote after the fact.
+    if votes.is_empty() {
+        let all: Vec<&String> = project_ctx.files.iter().collect();
+        votes = tally(project_ctx, sources, &all);
     }
-    Some(first)
+
+    let best = votes.values().copied().max()?;
+    let mut leaders = votes.iter().filter(|(_, count)| **count == best);
+    let (name, _) = leaders.next()?;
+    if leaders.next().is_some() {
+        return None; // an even split — don't guess
+    }
+    sources.iter().find(|s| s.project_name == *name)
+}
+
+/// Counts, per published pack, how many of `files` carry that pack's name as
+/// an OKF tag. A tag is a vote only when it matches a published pack, so
+/// subject keywords naming nothing published are ignored — and one file
+/// naming another vertical as its subject cannot outweigh the pack's own
+/// identity across the rest of the bundle.
+fn tally<'a>(
+    project_ctx: &CompanyContext,
+    sources: &'a [CompanyContext],
+    files: &[&String],
+) -> HashMap<&'a str, usize> {
+    let mut votes: HashMap<&str, usize> = HashMap::new();
+    for file in files {
+        let Ok(text) = std::fs::read_to_string(project_ctx.directory.join(file)) else {
+            continue;
+        };
+        let tags = parse_okf_meta(&text).tags;
+        for source in sources {
+            if tags.iter().any(|t| *t == source.project_name) {
+                *votes.entry(source.project_name.as_str()).or_default() += 1;
+            }
+        }
+    }
+    votes
 }
 
 /// True when the project's context has drifted behind `source`: any file the
@@ -362,19 +449,76 @@ pub fn is_project_context_stale(project_path: &Path, sources: &[CompanyContext])
 /// deleting destination-only files. The refresh counterpart to
 /// [`import_context`] (which skips existing files at create time): the "bring
 /// an existing project current with the skills repo" path.
-pub fn refresh_context(source: &CompanyContext, dest_dir: &Path) -> Result<(), ContextImportError> {
+///
+/// Every file whose content would change is copied into
+/// `<dest_dir>/{BACKUP_DIR_NAME}/<backup_stamp>/` first, so a refresh can
+/// never destroy a local edit. `backup_stamp` names that run's folder; the app
+/// passes a timestamp, tests a fixed string.
+pub fn refresh_context(
+    source: &CompanyContext,
+    dest_dir: &Path,
+    backup_stamp: &str,
+) -> Result<RefreshSummary, ContextImportError> {
     std::fs::create_dir_all(dest_dir).map_err(ContextImportError::CreateDirFailed)?;
+    let backup_root = dest_dir.join(BACKUP_DIR_NAME).join(backup_stamp);
+    let mut summary = RefreshSummary::default();
+
     for file in &source.files {
         let destination = dest_dir.join(file);
-        if let Some(parent) = destination.parent() {
-            std::fs::create_dir_all(parent).map_err(ContextImportError::CreateDirFailed)?;
+        let incoming = read_bytes(&source.directory.join(file), file)?;
+        let existing = std::fs::read(&destination).ok();
+
+        // Already identical: nothing to write, and nothing worth preserving.
+        // Skipping also keeps mtimes stable for an up-to-date project.
+        if existing.as_deref() == Some(incoming.as_slice()) {
+            continue;
         }
-        std::fs::copy(source.directory.join(file), &destination).map_err(|err| {
-            ContextImportError::CopyFailed {
-                file: file.clone(),
-                reason: err.to_string(),
-            }
+        // Anything whose bytes are about to change is copied aside first. We
+        // cannot tell a user's edit from a merely stale copy without a
+        // baseline, so we preserve both — a redundant backup is cheap, a lost
+        // edit is not.
+        if let Some(current) = existing {
+            let backup_path = backup_root.join(file);
+            create_parent(&backup_path)?;
+            std::fs::write(&backup_path, &current).map_err(|err| {
+                ContextImportError::CopyFailed {
+                    file: file.clone(),
+                    reason: err.to_string(),
+                }
+            })?;
+            summary.backed_up.push(file.clone());
+        }
+        create_parent(&destination)?;
+        std::fs::write(&destination, &incoming).map_err(|err| ContextImportError::CopyFailed {
+            file: file.clone(),
+            reason: err.to_string(),
         })?;
+        summary.written.push(file.clone());
+    }
+
+    // Stamp the marker so a project seeded before #103 becomes self-describing
+    // the first time it is refreshed.
+    write_context_source(dest_dir, &source.project_name)?;
+    Ok(summary)
+}
+
+/// What a [`refresh_context`] run changed, for the output panel.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct RefreshSummary {
+    pub written: Vec<String>,
+    pub backed_up: Vec<String>,
+}
+
+fn read_bytes(path: &Path, file: &str) -> Result<Vec<u8>, ContextImportError> {
+    std::fs::read(path).map_err(|err| ContextImportError::CopyFailed {
+        file: file.to_string(),
+        reason: err.to_string(),
+    })
+}
+
+fn create_parent(path: &Path) -> Result<(), ContextImportError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(ContextImportError::CreateDirFailed)?;
     }
     Ok(())
 }

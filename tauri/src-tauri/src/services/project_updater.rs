@@ -127,13 +127,38 @@ fn refresh_project_context<F: FnMut(OutputEvent)>(
     let Some(source) = company_context::source_context_for(&project_ctx, sources) else {
         return;
     };
-    match company_context::refresh_context(source, &project_ctx.directory) {
-        Ok(()) => emit_diag(
-            on_event,
-            format!("refreshed company-context from '{}'", source.project_name),
-        ),
+    match company_context::refresh_context(source, &project_ctx.directory, &backup_stamp()) {
+        Ok(summary) => {
+            emit_diag(
+                on_event,
+                format!(
+                    "refreshed company-context from '{}': {} file(s) written",
+                    source.project_name,
+                    summary.written.len()
+                ),
+            );
+            if !summary.backed_up.is_empty() {
+                emit_diag(
+                    on_event,
+                    format!(
+                        "previous copies saved under {}/: {}",
+                        company_context::BACKUP_DIR_NAME,
+                        summary.backed_up.join(", ")
+                    ),
+                );
+            }
+        }
         Err(err) => emit_diag(on_event, format!("company-context refresh skipped: {err}")),
     }
+}
+
+/// Names this refresh's backup folder. Seconds since the epoch — sortable,
+/// collision-free between runs, and free of a date-formatting dependency.
+fn backup_stamp() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_else(|_| "0".to_string())
 }
 
 /// True when a project should be offered the single per-project Update button:

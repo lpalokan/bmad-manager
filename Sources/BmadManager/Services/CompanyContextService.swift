@@ -30,6 +30,12 @@ enum ContextImportError: LocalizedError {
 /// Walking the projects folder is deliberately NOT this module's job —
 /// `ProjectService.listProjects` is the one place that knows what counts
 /// as a project folder; callers hand the resulting `ProjectItem`s in.
+/// What a `refreshContext` run changed, for the output panel.
+struct RefreshSummary: Equatable {
+    var written: [String] = []
+    var backedUp: [String] = []
+}
+
 struct CompanyContextService {
     /// Every layout a context is read from, canonical first. The first entry
     /// is also the one `importContext` writes to.
@@ -166,6 +172,48 @@ struct CompanyContextService {
                 throw ContextImportError.copyFailed(file: file, underlying: error)
             }
         }
+        // Record where these files came from, so a later drift check is a
+        // lookup instead of a guess at the tags. Only meaningful for a
+        // skills-repo pack — seeding from another project has no upstream.
+        if context.source == .github {
+            try Self.writeContextSource(context.projectName, in: destDir)
+        }
+    }
+
+    // MARK: - Source marker
+
+    /// Hidden folder inside a context holding copies of files a refresh was
+    /// about to overwrite, one sub-folder per refresh. Dot-prefixed so
+    /// `contextFiles` skips it — backups must never become part of the context
+    /// they protect.
+    static let backupDirName = ".bmad-context-backup"
+
+    /// Hidden marker recording which skills-repo pack a context was seeded
+    /// from, so resolution is a lookup rather than an inference. Also
+    /// dot-prefixed, and for the same reason.
+    static let sourceMarkerName = ".bmad-context-source.json"
+
+    /// Reads the pack name recorded by `writeContextSource`, or nil when no
+    /// marker is present (every project seeded before #103) or it won't parse.
+    static func contextSource(in contextDir: URL) -> String? {
+        guard
+            let data = try? Data(contentsOf: contextDir.appendingPathComponent(sourceMarkerName)),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let name = object["name"] as? String
+        else { return nil }
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Records `name` as the skills-repo pack this context was seeded from.
+    private static func writeContextSource(_ name: String, in contextDir: URL) throws {
+        try FileManager.default.createDirectory(at: contextDir, withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: ["name": name])
+        do {
+            try data.write(to: contextDir.appendingPathComponent(sourceMarkerName))
+        } catch {
+            throw ContextImportError.copyFailed(file: sourceMarkerName, underlying: error)
+        }
     }
 
     // MARK: - Context drift vs the skills repo (issue #92)
@@ -178,25 +226,60 @@ struct CompanyContextService {
     // the OKF `tags` slug its own files carry, so no marker file is needed and
     // existing projects work.
 
-    /// Resolves which of `sources` a project's context was seeded from, by
-    /// matching the OKF `tags` slug embedded in the project's own files against
-    /// the source context names. Returns nil when nothing matches or the match
-    /// is ambiguous — the project then has no upstream to refresh from and is
-    /// treated as not context-stale (module-only).
+    /// Resolves which of `sources` a project's context was seeded from: the
+    /// marker recorded at seed/refresh time when present, otherwise a plurality
+    /// vote over the OKF `tags` its own files carry. Returns nil when nothing
+    /// matches or the vote is an even split — the project then has no upstream
+    /// to refresh from and is treated as not context-stale (module-only).
     func sourceContext(
         for projectContext: CompanyContext,
         in sources: [CompanyContext]
     ) -> CompanyContext? {
         guard !sources.isEmpty else { return nil }
-        var tags = Set<String>()
-        for file in projectContext.files {
+        // A marker settles it outright. A marker naming a pack that is no
+        // longer published falls through to the vote rather than giving up.
+        if let name = Self.contextSource(in: projectContext.directoryURL),
+            let found = sources.first(where: { $0.projectName == name })
+        {
+            return found
+        }
+        // Otherwise vote, top-level files first: a pack bundled in a sub-folder
+        // carries its own identity tags and would otherwise outvote the pack
+        // the project was actually seeded from.
+        let topLevel = projectContext.files.filter { !$0.contains("/") }
+        var votes = tally(projectContext, sources, topLevel)
+        // Only when the top level named nothing at all — a context whose files
+        // all live in sub-folders. A top-level *tie* is a genuine ambiguity and
+        // must not be broken by letting sub-folders vote after the fact.
+        if votes.isEmpty {
+            votes = tally(projectContext, sources, projectContext.files)
+        }
+        guard let best = votes.values.max() else { return nil }
+        let leaders = votes.filter { $0.value == best }
+        guard leaders.count == 1, let name = leaders.keys.first else { return nil }
+        return sources.first { $0.projectName == name }
+    }
+
+    /// Counts, per published pack, how many of `files` carry that pack's name
+    /// as an OKF tag. A tag is a vote only when it matches a published pack, so
+    /// subject keywords naming nothing published are ignored — and one file
+    /// naming another vertical as its subject cannot outweigh the pack's own
+    /// identity across the rest of the bundle.
+    private func tally(
+        _ projectContext: CompanyContext,
+        _ sources: [CompanyContext],
+        _ files: [String]
+    ) -> [String: Int] {
+        var votes: [String: Int] = [:]
+        for file in files {
             let url = projectContext.directoryURL.appendingPathComponent(file)
-            if let text = try? String(contentsOf: url, encoding: .utf8) {
-                tags.formUnion(Self.parseOkfMeta(text).tags)
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let tags = Set(Self.parseOkfMeta(text).tags)
+            for source in sources where tags.contains(source.projectName) {
+                votes[source.projectName, default: 0] += 1
             }
         }
-        let matches = sources.filter { tags.contains($0.projectName) }
-        return matches.count == 1 ? matches.first : nil
+        return votes
     }
 
     /// True when the project's context has drifted behind `source`: any file
@@ -239,27 +322,61 @@ struct CompanyContextService {
     /// never deleting destination-only files. The refresh counterpart to
     /// `importContext` (which skips existing files at create time): the "bring
     /// an existing project current with the skills repo" path.
-    func refreshContext(_ source: CompanyContext, into destDir: URL) throws {
+    ///
+    /// Every file whose content would change is copied into
+    /// `<destDir>/<backupDirName>/<backupStamp>/` first, so a refresh can never
+    /// destroy a local edit. `backupStamp` names that run's folder; the app
+    /// passes a timestamp, tests a fixed string.
+    @discardableResult
+    func refreshContext(
+        _ source: CompanyContext,
+        into destDir: URL,
+        backupStamp: String
+    ) throws -> RefreshSummary {
         try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+        let backupRoot = destDir
+            .appendingPathComponent(Self.backupDirName, isDirectory: true)
+            .appendingPathComponent(backupStamp, isDirectory: true)
+        var summary = RefreshSummary()
+
         for file in source.files {
             let destination = destDir.appendingPathComponent(file)
             do {
+                let incoming = try Data(contentsOf: source.directoryURL.appendingPathComponent(file))
+                let existing = try? Data(contentsOf: destination)
+
+                // Already identical: nothing to write, and nothing worth
+                // preserving. Skipping keeps mtimes stable for a current project.
+                if existing == incoming { continue }
+
+                // Anything whose bytes are about to change is copied aside
+                // first. We cannot tell a user's edit from a merely stale copy
+                // without a baseline, so we preserve both — a redundant backup
+                // is cheap, a lost edit is not.
+                if let existing {
+                    let backupPath = backupRoot.appendingPathComponent(file)
+                    try FileManager.default.createDirectory(
+                        at: backupPath.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    try existing.write(to: backupPath)
+                    summary.backedUp.append(file)
+                }
                 try FileManager.default.createDirectory(
                     at: destination.deletingLastPathComponent(),
                     withIntermediateDirectories: true
                 )
-                // copyItem refuses to overwrite, so clear an existing copy first.
-                if FileManager.default.fileExists(atPath: destination.path) {
-                    try FileManager.default.removeItem(at: destination)
-                }
-                try FileManager.default.copyItem(
-                    at: source.directoryURL.appendingPathComponent(file),
-                    to: destination
-                )
+                try incoming.write(to: destination)
+                summary.written.append(file)
             } catch {
                 throw ContextImportError.copyFailed(file: file, underlying: error)
             }
         }
+
+        // Stamp the marker so a project seeded before #103 becomes
+        // self-describing the first time it is refreshed.
+        try Self.writeContextSource(source.projectName, in: destDir)
+        return summary
     }
 
     // MARK: - OKF frontmatter parsing

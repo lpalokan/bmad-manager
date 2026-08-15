@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 
 use bmad_manager_lib::models::{AgentLaunchMethod, AppSettings, CompanyContext, ProjectItem};
 use bmad_manager_lib::services::agent_launch::ResolvedAgentLaunch;
-use bmad_manager_lib::services::company_context::{github_contexts_in, import_context};
+use bmad_manager_lib::services::company_context::{
+    github_contexts_in, import_context, read_context_source, BACKUP_DIR_NAME,
+};
 use bmad_manager_lib::services::contribution::{ContributableSkill, PreparedFile};
 use bmad_manager_lib::services::project_service::InitTargetInfo;
 use cucumber::World;
@@ -229,6 +231,105 @@ impl TauriWorld {
         std::fs::write(dir.join(file), format!("local {file}")).expect("write local context file");
     }
 
+    /// Writes a project-local context file carrying explicit `tags`, to model
+    /// an OKF file that names another pack as its subject matter rather than
+    /// its identity (issue #103). No date, so it never registers as drift.
+    pub fn add_local_context_file_tagged(&mut self, project: &str, file: &str, tags: &[&str]) {
+        let dir = self
+            .ensure_projects_root()
+            .join(project)
+            .join("output/company-context");
+        std::fs::create_dir_all(&dir).expect("create context dir");
+        let text = format!(
+            "---\ntags: [company-context, {}]\n---\nlocal {file}\n",
+            tags.join(", ")
+        );
+        std::fs::write(dir.join(file), text).expect("write tagged local context file");
+    }
+
+    /// Copies a whole skills-repo context into a sub-folder of the project's
+    /// own context — models a project that bundles a second pack alongside the
+    /// one it was seeded from (issue #103).
+    pub fn bundle_skills_context_into_project(&mut self, name: &str, project: &str) {
+        let source = self
+            .skills_repo_sources()
+            .into_iter()
+            .find(|c| c.project_name == name)
+            .unwrap_or_else(|| panic!("no skills repo context named {name:?}"));
+        let dest = self
+            .ensure_projects_root()
+            .join(project)
+            .join("output/company-context")
+            .join(name);
+        std::fs::create_dir_all(&dest).expect("create bundled pack dir");
+        for file in &source.files {
+            let destination = dest.join(file);
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent).expect("create bundled subfolder");
+            }
+            std::fs::copy(source.directory.join(file), &destination)
+                .expect("copy bundled pack file");
+        }
+    }
+
+    /// Rewrites the body of a project's copy of a context file, leaving its
+    /// frontmatter (and so its `last_updated`) untouched — a user edit that
+    /// does not bump the date, the case a refresh must back up.
+    pub fn edit_project_context_file(&mut self, project: &str, file: &str, body: &str) {
+        let path = self
+            .ensure_projects_root()
+            .join(project)
+            .join("output/company-context")
+            .join(file);
+        let text = std::fs::read_to_string(&path).expect("read project context file");
+        let mut out = String::new();
+        let mut fences = 0;
+        for line in text.lines() {
+            if line.trim() == "---" {
+                fences += 1;
+            }
+            if fences < 2 {
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            if line.trim() == "---" {
+                out.push_str("---\n");
+            }
+        }
+        out.push_str(body);
+        out.push('\n');
+        std::fs::write(&path, out).expect("write edited project context file");
+    }
+
+    /// Every backed-up file a refresh copied aside, as (relative path, body).
+    /// Looks under the context's hidden backup folder, across all stamps.
+    pub fn context_backups(&mut self, project: &str) -> Vec<(String, String)> {
+        let root = self
+            .ensure_projects_root()
+            .join(project)
+            .join("output/company-context")
+            .join(BACKUP_DIR_NAME);
+        let mut out = Vec::new();
+        let Ok(stamps) = std::fs::read_dir(&root) else {
+            return out;
+        };
+        for stamp in stamps.flatten() {
+            collect_files_under(&stamp.path(), &stamp.path(), &mut out);
+        }
+        out.sort();
+        out
+    }
+
+    /// The source pack recorded in the project's context marker, if any.
+    pub fn context_source_marker(&mut self, project: &str) -> Option<String> {
+        let dir = self
+            .ensure_projects_root()
+            .join(project)
+            .join("output/company-context");
+        read_context_source(&dir)
+    }
+
     /// Fake home directory for contribution scenarios.
     pub fn ensure_contrib_home(&mut self) -> PathBuf {
         if let Some(home) = &self.contrib_home {
@@ -386,5 +487,22 @@ impl TauriWorld {
         git(&["add", "."]);
         git(&["commit", "--quiet", "-m", "initial"]);
         format!("file://{}", repo.display())
+    }
+}
+
+/// Recursively collects every regular file under `dir` as (path relative to
+/// `root`, contents). Used to assert on whatever a refresh copied aside.
+fn collect_files_under(root: &Path, dir: &Path, out: &mut Vec<(String, String)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files_under(root, &path, out);
+        } else if let Ok(rel) = path.strip_prefix(root) {
+            let body = std::fs::read_to_string(&path).unwrap_or_default();
+            out.push((rel.to_string_lossy().replace('\\', "/"), body));
+        }
     }
 }
