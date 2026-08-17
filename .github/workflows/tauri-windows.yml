@@ -52,6 +52,21 @@ on:
 permissions:
   contents: write
 
+# A merge to main and the release-please version-bump commit that follows it
+# minutes later build the same tree twice: the bump rewrites tauri/package.json,
+# tauri.conf.json and Cargo.toml, so it matches the paths filter above. Cancel
+# the older run — the survivor is the one carrying the version that actually
+# ships. Worse than the wasted minutes, the two runs overlapped, and rust-cache
+# only saves in its post-job step, so neither could reuse the other's cache and
+# both compiled from scratch in parallel (issue #107).
+#
+# Keyed by ref, deliberately: the `workflow_call` from release.yml runs on the
+# release tag ref, so it lands in its own group and a push to main can never
+# cancel the build whose artifact the release attaches.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-latest
