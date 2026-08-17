@@ -202,9 +202,14 @@ final class ProjectCoordinator: ObservableObject {
     /// version is older. Best-effort: any failure (offline, git missing,
     /// unreadable repo) clears the set rather than surfacing an error — a
     /// version check shouldn't nag. Reads `projects`, so call after `refresh`.
+    /// `log` receives one line per project — the same diagnostic the Tauri
+    /// build streams to its output panel. It flows in from the View rather than
+    /// being captured here, for the same reason `runCommand` does (see the note
+    /// on `init`). Defaulted, so tests and callers that don't care can ignore it.
     func checkForUpdates(
         settings: AppSettings,
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        log: (String) -> Void = { _ in }
     ) async {
         let source = moduleSourceFor(settings)
         let repoModule = try? await source.withModuleRoot { moduleRoot, _ in
@@ -215,13 +220,15 @@ final class ProjectCoordinator: ObservableObject {
         // flagged. `latest` is nil when offline / unreadable.
         let latest = repoModule.flatMap { $0 }
         let sources = discoveredGithubContexts(home: home)
-        let stale = projects.filter { project in
-            let moduleStale = latest.map {
-                ModuleManifest.isProjectStale(projectURL: project.url, repoModule: $0)
-            } ?? false
-            let contextStale = contextService.isProjectContextStale(
-                projectURL: project.url, sources: sources)
-            return moduleStale || contextStale
+        var stale: [ProjectItem] = []
+        for project in projects {
+            let verdict = ProjectUpdater.evaluate(
+                project: project,
+                repoModule: latest,
+                sources: sources,
+                contextService: contextService)
+            log(verdict.line)
+            if verdict.needsUpdate { stale.append(project) }
         }
         updateAvailable = Set(stale.map(\.url))
     }

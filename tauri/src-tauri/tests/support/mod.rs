@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use bmad_manager_lib::models::{AgentLaunchMethod, AppSettings, CompanyContext, ProjectItem};
 use bmad_manager_lib::services::agent_launch::ResolvedAgentLaunch;
 use bmad_manager_lib::services::company_context::{
-    github_contexts_in, import_context, read_context_source, BACKUP_DIR_NAME,
+    github_contexts_in, import_context, read_context_source, ContextStatus, BACKUP_DIR_NAME,
 };
 use bmad_manager_lib::services::contribution::{ContributableSkill, PreparedFile};
 use bmad_manager_lib::services::project_service::InitTargetInfo;
@@ -73,6 +73,12 @@ pub struct TauriWorld {
     /// Result of the most recent project company-context drift check
     /// (issue #92).
     pub context_update_available: Option<bool>,
+    /// The state that check reached — `current`, `drift`, `no-upstream` or
+    /// `no-context`. Kept alongside the boolean because "no upstream" and "no
+    /// drift" must be distinguishable (issue #105).
+    pub context_state: Option<ContextStatus>,
+    /// The per-project line `check_for_updates` streams to the output panel.
+    pub update_check_line: Option<String>,
 }
 
 impl TauriWorld {
@@ -140,13 +146,24 @@ impl TauriWorld {
 
     /// Writes an OKF-style context file: YAML frontmatter carrying the source
     /// `slug` as a tag (so a seeded project links back to it) and an optional
-    /// `last_updated` date, followed by `body`. Intermediate folders are made.
-    pub fn write_okf_context_file(path: &Path, slug: &str, date: Option<&str>, body: &str) {
+    /// `last_updated` date, followed by `body`. Passing `None` for `slug`
+    /// writes the frontmatter without any pack tag — a pack whose author never
+    /// tagged its files with its own name, which no tag vote can resolve.
+    /// Intermediate folders are made.
+    pub fn write_okf_context_file(
+        path: &Path,
+        slug: Option<&str>,
+        date: Option<&str>,
+        body: &str,
+    ) {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).expect("create okf file dir");
         }
         let mut text = String::from("---\n");
-        text.push_str(&format!("tags: [company-context, {slug}]\n"));
+        match slug {
+            Some(slug) => text.push_str(&format!("tags: [company-context, {slug}]\n")),
+            None => text.push_str("tags: [company-context]\n"),
+        }
         if let Some(d) = date {
             text.push_str(&format!("last_updated: {d}\n"));
         }
@@ -164,7 +181,25 @@ impl TauriWorld {
             .join("context")
             .join(name)
             .join(file);
-        Self::write_okf_context_file(&path, name, date, body);
+        Self::write_okf_context_file(&path, Some(name), date, body);
+    }
+
+    /// Same, but without the pack's own slug among the tags — a pack that
+    /// carries no identity tag at all, so only file overlap can link a project
+    /// back to it (issue #105).
+    pub fn put_skills_okf_untagged(
+        &mut self,
+        name: &str,
+        file: &str,
+        date: Option<&str>,
+        body: &str,
+    ) {
+        let path = self
+            .skills_repo_root()
+            .join("context")
+            .join(name)
+            .join(file);
+        Self::write_okf_context_file(&path, None, date, body);
     }
 
     /// Removes a whole skills-repo context folder (models an unpublished source).

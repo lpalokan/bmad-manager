@@ -36,6 +36,37 @@ struct RefreshSummary: Equatable {
     var backedUp: [String] = []
 }
 
+/// Where a project's company-context stands against the skills repo. A
+/// four-state answer rather than a boolean, because "resolved and matching"
+/// and "I cannot tell which pack this came from" are different facts that used
+/// to be reported identically as `context=current` — the silent wrong answer
+/// that hid a real drift for a whole release (issue #105).
+enum ContextStatus: Equatable {
+    /// The project carries no company-context at all.
+    case noContext
+    /// It has one, but no published pack could be identified as its upstream,
+    /// so there is nothing to compare it against.
+    case noUpstream
+    /// Resolved to a pack and matching it.
+    case current
+    /// Resolved to a pack and behind it.
+    case drift
+
+    /// The word the update-check line prints.
+    var label: String {
+        switch self {
+        case .noContext: return "no-context"
+        case .noUpstream: return "no-upstream"
+        case .current: return "current"
+        case .drift: return "drift"
+        }
+    }
+
+    /// Only actual drift lights the Update button. An unresolved upstream is
+    /// visible in the log instead — there is nothing a refresh could do with it.
+    var needsUpdate: Bool { self == .drift }
+}
+
 struct CompanyContextService {
     /// Every layout a context is read from, canonical first. The first entry
     /// is also the one `importContext` writes to.
@@ -228,9 +259,11 @@ struct CompanyContextService {
 
     /// Resolves which of `sources` a project's context was seeded from: the
     /// marker recorded at seed/refresh time when present, otherwise a plurality
-    /// vote over the OKF `tags` its own files carry. Returns nil when nothing
-    /// matches or the vote is an even split — the project then has no upstream
-    /// to refresh from and is treated as not context-stale (module-only).
+    /// vote over the OKF `tags` its own files carry, and finally — when the tags
+    /// decide nothing — how much of each pack's filename set the project holds.
+    /// Returns nil when every route comes back ambiguous; the project then has
+    /// no upstream to refresh from (reported as `.noUpstream`, never
+    /// as "current").
     func sourceContext(
         for projectContext: CompanyContext,
         in sources: [CompanyContext]
@@ -254,10 +287,67 @@ struct CompanyContextService {
         if votes.isEmpty {
             votes = tally(projectContext, sources, projectContext.files)
         }
-        guard let best = votes.values.max() else { return nil }
-        let leaders = votes.filter { $0.value == best }
-        guard leaders.count == 1, let name = leaders.keys.first else { return nil }
-        return sources.first { $0.projectName == name }
+        if let best = votes.values.max() {
+            let leaders = votes.filter { $0.value == best }
+            // An even split is a genuine ambiguity, not a coin toss — fall
+            // through to the files rather than picking one.
+            if leaders.count == 1, let name = leaders.keys.first,
+                let found = sources.first(where: { $0.projectName == name })
+            {
+                return found
+            }
+        }
+        // The tags decided nothing — either nobody voted (a pack whose author
+        // never tagged its files with its own name) or the vote split evenly.
+        // The files themselves still carry the answer: a seeded project holds
+        // that pack's whole filename set, and nobody else's.
+        return bestByFileOverlap(projectContext, sources)
+    }
+
+    /// The share of a pack's files a project carries — the tag-independent
+    /// evidence that a bundle came from that pack. A pack the project shares a
+    /// single common filename (`index.md`) with scores low; the pack it was
+    /// seeded from scores every one of that pack's files.
+    private struct Overlap {
+        let source: CompanyContext
+        let matched: Int
+        let total: Int
+
+        /// Strictly larger share, compared by cross-multiplication so two packs
+        /// of different sizes are ranked exactly, with no float rounding
+        /// deciding an upstream.
+        func beats(_ other: Overlap) -> Bool {
+            matched * other.total > other.matched * total
+        }
+
+        /// Carrying more than half of a pack's files. Below that the evidence
+        /// is too thin to name an upstream a refresh would then overwrite from.
+        var isMajority: Bool { matched * 2 > total }
+    }
+
+    /// Resolves the source by file overlap: the pack whose filename set the
+    /// project covers best, provided it covers a majority of that pack and no
+    /// other pack matches it exactly. Ignores tags entirely, so a tag collision
+    /// cannot break it.
+    private func bestByFileOverlap(
+        _ projectContext: CompanyContext,
+        _ sources: [CompanyContext]
+    ) -> CompanyContext? {
+        let carried = Set(projectContext.files)
+        let scored =
+            sources
+            .filter { !$0.files.isEmpty }
+            .map {
+                Overlap(
+                    source: $0,
+                    matched: $0.files.filter(carried.contains).count,
+                    total: $0.files.count)
+            }
+            .sorted { $0.beats($1) }
+        guard let best = scored.first, best.isMajority else { return nil }
+        // A runner-up on the same share is the same ambiguity the tag vote hit.
+        if let next = scored.dropFirst().first, !best.beats(next) { return nil }
+        return best.source
     }
 
     /// Counts, per published pack, how many of `files` carry that pack's name
@@ -308,13 +398,22 @@ struct CompanyContextService {
         return false
     }
 
-    /// True when `projectURL`'s context should be offered a refresh from the
-    /// skills-repo `sources`: it resolves to one of them and has drifted behind
-    /// it. Drives the single Update button alongside module staleness.
-    func isProjectContextStale(projectURL: URL, sources: [CompanyContext]) -> Bool {
-        guard let projectContext = context(inProject: projectURL) else { return false }
-        guard let source = sourceContext(for: projectContext, in: sources) else { return false }
-        return isContextStale(projectContext, against: source)
+    /// Where `projectURL`'s context stands against the skills-repo `sources`.
+    /// Drives the single Update button alongside module staleness, and the
+    /// diagnostic line that says why.
+    ///
+    /// Resolving the upstream also stamps it into the context's marker file, so
+    /// a project seeded before the marker existed becomes self-describing after
+    /// one successful check and never depends on the inference again.
+    /// Best-effort: a read-only or otherwise unwritable context still checks
+    /// normally.
+    func projectContextStatus(projectURL: URL, sources: [CompanyContext]) -> ContextStatus {
+        guard let projectContext = context(inProject: projectURL) else { return .noContext }
+        guard let source = sourceContext(for: projectContext, in: sources) else { return .noUpstream }
+        if Self.contextSource(in: projectContext.directoryURL) != source.projectName {
+            try? Self.writeContextSource(source.projectName, in: projectContext.directoryURL)
+        }
+        return isContextStale(projectContext, against: source) ? .drift : .current
     }
 
     /// Overwrites `destDir`'s context with `source`'s files — copying every

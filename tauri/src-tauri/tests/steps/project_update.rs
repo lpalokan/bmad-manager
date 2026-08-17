@@ -209,7 +209,8 @@ async fn update_the_project(world: &mut TauriWorld) {
 /// Mirrors `commands::check_for_updates`' per-project verdict for one project:
 /// the union of module staleness (against a hand-built `RepoModule`) and
 /// company-context drift (against the skills-repo sources). Stored in
-/// `update_available` so the existing update/no-update `Then`s apply.
+/// `update_available` so the existing update/no-update `Then`s apply, with the
+/// streamed diagnostic line alongside it (issue #105).
 #[when(regex = r#"^I run the combined update check against repo module version "([^"]+)"$"#)]
 async fn run_combined_check(world: &mut TauriWorld, version: String) {
     let project = world.update_target.clone().expect("project seeded");
@@ -218,11 +219,22 @@ async fn run_combined_check(world: &mut TauriWorld, version: String) {
         version,
     };
     let sources = world.skills_repo_sources();
-    world.update_available = Some(project_updater::needs_update(
-        &project,
-        Some(&repo),
-        &sources,
-    ));
+    let item = ProjectItem::new(project, None);
+    let verdict = project_updater::evaluate_project(&item, Some(&repo), &sources);
+    world.update_available = Some(verdict.needs_update);
+    world.update_check_line = Some(verdict.line);
+}
+
+#[then(regex = r#"^the update check line contains "([^"]+)"$"#)]
+async fn update_check_line_contains(world: &mut TauriWorld, fragment: String) {
+    let line = world
+        .update_check_line
+        .as_deref()
+        .expect("an update check ran");
+    assert!(
+        line.contains(&fragment),
+        "expected {line:?} to contain {fragment:?}"
+    );
 }
 
 #[then("the update succeeds")]

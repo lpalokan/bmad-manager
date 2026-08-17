@@ -69,8 +69,26 @@ final class CompanyContextDriftTests: XCTestCase {
         return url
     }
 
+    /// Same, but without the pack's own slug among the tags — a pack whose
+    /// author never tagged its files with its own name, which no tag vote can
+    /// resolve (issue #105).
+    private func putSkillsOKFUntagged(
+        _ name: String, _ file: String, date: String?, body: String = "v1"
+    ) throws {
+        let dir = skillsRepo.appendingPathComponent("context/\(name)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var text = "---\ntags: [company-context]\n"
+        if let date { text += "last_updated: \(date)\n" }
+        text += "---\n\(body)\n"
+        try text.write(to: dir.appendingPathComponent(file), atomically: true, encoding: .utf8)
+    }
+
+    private func contextStatus(_ projectURL: URL) -> ContextStatus {
+        service.projectContextStatus(projectURL: projectURL, sources: sources())
+    }
+
     private func hasContextUpdate(_ projectURL: URL) -> Bool {
-        service.isProjectContextStale(projectURL: projectURL, sources: sources())
+        contextStatus(projectURL).needsUpdate
     }
 
     private func contextDir(_ projectURL: URL) -> URL {
@@ -285,6 +303,138 @@ final class CompanyContextDriftTests: XCTestCase {
     func testSeedMarkerIsNotTreatedAsContextContent() throws {
         try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
         let proj = try seedProject("fresh", from: "digital-workforce")
+
+        let context = try XCTUnwrap(service.context(inProject: proj))
+        XCTAssertEqual(context.files, ["positioning.md"])
+    }
+
+    // MARK: - Telling "no upstream" apart from "no drift" (issue #105)
+    //
+    // The check used to answer with a bare boolean, so "resolved and matching"
+    // and "I cannot tell which pack this came from" both came back false and
+    // printed as `context=current`. A project whose upstream never resolved
+    // therefore looked up to date while it was 15 files behind.
+
+    func testProjectMatchingItsSourceReportsTheCurrentState() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("investor-day", from: "digital-workforce")
+
+        XCTAssertEqual(contextStatus(proj), .current)
+    }
+
+    func testDriftedProjectReportsTheDriftState() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("investor-day", from: "digital-workforce")
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+
+        XCTAssertEqual(contextStatus(proj), .drift)
+    }
+
+    func testUnresolvableUpstreamReportsNoUpstreamRatherThanCurrent() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        try putSkillsOKF("healthcare", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("split", from: "digital-workforce",
+                                   at: "output/company-context")
+        try putLocalTagged(proj, "vertical.md", tags: ["healthcare"])
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+
+        XCTAssertEqual(contextStatus(proj), .noUpstream)
+        XCTAssertFalse(hasContextUpdate(proj))
+    }
+
+    func testProjectWhoseSourceIsNoLongerPublishedReportsNoUpstream() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("orphan", from: "digital-workforce")
+        try FileManager.default.removeItem(
+            at: skillsRepo.appendingPathComponent("context/digital-workforce"))
+
+        XCTAssertEqual(contextStatus(proj), .noUpstream)
+    }
+
+    func testProjectCarryingNoCompanyContextReportsNoContext() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let bare = root.appendingPathComponent("projects/bare", isDirectory: true)
+        try FileManager.default.createDirectory(at: bare, withIntermediateDirectories: true)
+
+        XCTAssertEqual(contextStatus(bare), .noContext)
+    }
+
+    // MARK: - Resolving by file overlap when the tags cannot decide (#105)
+    //
+    // The tag vote depends on pack authors tagging their own files with the
+    // pack slug. When they don't — or when the vote ties — the files themselves
+    // still say where the bundle came from: a seeded project carries that
+    // pack's whole filename set.
+
+    func testUntaggedPackIsResolvedByTheFilesTheProjectCarries() throws {
+        for file in ["positioning.md", "icp.md", "offerings.md"] {
+            try putSkillsOKFUntagged("enterprise-public-sector", file, date: "2026-06-26")
+        }
+        try putSkillsOKFUntagged("agent-workforce", "brief.md", date: "2026-06-26")
+        let proj = try seedProject("gtm", from: "enterprise-public-sector",
+                                   at: "output/company-context")
+        try putSkillsOKFUntagged(
+            "enterprise-public-sector", "positioning.md", date: "2026-07-03", body: "v2")
+
+        XCTAssertEqual(contextStatus(proj), .drift)
+    }
+
+    func testPackTheProjectBarelyOverlapsDoesNotClaimIt() throws {
+        for file in ["index.md", "icp.md", "positioning.md", "offerings.md"] {
+            try putSkillsOKFUntagged("digital-workforce", file, date: "2026-06-26")
+        }
+        let proj = root.appendingPathComponent("projects/thin", isDirectory: true)
+        let dir = proj.appendingPathComponent("output/company-context", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "shared".write(
+            to: dir.appendingPathComponent("index.md"), atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(contextStatus(proj), .noUpstream)
+    }
+
+    /// Tags still win: overlap is the fallback, not a second opinion.
+    func testTagVoteDecidesEvenWhenAnotherPackOverlapsAsMuch() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        try putSkillsOKFUntagged("healthcare", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("tagged", from: "digital-workforce",
+                                   at: "output/company-context")
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+
+        XCTAssertEqual(contextStatus(proj), .drift)
+    }
+
+    // MARK: - Backfilling the source marker (issue #105)
+
+    func testASuccessfulCheckRecordsTheResolvedPackAsTheContextSource() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("legacy-seed", from: "digital-workforce",
+                                   at: "output/company-context")
+        XCTAssertNil(CompanyContextService.contextSource(in: contextDir(proj)))
+
+        _ = contextStatus(proj)
+
+        XCTAssertEqual(
+            CompanyContextService.contextSource(in: contextDir(proj)), "digital-workforce")
+    }
+
+    func testACheckThatCannotResolveTheUpstreamRecordsNothing() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        try putSkillsOKF("healthcare", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("split", from: "digital-workforce",
+                                   at: "output/company-context")
+        try putLocalTagged(proj, "vertical.md", tags: ["healthcare"])
+
+        _ = contextStatus(proj)
+
+        XCTAssertNil(CompanyContextService.contextSource(in: contextDir(proj)))
+    }
+
+    func testTheBackfilledMarkerIsNotTreatedAsContextContent() throws {
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        let proj = try seedProject("legacy-seed", from: "digital-workforce",
+                                   at: "output/company-context")
+
+        _ = contextStatus(proj)
 
         let context = try XCTUnwrap(service.context(inProject: proj))
         XCTAssertEqual(context.files, ["positioning.md"])

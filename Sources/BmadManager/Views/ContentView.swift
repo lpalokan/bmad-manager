@@ -125,7 +125,7 @@ struct ContentView: View {
         // project manifest reads. Runs concurrently with the skills sync and
         // never blocks the list; stale projects light up their Update button
         // when it resolves.
-        Task { await coordinator.checkForUpdates(settings: settings.settings) }
+        Task { await runUpdateCheck() }
     }
 
     private func autoSyncRepo() async {
@@ -136,6 +136,21 @@ struct ContentView: View {
                 await commandRunner.run(command: command, cwd: cwd)
             }
         )
+        // The pull is what makes an upstream pack newer than a project's copy,
+        // so the badges have to be recomputed once it lands. The check kicked
+        // off alongside the sync raced it and saw the pre-pull clone, which is
+        // how a drifted project could stay unbadged for a whole session
+        // (issue #105).
+        await runUpdateCheck()
+    }
+
+    /// Recomputes the per-project Update badges, streaming each project's
+    /// verdict into the output panel so a project that *doesn't* light up is
+    /// explainable rather than silent.
+    private func runUpdateCheck() async {
+        await coordinator.checkForUpdates(settings: settings.settings) { line in
+            commandRunner.append(line)
+        }
     }
 
     private var header: some View {
@@ -481,6 +496,10 @@ struct ContentView: View {
                 await commandRunner.run(command: command, cwd: cwd)
             }
         )
+        // A manual sync pulls the same clone the context packs come from, so
+        // it can change what "up to date" means for a project (issue #105).
+        refreshProjects()
+        await runUpdateCheck()
     }
 
     private func promptForModuleZip() -> URL? {

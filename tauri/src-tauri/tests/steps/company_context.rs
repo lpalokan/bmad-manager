@@ -6,7 +6,7 @@ use bmad_manager_lib::models::{
     AppSettings, CompanyContext, ContextSource, ModuleSourceKind, ProjectItem,
 };
 use bmad_manager_lib::services::company_context::{
-    context_in_project, contexts_in, github_contexts_in, import_context, is_project_context_stale,
+    context_in_project, contexts_in, github_contexts_in, import_context, project_context_status,
     refresh_context, source_context_for,
 };
 use bmad_manager_lib::services::project_creator;
@@ -482,7 +482,9 @@ async fn project_local_context_file(world: &mut TauriWorld, project: String, fil
 async fn check_context_update(world: &mut TauriWorld, project: String) {
     let dir = world.ensure_projects_root().join(&project);
     let sources = world.skills_repo_sources();
-    world.context_update_available = Some(is_project_context_stale(&dir, &sources));
+    let status = project_context_status(&dir, &sources);
+    world.context_state = Some(status);
+    world.context_update_available = Some(status.needs_update());
 }
 
 #[when(regex = r#"^I refresh project "([^"]+)" from the skills repo$"#)]
@@ -508,6 +510,42 @@ async fn reports_context_update(world: &mut TauriWorld, _project: String) {
 #[then(regex = r#"^project "([^"]+)" reports no context update$"#)]
 async fn reports_no_context_update(world: &mut TauriWorld, _project: String) {
     assert_eq!(world.context_update_available, Some(false));
+}
+
+// --- Context state, overlap resolution, marker backfill (issue #105) -----
+
+#[then(regex = r#"^project "([^"]+)" reports context state "([^"]+)"$"#)]
+async fn reports_context_state(world: &mut TauriWorld, _project: String, expected: String) {
+    let status = world.context_state.expect("a context check ran");
+    assert_eq!(status.label(), expected);
+}
+
+#[given(
+    regex = r#"^a skills repo context "([^"]+)" with untagged OKF file "([^"]+)" dated "([^"]+)"$"#
+)]
+async fn skills_okf_untagged(world: &mut TauriWorld, name: String, file: String, date: String) {
+    world.put_skills_okf_untagged(&name, &file, Some(&date), "v1");
+}
+
+#[given(
+    regex = r#"^the skills repo context "([^"]+)" gains untagged OKF file "([^"]+)" dated "([^"]+)"$"#
+)]
+async fn skills_okf_untagged_gains(
+    world: &mut TauriWorld,
+    name: String,
+    file: String,
+    date: String,
+) {
+    world.put_skills_okf_untagged(&name, &file, Some(&date), "added file");
+}
+
+#[then(regex = r#"^project "([^"]+)" records no context source$"#)]
+async fn project_records_no_context_source(world: &mut TauriWorld, project: String) {
+    assert_eq!(
+        world.context_source_marker(&project),
+        None,
+        "expected {project:?} to record no context source"
+    );
 }
 
 // --- Source resolution and refresh backups (issue #103) -----------------

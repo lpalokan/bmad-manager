@@ -20,7 +20,7 @@
 //! counts as a project folder; callers hand the resulting `ProjectItem`s
 //! in.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use thiserror::Error;
@@ -318,11 +318,13 @@ fn parse_ymd(value: &str) -> Option<(u32, u32, u32)> {
     Some((y, m, d))
 }
 
-/// Resolves which of `sources` a project's context was seeded from, by
-/// matching the OKF `tags` slug embedded in the project's own files against
-/// the source context names. Returns `None` when nothing matches or the match
-/// is ambiguous — the project then has no upstream to refresh from and is
-/// treated as not context-stale (module-only).
+/// Resolves which of `sources` a project's context was seeded from: the marker
+/// recorded at seed/refresh time when present, otherwise a plurality vote over
+/// the OKF `tags` its own files carry, and finally — when the tags decide
+/// nothing — how much of each pack's filename set the project holds. Returns
+/// `None` when every route comes back ambiguous; the project then has no
+/// upstream to refresh from (reported as [`ContextStatus::NoUpstream`], never
+/// as "current").
 pub fn source_context_for<'a>(
     project_ctx: &CompanyContext,
     sources: &'a [CompanyContext],
@@ -356,13 +358,91 @@ pub fn source_context_for<'a>(
         votes = tally(project_ctx, sources, &all);
     }
 
+    if let Some(name) = sole_leader(&votes) {
+        return sources.iter().find(|s| s.project_name == name);
+    }
+    // The tags decided nothing — either nobody voted (a pack whose author
+    // never tagged its files with its own name) or the vote split evenly. The
+    // files themselves still carry the answer: a seeded project holds that
+    // pack's whole filename set, and nobody else's.
+    best_by_file_overlap(project_ctx, sources)
+}
+
+/// The single highest-voted name, or `None` when nothing was voted for or two
+/// names tie for the lead — an even split is a genuine ambiguity, not a
+/// coin toss.
+fn sole_leader(votes: &HashMap<&str, usize>) -> Option<String> {
     let best = votes.values().copied().max()?;
     let mut leaders = votes.iter().filter(|(_, count)| **count == best);
     let (name, _) = leaders.next()?;
     if leaders.next().is_some() {
-        return None; // an even split — don't guess
+        return None;
     }
-    sources.iter().find(|s| s.project_name == *name)
+    Some((*name).to_string())
+}
+
+/// The share of a pack's files a project carries, as an exact fraction — the
+/// tag-independent evidence that a bundle came from that pack. A pack the
+/// project shares a single common filename (`index.md`) with scores low; the
+/// pack it was seeded from scores 1/1 of the pack's own files.
+struct Overlap<'a> {
+    source: &'a CompanyContext,
+    matched: usize,
+    total: usize,
+}
+
+impl Overlap<'_> {
+    /// `self` beats `other` when its share is strictly larger. Compared by
+    /// cross-multiplication so two packs of different sizes are ranked
+    /// exactly, with no float rounding deciding an upstream.
+    fn beats(&self, other: &Self) -> bool {
+        self.matched * other.total > other.matched * self.total
+    }
+
+    /// Carrying more than half of a pack's files. Below that the evidence is
+    /// too thin to name an upstream a refresh would then overwrite from.
+    fn is_majority(&self) -> bool {
+        self.matched * 2 > self.total
+    }
+}
+
+/// Resolves the source by file overlap: the pack whose filename set the
+/// project covers best, provided it covers a majority of that pack and no
+/// other pack matches it exactly. Ignores tags entirely, so a tag collision
+/// cannot break it.
+fn best_by_file_overlap<'a>(
+    project_ctx: &CompanyContext,
+    sources: &'a [CompanyContext],
+) -> Option<&'a CompanyContext> {
+    let carried: HashSet<&String> = project_ctx.files.iter().collect();
+    let mut scored: Vec<Overlap<'a>> = sources
+        .iter()
+        .filter(|s| !s.files.is_empty())
+        .map(|source| Overlap {
+            source,
+            matched: source.files.iter().filter(|f| carried.contains(*f)).count(),
+            total: source.files.len(),
+        })
+        .collect();
+    // Descending by share, so the lead and the runner-up sit next to each other.
+    scored.sort_by(|a, b| {
+        if a.beats(b) {
+            std::cmp::Ordering::Less
+        } else if b.beats(a) {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Equal
+        }
+    });
+    let best = scored.first()?;
+    if !best.is_majority() {
+        return None;
+    }
+    // A runner-up on the same share is the same ambiguity the tag vote hit.
+    if scored.get(1).is_some_and(|next| !best.beats(next)) {
+        return None;
+    }
+    Some(best.source)
 }
 
 /// Counts, per published pack, how many of `files` carry that pack's name as
@@ -431,17 +511,66 @@ pub fn is_context_stale(project_ctx: &CompanyContext, source: &CompanyContext) -
     false
 }
 
-/// True when `project_path`'s context should be offered a refresh from the
-/// skills-repo `sources`: it resolves to one of them and has drifted behind
-/// it. Drives the single Update button alongside module staleness.
-pub fn is_project_context_stale(project_path: &Path, sources: &[CompanyContext]) -> bool {
+/// Where a project's company-context stands against the skills repo. A
+/// four-state answer rather than a boolean, because "resolved and matching"
+/// and "I cannot tell which pack this came from" are different facts that used
+/// to print identically as `context=current` — the silent wrong answer that
+/// hid a real drift for a whole release (issue #105).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextStatus {
+    /// The project carries no company-context at all.
+    NoContext,
+    /// It has one, but no published pack could be identified as its upstream,
+    /// so there is nothing to compare it against.
+    NoUpstream,
+    /// Resolved to a pack and matching it.
+    Current,
+    /// Resolved to a pack and behind it.
+    Drift,
+}
+
+impl ContextStatus {
+    /// The word the update-check line prints.
+    pub fn label(self) -> &'static str {
+        match self {
+            ContextStatus::NoContext => "no-context",
+            ContextStatus::NoUpstream => "no-upstream",
+            ContextStatus::Current => "current",
+            ContextStatus::Drift => "drift",
+        }
+    }
+
+    /// Only actual drift lights the Update button. An unresolved upstream is
+    /// visible in the log instead — there is nothing a refresh could do with it.
+    pub fn needs_update(self) -> bool {
+        matches!(self, ContextStatus::Drift)
+    }
+}
+
+/// Where `project_path`'s context stands against the skills-repo `sources`.
+/// Drives the single Update button alongside module staleness, and the
+/// diagnostic line that says why.
+///
+/// Resolving the upstream also stamps it into the context's marker file, so a
+/// project seeded before the marker existed becomes self-describing after one
+/// successful check and never depends on the inference again. Best-effort: a
+/// read-only or otherwise unwritable context still checks normally.
+pub fn project_context_status(project_path: &Path, sources: &[CompanyContext]) -> ContextStatus {
     let Some(project_ctx) = context_in_project(project_path) else {
-        return false;
+        return ContextStatus::NoContext;
     };
     let Some(source) = source_context_for(&project_ctx, sources) else {
-        return false;
+        return ContextStatus::NoUpstream;
     };
-    is_context_stale(&project_ctx, source)
+    let recorded = read_context_source(&project_ctx.directory);
+    if recorded.as_deref() != Some(source.project_name.as_str()) {
+        let _ = write_context_source(&project_ctx.directory, &source.project_name);
+    }
+    if is_context_stale(&project_ctx, source) {
+        ContextStatus::Drift
+    } else {
+        ContextStatus::Current
+    }
 }
 
 /// Overwrites `dest_dir`'s context with `source`'s files — copying every

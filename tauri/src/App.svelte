@@ -219,6 +219,12 @@
       errorMessage = `Skill sync failed: ${err}`;
     } finally {
       isSyncing = false;
+      // A sync is exactly the moment the clone's context packs can change, so
+      // the badges have to be recomputed here too. Without this the check only
+      // ever ran in onMount, and a pack that drifted mid-session could not
+      // light up an Update button until the next launch (issue #105).
+      await refresh();
+      void runUpdateCheck();
     }
   }
 
@@ -320,9 +326,28 @@
     errorMessage = null;
   }
 
-  function settingsSaved(updated: AppSettings) {
+  // Saving settings can change *which* repo and branch the contexts come from,
+  // so a changed repo/branch re-clones immediately rather than taking effect at
+  // the next launch, and the badges are recomputed from whatever the save
+  // changed (issue #105).
+  async function settingsSaved(updated: AppSettings) {
+    const repoChanged =
+      !!settings &&
+      (settings.skillsRepoUrl !== updated.skillsRepoUrl ||
+        settings.skillsRepoBranch !== updated.skillsRepoBranch);
     settings = updated;
-    refresh();
+    if (repoChanged) {
+      showOutput = true;
+      outputLines = [];
+      lastExitCode = null;
+      try {
+        await syncSkillsRepo();
+      } catch (err) {
+        errorMessage = `Skill sync failed: ${err}`;
+      }
+    }
+    await refresh();
+    void runUpdateCheck();
   }
 
   const canCreate = $derived(
