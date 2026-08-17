@@ -28,6 +28,14 @@ on:
       - "scripts/**"
       - ".github/workflows/build.yml"
 
+# One run per ref: a merge to main and the release-please version bump that
+# follows it (which touches Resources/Info.plist, so it matches the paths above)
+# would otherwise build the same tree twice minutes apart. Same for a re-push to
+# a PR branch (issue #107).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-14

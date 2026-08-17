@@ -19,6 +19,13 @@ on:
       - ".github/workflows/tauri-windows-check.yml"
   workflow_dispatch:
 
+# One run per ref: a push that supersedes another (a merge to main followed by
+# the release-please version bump, or a re-push to a PR branch) cancels the
+# older one rather than paying for both (issue #107).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: windows-latest
@@ -35,16 +42,22 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Cache Cargo registry + target
-        uses: actions/cache@v4
+      # rust-cache rather than a raw actions/cache, matching tauri-windows.yml.
+      # The old key hashed Cargo.toml — whose version release-please rewrites on
+      # every release — so each release forked a fresh ~1.3 GB entry while the
+      # previous ones lingered against the repo's 10 GB cache limit, and every
+      # PR run saved its own copy on top. rust-cache keys on Cargo.lock + rustc
+      # instead, and prunes the target dir to dependency artifacts. `key`
+      # namespaces it away from the release workflow's cache, whose target dir
+      # holds release rather than debug/test artifacts. Saving only from main
+      # keeps PR runs to restore-only, so they stop competing for that limit —
+      # default-branch caches are readable from every other ref (issue #107).
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tauri/src-tauri/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('tauri/src-tauri/Cargo.toml') }}
-          restore-keys: |
-            cargo-${{ runner.os }}-
+          workspaces: "tauri/src-tauri"
+          key: "check"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
