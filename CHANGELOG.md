@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.18](https://github.com/lpalokan/bmad-manager/compare/v0.1.17...v0.1.18) (2026-08-17)
+
+
+### Bug Fixes
+
+* report an unresolvable context upstream instead of "current" ([42c60c4](https://github.com/lpalokan/bmad-manager/commit/42c60c4c37f0a58ecc45d7d691920524241cc5a3)), closes [#105](https://github.com/lpalokan/bmad-manager/issues/105)
+* resolve a project's context source by plurality and file overlap, report an unresolvable upstream ([c3543ab](https://github.com/lpalokan/bmad-manager/commit/c3543ab867d5ff955427fbe2264edf469c561526))
+* resolve a project's context source by plurality, back up edits on refresh ([c176166](https://github.com/lpalokan/bmad-manager/commit/c17616662f9e895fea2b4f2a04dbd71a27ecfa44)), closes [#103](https://github.com/lpalokan/bmad-manager/issues/103)
+
 ## [0.1.17](https://github.com/lpalokan/bmad-manager/compare/v0.1.16...v0.1.17) (2026-08-10)
 
 
