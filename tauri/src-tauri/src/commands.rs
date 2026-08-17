@@ -19,8 +19,8 @@ use crate::services::command_runner::OutputEvent;
 use crate::services::github_client::GitHubClient;
 use crate::services::skills_sync::{self, SkillTool};
 use crate::services::{
-    company_context, contribution, github_client, module_manifest, path_detection, project_creator,
-    project_service, project_updater, settings_store, token_store,
+    company_context, contribution, github_client, path_detection, project_creator, project_service,
+    project_updater, settings_store, token_store,
 };
 
 pub struct AppState {
@@ -166,30 +166,9 @@ pub async fn check_for_updates(
     let root = expand_tilde(&settings.projects_root);
     let mut stale = Vec::new();
     for project in project_service::list_projects(&root, settings.project_sort_order) {
-        let module_stale = repo_module
-            .as_ref()
-            .is_some_and(|m| module_manifest::is_project_stale(&project.path, m));
-        let context_stale = company_context::is_project_context_stale(&project.path, &sources);
-        let installed = repo_module
-            .as_ref()
-            .and_then(|m| module_manifest::installed_version(&m.code, &project.path));
-        let latest = repo_module.as_ref().map(|m| m.version.as_str());
-        emit(OutputEvent::Stderr {
-            line: format!(
-                "[bmad] update check: {} module(installed={} latest={})={} context={} -> {}",
-                project.name,
-                installed.as_deref().unwrap_or("<none>"),
-                latest.unwrap_or("<none>"),
-                if module_stale { "behind" } else { "current" },
-                if context_stale { "drift" } else { "current" },
-                if module_stale || context_stale {
-                    "UPDATE"
-                } else {
-                    "current"
-                }
-            ),
-        });
-        if module_stale || context_stale {
+        let verdict = project_updater::evaluate_project(&project, repo_module.as_ref(), &sources);
+        emit(OutputEvent::Stderr { line: verdict.line });
+        if verdict.needs_update {
             stale.push(project.path.to_string_lossy().into_owned());
         }
     }

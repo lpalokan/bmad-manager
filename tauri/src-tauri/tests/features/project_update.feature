@@ -157,6 +157,39 @@ Feature: Update existing projects from the bmad-repo
     When I run the combined update check against repo module version "2.1.0"
     Then the project reports no update available
 
+  # --- The check's own diagnostic line (issue #105) ---
+  #
+  # The line streamed per project is the only window the user has into why a
+  # project did or didn't get an Update button. It has to name the context
+  # state it actually reached, or an unresolvable upstream reads as "current"
+  # and the wrong answer stays invisible.
+
+  Scenario: the check line reports drift on the context axis
+    Given a project "drifted" with installed module version "2.1.0"
+    And a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And project "drifted" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I run the combined update check against repo module version "2.1.0"
+    Then the update check line contains "context=drift"
+    And the update check line contains "-> UPDATE"
+
+  Scenario: the check line reports an unresolvable upstream as no-upstream
+    Given a project "split" with installed module version "2.1.0"
+    And a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a skills repo context "healthcare" with OKF file "positioning.md" dated "2026-06-26"
+    And project "split" seeded from the "digital-workforce" skills repo context under "output/company-context"
+    And project "split" has a local context file "vertical.md" tagged "healthcare"
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I run the combined update check against repo module version "2.1.0"
+    Then the update check line contains "context=no-upstream"
+    And the project reports no update available
+
+  Scenario: the check line reports a project with no context at all
+    Given a project "module-only" with installed module version "2.1.0"
+    And a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    When I run the combined update check against repo module version "2.1.0"
+    Then the update check line contains "context=no-context"
+
   Scenario: updating also refreshes drifted company-context from the skills repo
     Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
     And an existing project "proj" to update

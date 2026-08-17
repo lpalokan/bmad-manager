@@ -11,6 +11,15 @@ enum ProjectUpdateError: LocalizedError {
     }
 }
 
+/// One project's update verdict and the line explaining it.
+struct UpdateVerdict: Equatable {
+    /// Whether the per-project Update button lights up.
+    let needsUpdate: Bool
+    /// The diagnostic written to the output panel — the only window the user
+    /// has into why a project was or wasn't flagged.
+    let line: String
+}
+
 /// Re-installs the latest module over an existing project and refreshes the
 /// managed AGENTS.md blocks. Sibling of `ProjectCreator`: it shares the same
 /// `ModuleSource` seam and `runCommand` convention, but targets a folder that
@@ -25,6 +34,39 @@ struct ProjectUpdater {
     ) {
         self.projectService = projectService
         self.moduleSourceFor = moduleSourceFor
+    }
+
+    /// Decides whether a project should be offered the single per-project
+    /// Update button — its installed module is behind `repoModule` (when one
+    /// could be read), or its company-context has drifted behind the
+    /// skills-repo `sources` — and formats the line that says so.
+    ///
+    /// Verdict and explanation are produced together on purpose: they drifted
+    /// apart once already, when an unresolvable context upstream was reported
+    /// as `context=current` and the real drift stayed invisible (issue #105).
+    static func evaluate(
+        project: ProjectItem,
+        repoModule: ModuleManifest.RepoModule?,
+        sources: [CompanyContext],
+        contextService: CompanyContextService = CompanyContextService()
+    ) -> UpdateVerdict {
+        let moduleStale =
+            repoModule.map { ModuleManifest.isProjectStale(projectURL: project.url, repoModule: $0) }
+            ?? false
+        let context = contextService.projectContextStatus(
+            projectURL: project.url, sources: sources)
+        let installed = repoModule.flatMap {
+            ModuleManifest.installedVersion(ofModule: $0.code, inProject: project.url)
+        }
+        let needsUpdate = moduleStale || context.needsUpdate
+        let line = [
+            "[bmad] update check: \(project.name)",
+            "module(installed=\(installed ?? "<none>") latest=\(repoModule?.version ?? "<none>"))"
+                + "=\(moduleStale ? "behind" : "current")",
+            "context=\(context.label)",
+            "-> \(needsUpdate ? "UPDATE" : "current")",
+        ].joined(separator: " ")
+        return UpdateVerdict(needsUpdate: needsUpdate, line: line)
     }
 
     /// Materialises a fresh module clone, re-runs the init command over the

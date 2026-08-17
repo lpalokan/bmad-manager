@@ -261,4 +261,98 @@ final class ProjectUpdaterTests: XCTestCase {
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: project.url.path))
     }
+
+    // MARK: - The check's own diagnostic line (issue #105)
+    //
+    // The line written per project is the only window the user has into why a
+    // project did or didn't get an Update button. It has to name the context
+    // state actually reached, or an unresolvable upstream reads as "current"
+    // and the wrong answer stays invisible.
+
+    private var skillsRepo: URL {
+        projectsRoot.appendingPathComponent("skills-repo", isDirectory: true)
+    }
+
+    private func putSkillsOKF(_ name: String, _ file: String, date: String, body: String = "v1")
+        throws
+    {
+        let dir = skillsRepo.appendingPathComponent("context/\(name)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let text = "---\ntags: [company-context, \(name)]\nlast_updated: \(date)\n---\n\(body)\n"
+        try text.write(to: dir.appendingPathComponent(file), atomically: true, encoding: .utf8)
+    }
+
+    private func installModule(_ project: ProjectItem, version: String) throws {
+        let config = project.url.appendingPathComponent("_bmad/_config", isDirectory: true)
+        try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+        try "modules:\n  - name: marketing-growth\n    version: \(version)\n"
+            .write(to: config.appendingPathComponent("manifest.yaml"),
+                   atomically: true, encoding: .utf8)
+    }
+
+    private func seedContext(_ project: ProjectItem, from name: String) throws {
+        let service = CompanyContextService()
+        let source = try XCTUnwrap(
+            service.githubContexts(inRepoRoot: skillsRepo).first { $0.projectName == name })
+        // Copied rather than imported, so no seed marker is written and the
+        // resolution itself is under test.
+        let dest = project.url.appendingPathComponent("output/company-context", isDirectory: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        for file in source.files {
+            try FileManager.default.copyItem(
+                at: source.directoryURL.appendingPathComponent(file),
+                to: dest.appendingPathComponent(file))
+        }
+    }
+
+    private func evaluate(_ project: ProjectItem, latest: String) -> UpdateVerdict {
+        ProjectUpdater.evaluate(
+            project: project,
+            repoModule: ModuleManifest.RepoModule(code: "marketing-growth", version: latest),
+            sources: CompanyContextService().githubContexts(inRepoRoot: skillsRepo))
+    }
+
+    func testCheckLineReportsDriftOnTheContextAxis() throws {
+        let project = try makeProject("drifted")
+        try installModule(project, version: "2.1.0")
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        try seedContext(project, from: "digital-workforce")
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+
+        let verdict = evaluate(project, latest: "2.1.0")
+
+        XCTAssertTrue(verdict.needsUpdate)
+        XCTAssertTrue(verdict.line.contains("context=drift"), verdict.line)
+        XCTAssertTrue(verdict.line.contains("-> UPDATE"), verdict.line)
+    }
+
+    func testCheckLineReportsAnUnresolvableUpstreamAsNoUpstream() throws {
+        let project = try makeProject("split")
+        try installModule(project, version: "2.1.0")
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+        try putSkillsOKF("healthcare", "positioning.md", date: "2026-06-26")
+        try seedContext(project, from: "digital-workforce")
+        // A second file naming the other published pack: the vote ties, and
+        // both packs carry the same single filename, so overlap ties too.
+        try "---\ntags: [company-context, healthcare]\n---\nlocal\n".write(
+            to: project.url.appendingPathComponent("output/company-context/vertical.md"),
+            atomically: true, encoding: .utf8)
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-07-03", body: "v2")
+
+        let verdict = evaluate(project, latest: "2.1.0")
+
+        XCTAssertFalse(verdict.needsUpdate)
+        XCTAssertTrue(verdict.line.contains("context=no-upstream"), verdict.line)
+    }
+
+    func testCheckLineReportsAProjectWithNoContextAtAll() throws {
+        let project = try makeProject("module-only")
+        try installModule(project, version: "2.1.0")
+        try putSkillsOKF("digital-workforce", "positioning.md", date: "2026-06-26")
+
+        let verdict = evaluate(project, latest: "2.1.0")
+
+        XCTAssertTrue(verdict.line.contains("context=no-context"), verdict.line)
+        XCTAssertTrue(verdict.line.contains("installed=2.1.0 latest=2.1.0"), verdict.line)
+    }
 }

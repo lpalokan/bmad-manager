@@ -274,3 +274,219 @@ Feature: Company context discovery and import
     When I refresh project "investor-day" from the skills repo
     And I check whether project "investor-day" has a context update
     Then project "investor-day" reports no context update
+
+  # --- Resolving which context a project was seeded from (issue #103) ---
+  #
+  # OKF `tags` carry two different things: the pack's own identity slug and
+  # subject keywords. A file that names another vertical as its subject must
+  # not cost the project its upstream link, and a sub-pack bundled inside the
+  # context folder must not outvote the pack the project was actually seeded
+  # from. Resolution therefore takes a plurality vote across the context's
+  # top-level files only. A marker written at seed time settles it outright,
+  # so projects created from here on never depend on the vote.
+
+  # These three seed without a marker (the `under` form copies files the way
+  # a pre-#103 install left them), so the tag vote itself is under test.
+
+  Scenario: a subject-matter tag naming another pack does not block resolution
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a skills repo context "healthcare" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context under "output/company-context"
+    And project "investor-day" has a local context file "offerings.md" tagged "digital-workforce, healthcare"
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I check whether project "investor-day" has a context update
+    Then project "investor-day" reports a context update is available
+
+  Scenario: a bundled sub-pack does not outvote the pack the project was seeded from
+    Given a skills repo context "enterprise-public-sector" with OKF file "positioning.md" dated "2026-06-26"
+    And a skills repo context "agent-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And the skills repo context "agent-workforce" gains OKF file "icp.md" dated "2026-06-26"
+    And the skills repo context "agent-workforce" gains OKF file "kpis.md" dated "2026-06-26"
+    And a project "gtm" seeded from the "enterprise-public-sector" skills repo context under "output/company-context"
+    And project "gtm" bundles the "agent-workforce" skills repo context in a sub-folder
+    And the skills repo context "enterprise-public-sector" file "positioning.md" is edited and dated "2026-07-03"
+    When I check whether project "gtm" has a context update
+    Then project "gtm" reports a context update is available
+
+  Scenario: an evenly split vote stays unresolved
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a skills repo context "healthcare" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "split" seeded from the "digital-workforce" skills repo context under "output/company-context"
+    And project "split" has a local context file "vertical.md" tagged "healthcare"
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I check whether project "split" has a context update
+    Then project "split" reports no context update
+
+  Scenario: the seed marker resolves the source even when the tag vote is tied
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a skills repo context "healthcare" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "marked" seeded from the "digital-workforce" skills repo context
+    And project "marked" has a local context file "vertical.md" tagged "healthcare"
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I check whether project "marked" has a context update
+    Then project "marked" reports a context update is available
+
+  Scenario: seeding records the source marker
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "fresh" seeded from the "digital-workforce" skills repo context
+    Then project "fresh" records "digital-workforce" as its context source
+
+  Scenario: the seed marker is not treated as context content
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "fresh" seeded from the "digital-workforce" skills repo context
+    When I resolve the context of project "fresh"
+    Then the context files are exactly "positioning.md"
+
+  # --- Telling "no upstream" apart from "no drift" (issue #105) ---
+  #
+  # The drift check used to answer with a bare boolean, so "resolved and
+  # matching" and "I cannot tell which pack this came from" both came back
+  # `false` and printed as `context=current`. A project whose upstream never
+  # resolved therefore looked up to date. The check now reports which of the
+  # four states it reached, and only `drift` lights the Update button.
+
+  Scenario: a project matching its source reports the current state
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    When I check whether project "investor-day" has a context update
+    Then project "investor-day" reports context state "current"
+
+  Scenario: a drifted project reports the drift state
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I check whether project "investor-day" has a context update
+    Then project "investor-day" reports context state "drift"
+
+  # The #105 reproduction, stated as a state rather than a badge: an ambiguous
+  # resolution must never be indistinguishable from an up-to-date project.
+  Scenario: an unresolvable upstream reports no-upstream rather than current
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a skills repo context "healthcare" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "split" seeded from the "digital-workforce" skills repo context under "output/company-context"
+    And project "split" has a local context file "vertical.md" tagged "healthcare"
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I check whether project "split" has a context update
+    Then project "split" reports context state "no-upstream"
+    And project "split" reports no context update
+
+  Scenario: a project whose source context is no longer published reports no-upstream
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "orphan" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" is removed
+    When I check whether project "orphan" has a context update
+    Then project "orphan" reports context state "no-upstream"
+
+  Scenario: a project carrying no company-context reports no-context
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "bare" with no context files
+    When I check whether project "bare" has a context update
+    Then project "bare" reports context state "no-context"
+
+  # --- Resolving by file overlap when the tags cannot decide (issue #105) ---
+  #
+  # The tag vote depends on pack authors tagging their own files with the pack
+  # slug. When they don't — or when the vote ties — the files themselves still
+  # say where the bundle came from: a seeded project carries that pack's whole
+  # filename set. Overlap is scored as the share of the pack's files the
+  # project holds, and only a clear majority winner resolves, so a pack the
+  # project merely shares an `index.md` with can never claim it.
+
+  Scenario: an untagged pack is resolved by the files the project carries
+    Given a skills repo context "enterprise-public-sector" with untagged OKF file "positioning.md" dated "2026-06-26"
+    And the skills repo context "enterprise-public-sector" gains untagged OKF file "icp.md" dated "2026-06-26"
+    And the skills repo context "enterprise-public-sector" gains untagged OKF file "offerings.md" dated "2026-06-26"
+    And a skills repo context "agent-workforce" with untagged OKF file "brief.md" dated "2026-06-26"
+    And a project "gtm" seeded from the "enterprise-public-sector" skills repo context under "output/company-context"
+    And the skills repo context "enterprise-public-sector" file "positioning.md" is edited and dated "2026-07-03"
+    When I check whether project "gtm" has a context update
+    Then project "gtm" reports context state "drift"
+
+  Scenario: a pack the project barely overlaps does not claim it
+    Given a skills repo context "digital-workforce" with untagged OKF file "index.md" dated "2026-06-26"
+    And the skills repo context "digital-workforce" gains untagged OKF file "icp.md" dated "2026-06-26"
+    And the skills repo context "digital-workforce" gains untagged OKF file "positioning.md" dated "2026-06-26"
+    And the skills repo context "digital-workforce" gains untagged OKF file "offerings.md" dated "2026-06-26"
+    And a project "thin" with context files "index.md" under "output/company-context"
+    When I check whether project "thin" has a context update
+    Then project "thin" reports context state "no-upstream"
+
+  # Tags still win: overlap is the fallback, not a second opinion.
+  Scenario: the tag vote decides even when another pack overlaps more
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a skills repo context "healthcare" with untagged OKF file "positioning.md" dated "2026-06-26"
+    And a project "tagged" seeded from the "digital-workforce" skills repo context under "output/company-context"
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I check whether project "tagged" has a context update
+    Then project "tagged" reports context state "drift"
+
+  # --- Backfilling the source marker (issue #105) ---
+  #
+  # The marker only ever helped projects seeded after it shipped. Stamping it
+  # whenever a check resolves the upstream makes every existing project
+  # self-describing after one successful check, so the next check is a lookup
+  # rather than another inference.
+
+  Scenario: a successful check records the resolved pack as the context source
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "legacy-seed" seeded from the "digital-workforce" skills repo context under "output/company-context"
+    When I check whether project "legacy-seed" has a context update
+    Then project "legacy-seed" records "digital-workforce" as its context source
+
+  Scenario: a check that cannot resolve the upstream records nothing
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a skills repo context "healthcare" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "split" seeded from the "digital-workforce" skills repo context under "output/company-context"
+    And project "split" has a local context file "vertical.md" tagged "healthcare"
+    When I check whether project "split" has a context update
+    Then project "split" records no context source
+
+  Scenario: the backfilled marker is not treated as context content
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "legacy-seed" seeded from the "digital-workforce" skills repo context under "output/company-context"
+    When I check whether project "legacy-seed" has a context update
+    And I resolve the context of project "legacy-seed"
+    Then the context files are exactly "positioning.md"
+
+  # --- Backing up edits a refresh would overwrite (issue #103) ---
+  #
+  # A refresh overwrites every file belonging to the source pack. Anything the
+  # user changed in one of those files is copied aside first, so an update can
+  # never silently destroy their edit. Files that already match the source are
+  # left alone and generate no backup noise.
+
+  Scenario: refreshing backs up a locally edited file before overwriting it
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And project "investor-day" context file "positioning.md" is locally edited to contain "my own wording"
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I refresh project "investor-day" from the skills repo
+    Then project "investor-day" has a context backup of "positioning.md" containing "my own wording"
+    And project "investor-day" context file "positioning.md" is dated "2026-07-03"
+
+  Scenario: refreshing an unchanged project backs nothing up
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And the skills repo context "digital-workforce" gains OKF file "kpis.md" dated "2026-06-26"
+    When I refresh project "investor-day" from the skills repo
+    Then project "investor-day" has no context backup
+
+  # A file the source pack does not carry is outside the refresh entirely:
+  # not overwritten, and so nothing to preserve.
+  Scenario: a project-only file is never overwritten and never backed up
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And project "investor-day" has a local context file "notes-local.md"
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I refresh project "investor-day" from the skills repo
+    Then project "investor-day" contains context files "positioning.md, notes-local.md"
+    And project "investor-day" has no context backup of "notes-local.md"
+
+  Scenario: backups are not treated as context content
+    Given a skills repo context "digital-workforce" with OKF file "positioning.md" dated "2026-06-26"
+    And a project "investor-day" seeded from the "digital-workforce" skills repo context
+    And project "investor-day" context file "positioning.md" is locally edited to contain "my own wording"
+    And the skills repo context "digital-workforce" file "positioning.md" is edited and dated "2026-07-03"
+    When I refresh project "investor-day" from the skills repo
+    And I resolve the context of project "investor-day"
+    Then the context files are exactly "positioning.md"
