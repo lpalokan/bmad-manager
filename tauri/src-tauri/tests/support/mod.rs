@@ -150,12 +150,7 @@ impl TauriWorld {
     /// writes the frontmatter without any pack tag — a pack whose author never
     /// tagged its files with its own name, which no tag vote can resolve.
     /// Intermediate folders are made.
-    pub fn write_okf_context_file(
-        path: &Path,
-        slug: Option<&str>,
-        date: Option<&str>,
-        body: &str,
-    ) {
+    pub fn write_okf_context_file(path: &Path, slug: Option<&str>, date: Option<&str>, body: &str) {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).expect("create okf file dir");
         }
