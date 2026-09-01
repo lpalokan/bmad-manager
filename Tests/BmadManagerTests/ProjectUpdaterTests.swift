@@ -312,6 +312,32 @@ final class ProjectUpdaterTests: XCTestCase {
             sources: CompanyContextService().githubContexts(inRepoRoot: skillsRepo))
     }
 
+    /// A branch name (or anything else non-numeric) can never compare as
+    /// current against a real semver, so the project is flagged every time and
+    /// an update rewrites the same value — the button never clears. The line
+    /// is the only place a user can find that out.
+    func testCheckLineExplainsAnInstalledVersionThatIsNotAVersionNumber() throws {
+        let project = try makeProject("branchy")
+        try installModule(project, version: "main")
+
+        let verdict = evaluate(project, latest: "2.5.0")
+
+        XCTAssertTrue(verdict.needsUpdate)
+        XCTAssertTrue(
+            verdict.line.contains("the installed version is not a version number"), verdict.line)
+    }
+
+    func testCheckLineOmitsTheExplanationForAnOrdinaryBehindProject() throws {
+        let project = try makeProject("behind")
+        try installModule(project, version: "2.0.0")
+
+        let verdict = evaluate(project, latest: "2.5.0")
+
+        XCTAssertTrue(verdict.needsUpdate)
+        XCTAssertFalse(
+            verdict.line.contains("the installed version is not a version number"), verdict.line)
+    }
+
     func testCheckLineReportsDriftOnTheContextAxis() throws {
         let project = try makeProject("drifted")
         try installModule(project, version: "2.1.0")

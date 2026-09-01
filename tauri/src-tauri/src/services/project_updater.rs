@@ -14,7 +14,7 @@ use crate::platform;
 use crate::services::command_runner::OutputEvent;
 use crate::services::{
     agents_file, command_runner, company_context, git_source, init_command, module_manifest,
-    zip_source,
+    project_creator, zip_source,
 };
 
 const OKF_NAMESPACE: &str = "marketing-growth:okf";
@@ -46,7 +46,14 @@ where
     F: FnMut(OutputEvent) + Send,
 {
     let project_path = project.path.as_path();
-    let module_dir = materialise_module(settings)?;
+    // Resolve what the installer will be told to install once, so the clone
+    // read here and the version the installer records come from the same ref —
+    // and so the panel says when that ref will not record a real version.
+    let resolved = project_creator::resolve_module_source(settings);
+    if let Some(source) = &resolved {
+        emit_diag(&mut on_event, source.note.clone());
+    }
+    let module_dir = materialise_module(settings, resolved.as_ref())?;
     let module_root_path = module_root_for(settings, &module_dir);
 
     // `bmad-method`'s `--custom-source` rejects Windows drive-absolute paths;
@@ -58,7 +65,11 @@ where
     );
     // `{MODULE_SOURCE}`: repo URL for a git source (installer records repoUrl +
     // a real version), local module path for a zip source. See project_creator.
-    let module_source = crate::services::project_creator::module_source_arg(settings, &module_arg);
+    let module_source = project_creator::module_source_arg(resolved.as_ref(), &module_arg);
+    emit_diag(
+        &mut on_event,
+        format!("module_source={module_source} custom_source_arg={module_arg}"),
+    );
     let command = init_command::substitute(
         &settings.init_command,
         &project.name,
@@ -192,14 +203,29 @@ pub fn evaluate_project(
         repo_module.and_then(|m| module_manifest::installed_version(&m.code, &project.path));
     let latest = repo_module.map(|m| m.version.as_str());
     let needs_update = module_stale || context.needs_update();
+    // A branch name or anything else non-numeric can't be compared with a
+    // semver, so the project is flagged every time and an update rewrites the
+    // same value — the button never clears. Say so here: this line is the only
+    // place a user can find out why.
+    let unversioned = module_stale
+        && installed
+            .as_deref()
+            .is_some_and(|v| !module_manifest::is_comparable(v));
     let line = format!(
-        "[bmad] update check: {} module(installed={} latest={})={} context={} -> {}",
+        "[bmad] update check: {} module(installed={} latest={})={} context={} -> {}{}",
         project.name,
         installed.as_deref().unwrap_or("<none>"),
         latest.unwrap_or("<none>"),
         if module_stale { "behind" } else { "current" },
         context.label(),
-        if needs_update { "UPDATE" } else { "current" }
+        if needs_update { "UPDATE" } else { "current" },
+        if unversioned {
+            " (the installed version is not a version number, so it can never \
+             compare as current — the install did not record one; see the module \
+             source note above)"
+        } else {
+            ""
+        },
     );
     UpdateVerdict { needs_update, line }
 }
@@ -216,7 +242,14 @@ pub fn read_latest_repo_module_logged<F: FnMut(OutputEvent)>(
     settings: &AppSettings,
     mut on_event: F,
 ) -> Option<module_manifest::RepoModule> {
-    let module_dir = match materialise_module(settings) {
+    // The check has to read the version off the ref an update would install.
+    // Reading the default branch instead flags every project forever as soon
+    // as the repo's `main` runs ahead of its newest tag.
+    let resolved = project_creator::resolve_module_source(settings);
+    if let Some(source) = &resolved {
+        emit_diag(&mut on_event, source.note.clone());
+    }
+    let module_dir = match materialise_module(settings, resolved.as_ref()) {
         Ok(dir) => dir,
         Err(err) => {
             emit_diag(
@@ -272,17 +305,16 @@ fn emit_diag<F: FnMut(OutputEvent)>(on_event: &mut F, message: String) {
     });
 }
 
-fn materialise_module(settings: &AppSettings) -> Result<PathBuf, ProjectUpdateError> {
+fn materialise_module(
+    settings: &AppSettings,
+    resolved: Option<&git_source::InstallerSource>,
+) -> Result<PathBuf, ProjectUpdateError> {
     match settings.module_source_kind {
         ModuleSourceKind::GitRepo => {
             let dest = git_source::fresh_tempdir();
             let git_exe = platform::resolve_git_path();
-            git_source::clone(
-                &git_exe,
-                &settings.module_repo_url,
-                &settings.module_repo_ref,
-                &dest,
-            )?;
+            let git_ref = project_creator::clone_ref_for(settings, resolved);
+            git_source::clone(&git_exe, &settings.module_repo_url, git_ref, &dest)?;
             Ok(dest)
         }
         ModuleSourceKind::LocalZip => Ok(zip_source::extract_zip(&settings.module_zip_path)?),

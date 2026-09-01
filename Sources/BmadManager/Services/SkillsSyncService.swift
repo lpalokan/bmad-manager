@@ -99,13 +99,91 @@ enum SkillsSyncService {
     }
 
     /// Shell command (cwd = clone dir) that hard-updates to the latest tip.
-    static func updateCommand(branch: String, header: String) -> String {
+    ///
+    /// Repoints `origin` at the configured repo first. The clone is made once
+    /// and every sync after that fetches `origin`, so this is the only way a
+    /// repo URL changed in Settings reaches an existing clone; without it the
+    /// sync reports success while still serving the previous repo's skills and
+    /// contexts.
+    static func updateCommand(repoURL: String, branch: String, header: String) -> String {
+        let repoint = "git remote set-url origin \(shellQuote(repoURL))"
         let fetch = [
             "git",
             "-c", shellQuote("http.extraHeader=\(header)"),
             "fetch", "--depth", "1", "origin", shellQuote(branch),
         ].joined(separator: " ")
-        return "\(fetch) && git reset --hard FETCH_HEAD"
+        return "\(repoint) && \(fetch) && git reset --hard FETCH_HEAD"
+    }
+
+    // MARK: - Which repo a clone points at
+
+    /// The `origin` URL recorded in a clone's `.git/config`, or nil when the
+    /// clone, the config, or the remote is missing. Read from the file rather
+    /// than `git remote get-url` so choosing a clone (which happens on every
+    /// context listing) costs no subprocess.
+    static func originURL(ofClone clone: URL) -> String? {
+        let config = clone.appendingPathComponent(".git/config")
+        guard let text = try? String(contentsOf: config, encoding: .utf8) else { return nil }
+        var inOrigin = false
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("[") {
+                inOrigin =
+                    line.replacingOccurrences(of: " ", with: "")
+                    .caseInsensitiveCompare("[remote\"origin\"]") == .orderedSame
+                continue
+            }
+            guard inOrigin, line.hasPrefix("url") else { continue }
+            let value = line.dropFirst("url".count).trimmingCharacters(in: .whitespaces)
+            guard value.hasPrefix("=") else { continue }
+            let url = value.dropFirst().trimmingCharacters(in: .whitespaces)
+            if !url.isEmpty { return url }
+        }
+        return nil
+    }
+
+    /// Whether two remote URLs name the same repository, ignoring what git
+    /// itself ignores: surrounding space, a trailing slash, a `.git` suffix,
+    /// and case (GitHub owners/repos are case-insensitive).
+    static func sameRemote(_ left: String, _ right: String) -> Bool {
+        normalizedRemote(left) == normalizedRemote(right)
+    }
+
+    private static func normalizedRemote(_ url: String) -> String {
+        var value = url.trimmingCharacters(in: .whitespaces)
+        while value.hasSuffix("/") { value.removeLast() }
+        if value.hasSuffix(".git") { value.removeLast(4) }
+        while value.hasSuffix("/") { value.removeLast() }
+        return value.lowercased()
+    }
+
+    /// The managed clones that may be read as `configuredURL`'s content, best
+    /// first: clones whose `origin` matches, then clones whose origin can't be
+    /// read (made before this check existed). A clone pointing at a *different*
+    /// repo is left out — serving its skills and context packs is the bug this
+    /// exists to prevent. With no repo configured there is nothing to match
+    /// against, so every clone is offered.
+    static func clonesForRepo(home: URL, configuredURL: String) -> [URL] {
+        let configured = configuredURL.trimmingCharacters(in: .whitespaces)
+        var matching: [URL] = []
+        var unknown: [URL] = []
+        for tool in SkillTool.allCases {
+            let repo = managedRepoDir(for: tool, home: home)
+            // A tool that has never synced has no clone to read — offering its
+            // path would just be a phantom candidate.
+            guard isDirectory(repo.appendingPathComponent(".git"), fileManager: .default)
+            else { continue }
+            guard !configured.isEmpty else {
+                matching.append(repo)
+                continue
+            }
+            switch originURL(ofClone: repo) {
+            case .some(let origin) where sameRemote(origin, configured): matching.append(repo)
+            case .some: break
+            case .none: unknown.append(repo)
+            }
+        }
+        return matching + unknown
     }
 
     /// POSIX single-quote quoting (end-quote / escape / re-open).
@@ -231,7 +309,9 @@ enum SkillsSyncService {
         let isRepo = isDirectory(managedRepo.appendingPathComponent(".git"), fileManager: fileManager)
         let exit: Int32
         if isRepo {
-            exit = await runCommand(updateCommand(branch: resolvedBranch, header: header), managedRepo)
+            exit = await runCommand(
+                updateCommand(repoURL: trimmedURL, branch: resolvedBranch, header: header),
+                managedRepo)
         } else {
             if entryExists(managedRepo, fileManager: fileManager) {
                 try fileManager.removeItem(at: managedRepo)

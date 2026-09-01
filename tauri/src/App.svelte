@@ -83,11 +83,23 @@
 
   // Auto-sync the shared skills repo, then re-list so the repo's context/
   // folder shows up. Listeners (above) capture the streamed git output.
+  //
+  // Guarded by `isSyncing` like the manual sync buttons: this runs at startup
+  // *and* on the ⟳ button, and two syncs over the same skill links race — one
+  // removes the links the other has just created, and the loser fails on a
+  // name that already exists. Pressing ⟳ while a sync runs now just re-lists.
   async function autoSync() {
+    if (isSyncing || isCreating) {
+      await refresh();
+      return;
+    }
+    isSyncing = true;
     try {
       await syncSkillsRepo();
     } catch (err) {
       errorMessage = `Skill sync failed: ${err}`;
+    } finally {
+      isSyncing = false;
     }
     await refresh();
     // Independent best-effort version check (one repo fetch + N manifest
@@ -336,14 +348,17 @@
       (settings.skillsRepoUrl !== updated.skillsRepoUrl ||
         settings.skillsRepoBranch !== updated.skillsRepoBranch);
     settings = updated;
-    if (repoChanged) {
+    if (repoChanged && !isSyncing && !isCreating) {
       showOutput = true;
       outputLines = [];
       lastExitCode = null;
+      isSyncing = true;
       try {
         await syncSkillsRepo();
       } catch (err) {
         errorMessage = `Skill sync failed: ${err}`;
+      } finally {
+        isSyncing = false;
       }
     }
     await refresh();

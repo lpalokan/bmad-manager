@@ -17,6 +17,11 @@ final class ProjectCoordinator: ObservableObject {
     @Published var availableContexts: [CompanyContext] = []
     @Published var isCreating: Bool = false
     @Published var isUpdating: Bool = false
+    /// A skills sync is in flight. Startup auto-sync and the ⟳ button call the
+    /// same sync, and two runs over one link set race — one removes the links
+    /// the other just created, and the loser fails on a name that already
+    /// exists. Every sync entry point checks this first.
+    @Published var isSyncingSkills: Bool = false
     @Published var errorMessage: String? = nil
     @Published var showOutput: Bool = false
     @Published var projectToDelete: ProjectItem? = nil
@@ -85,11 +90,12 @@ final class ProjectCoordinator: ObservableObject {
     func refresh(
         root: String,
         sortOrder: ProjectSortOrder,
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        skillsRepoURL: String = ""
     ) {
         projects = projectService.listProjects(in: root, sortedBy: sortOrder)
         let projectContexts = contextService.contexts(in: projects)
-        let githubContexts = discoveredGithubContexts(home: home)
+        let githubContexts = discoveredGithubContexts(home: home, configuredURL: skillsRepoURL)
         // Shared repo contexts first, then project-local ones — both groups
         // already sorted by name.
         availableContexts = githubContexts + projectContexts
@@ -97,10 +103,12 @@ final class ProjectCoordinator: ObservableObject {
 
     /// Reads contexts from the skills repo clone (the `context/` folder
     /// alongside `skills/`). Both tools clone the same repo into their own
-    /// hidden dir, so we use whichever clone is present.
-    private func discoveredGithubContexts(home: URL) -> [CompanyContext] {
-        for tool in SkillTool.allCases {
-            let repo = SkillsSyncService.managedRepoDir(for: tool, home: home)
+    /// hidden dir, so we use whichever clone belongs to the *configured* repo —
+    /// a clone still pointing at a previously-configured repo is skipped rather
+    /// than served, so changing the URL in Settings can no longer leave the
+    /// picker offering another repo's context packs.
+    private func discoveredGithubContexts(home: URL, configuredURL: String) -> [CompanyContext] {
+        for repo in SkillsSyncService.clonesForRepo(home: home, configuredURL: configuredURL) {
             let contexts = contextService.githubContexts(inRepoRoot: repo)
             if !contexts.isEmpty { return contexts }
         }
@@ -134,7 +142,10 @@ final class ProjectCoordinator: ObservableObject {
                 runCommand: runCommand
             )
             errorMessage = nil
-            refresh(root: settings.projectsRoot, sortOrder: settings.projectSortOrder)
+            refresh(
+                root: settings.projectsRoot,
+                sortOrder: settings.projectSortOrder,
+                skillsRepoURL: settings.skillsRepoURL)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -164,9 +175,13 @@ final class ProjectCoordinator: ObservableObject {
             )
             // Bring the company-context current with the skills repo too, so the
             // one Update button clears both module and context drift.
-            refreshProjectContext(project, home: home)
+            refreshProjectContext(project, home: home, configuredURL: settings.skillsRepoURL)
             errorMessage = nil
-            refresh(root: settings.projectsRoot, sortOrder: settings.projectSortOrder, home: home)
+            refresh(
+                root: settings.projectsRoot,
+                sortOrder: settings.projectSortOrder,
+                home: home,
+                skillsRepoURL: settings.skillsRepoURL)
             await checkForUpdates(settings: settings, home: home)
         } catch {
             errorMessage = error.localizedDescription
@@ -178,9 +193,14 @@ final class ProjectCoordinator: ObservableObject {
     /// (overwrite+add, never delete). Best-effort — like the AGENTS.md refresh,
     /// a context hiccup shouldn't undo an otherwise-good re-install — and a
     /// no-op when the project has no context or no resolved source.
-    private func refreshProjectContext(_ project: ProjectItem, home: URL) {
+    private func refreshProjectContext(
+        _ project: ProjectItem, home: URL, configuredURL: String
+    ) {
         guard let projectContext = contextService.context(inProject: project.url) else { return }
-        let sources = discoveredGithubContexts(home: home)
+        // Only the configured repo's packs may overwrite a project's context —
+        // a clone left pointing at another repo would otherwise write that
+        // repo's company-context over this project's.
+        let sources = discoveredGithubContexts(home: home, configuredURL: configuredURL)
         guard let source = contextService.sourceContext(for: projectContext, in: sources)
         else { return }
         try? contextService.refreshContext(
@@ -212,6 +232,10 @@ final class ProjectCoordinator: ObservableObject {
         log: (String) -> Void = { _ in }
     ) async {
         let source = moduleSourceFor(settings)
+        // Says whether the install this check is comparing against will record
+        // a real version at all — the only place a permanently-lit Update
+        // button is explainable.
+        if let note = source.resolutionNote { log("[bmad] \(note)") }
         let repoModule = try? await source.withModuleRoot { moduleRoot, _ in
             ModuleManifest.readRepoModule(atModuleRoot: moduleRoot)
         }
@@ -219,7 +243,7 @@ final class ProjectCoordinator: ObservableObject {
         // module axis, so a project drifted only on its company-context is still
         // flagged. `latest` is nil when offline / unreadable.
         let latest = repoModule.flatMap { $0 }
-        let sources = discoveredGithubContexts(home: home)
+        let sources = discoveredGithubContexts(home: home, configuredURL: settings.skillsRepoURL)
         var stale: [ProjectItem] = []
         for project in projects {
             let verdict = ProjectUpdater.evaluate(
@@ -236,11 +260,12 @@ final class ProjectCoordinator: ObservableObject {
     func deleteProject(
         _ project: ProjectItem,
         root: String,
-        sortOrder: ProjectSortOrder
+        sortOrder: ProjectSortOrder,
+        skillsRepoURL: String = ""
     ) async {
         do {
             try await projectService.trash(project)
-            refresh(root: root, sortOrder: sortOrder)
+            refresh(root: root, sortOrder: sortOrder, skillsRepoURL: skillsRepoURL)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -331,10 +356,13 @@ final class ProjectCoordinator: ObservableObject {
         runCommand: @escaping (String, URL) async -> Int32
     ) async {
         showOutput = true
+        guard !isSyncingSkills else { return }
         guard let token, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             errorMessage = SkillsSyncError.noToken.localizedDescription
             return
         }
+        isSyncingSkills = true
+        defer { isSyncingSkills = false }
         do {
             try await SkillsSyncService.sync(
                 tool: tool,
@@ -371,10 +399,25 @@ final class ProjectCoordinator: ObservableObject {
             refresh(
                 root: settings.projectsRoot,
                 sortOrder: settings.projectSortOrder,
-                home: home
+                home: home,
+                skillsRepoURL: url
             )
             return
         }
+
+        guard !isSyncingSkills else {
+            // Another sync is already reconciling these links; joining it would
+            // race. The list still refreshes so the ⟳ press isn't a no-op.
+            refresh(
+                root: settings.projectsRoot,
+                sortOrder: settings.projectSortOrder,
+                home: home,
+                skillsRepoURL: url
+            )
+            return
+        }
+        isSyncingSkills = true
+        defer { isSyncingSkills = false }
 
         var failure: String? = nil
         for tool in SkillTool.allCases {
@@ -395,7 +438,8 @@ final class ProjectCoordinator: ObservableObject {
         refresh(
             root: settings.projectsRoot,
             sortOrder: settings.projectSortOrder,
-            home: home
+            home: home,
+            skillsRepoURL: url
         )
     }
 }

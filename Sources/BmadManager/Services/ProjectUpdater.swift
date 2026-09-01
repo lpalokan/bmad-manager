@@ -59,14 +59,24 @@ struct ProjectUpdater {
             ModuleManifest.installedVersion(ofModule: $0.code, inProject: project.url)
         }
         let needsUpdate = moduleStale || context.needsUpdate
-        let line = [
+        // A branch name or anything else non-numeric can't be compared with a
+        // semver, so the project is flagged every time and an update rewrites
+        // the same value — the button never clears. Say so here: this line is
+        // the only place a user can find out why.
+        let unversioned = moduleStale && !(installed.map(ModuleManifest.isComparable) ?? true)
+        var parts = [
             "[bmad] update check: \(project.name)",
             "module(installed=\(installed ?? "<none>") latest=\(repoModule?.version ?? "<none>"))"
                 + "=\(moduleStale ? "behind" : "current")",
             "context=\(context.label)",
             "-> \(needsUpdate ? "UPDATE" : "current")",
-        ].joined(separator: " ")
-        return UpdateVerdict(needsUpdate: needsUpdate, line: line)
+        ]
+        if unversioned {
+            parts.append(
+                "(the installed version is not a version number, so it can never compare as "
+                    + "current — the install did not record one; see the module source note above)")
+        }
+        return UpdateVerdict(needsUpdate: needsUpdate, line: parts.joined(separator: " "))
     }
 
     /// Materialises a fresh module clone, re-runs the init command over the

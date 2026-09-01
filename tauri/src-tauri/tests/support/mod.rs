@@ -14,7 +14,9 @@ use bmad_manager_lib::services::company_context::{
     github_contexts_in, import_context, read_context_source, ContextStatus, BACKUP_DIR_NAME,
 };
 use bmad_manager_lib::services::contribution::{ContributableSkill, PreparedFile};
+use bmad_manager_lib::services::git_source::InstallerSource;
 use bmad_manager_lib::services::project_service::InitTargetInfo;
+use bmad_manager_lib::services::skills_sync::{managed_repo_dir, SkillTool, SyncGate};
 use cucumber::World;
 use tempfile::TempDir;
 
@@ -79,6 +81,24 @@ pub struct TauriWorld {
     pub context_state: Option<ContextStatus>,
     /// The per-project line `check_for_updates` streams to the output panel.
     pub update_check_line: Option<String>,
+    /// Fake home holding managed skills clones for the repo-reconciliation
+    /// scenarios (`<home>/.claude/skills-managed`, …).
+    pub fake_home: Option<PathBuf>,
+    /// A clone directory a git-config scenario reads its origin from.
+    pub clone_dir: Option<PathBuf>,
+    /// `Some(None)` records a clone whose origin could not be read.
+    pub clone_origin: Option<Option<String>>,
+    pub remotes_same: Option<bool>,
+    /// Git arguments built by a pure command-builder step.
+    pub git_args: Option<Vec<String>>,
+    /// Contexts resolved from the managed clones for a configured repo URL.
+    pub shared_contexts: Option<Vec<CompanyContext>>,
+    /// Whether two gated syncs were ever running at the same moment.
+    pub syncs_overlapped: Option<bool>,
+    /// Outcome of an installer-source resolution scenario.
+    pub installer_source: Option<InstallerSource>,
+    /// Clones offered for a configured repo URL.
+    pub offered_clones: Option<Vec<PathBuf>>,
 }
 
 impl TauriWorld {
@@ -517,6 +537,140 @@ impl TauriWorld {
         git(&["add", "."]);
         git(&["commit", "--quiet", "-m", "initial"]);
         format!("file://{}", repo.display())
+    }
+
+    /// A module repo whose newest **tag** and whose default branch carry
+    /// different `module_version`s. The install pins the latest tag, so the
+    /// version check has to read the tag's version — reading the branch's
+    /// instead flags every project forever.
+    pub fn build_marketing_growth_git_repo_tagged(
+        &mut self,
+        tag: &str,
+        branch_version: &str,
+    ) -> String {
+        use std::process::Command;
+        let tag_version = tag.trim_start_matches(['v', 'V']).to_string();
+        let repo = self
+            .ensure_tmp()
+            .to_path_buf()
+            .join(format!("marketing-growth-tagged-{tag}"));
+        let skills = repo.join("skills");
+        std::fs::create_dir_all(&skills).expect("create git repo skills dir");
+        let write_version = |version: &str| {
+            std::fs::write(
+                skills.join("module.yaml"),
+                format!("code: marketing-growth\nmodule_version: {version}\n"),
+            )
+            .expect("write module.yaml");
+        };
+
+        let git = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .output()
+                .expect("run git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        write_version(&tag_version);
+        git(&["init", "--quiet", "--initial-branch=main"]);
+        git(&["config", "user.email", "test@example.com"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["config", "commit.gpgsign", "false"]);
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", "tagged release"]);
+        git(&["tag", tag]);
+        // The default branch then moves ahead of the tag.
+        write_version(branch_version);
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", "next development version"]);
+        format!("file://{}", repo.display())
+    }
+
+    /// A fake home the managed-clone scenarios seed their clones under.
+    pub fn ensure_fake_home(&mut self) -> PathBuf {
+        if let Some(home) = &self.fake_home {
+            return home.clone();
+        }
+        let home = self.ensure_tmp().to_path_buf().join("fake-home");
+        std::fs::create_dir_all(&home).expect("create fake home");
+        self.fake_home = Some(home.clone());
+        home
+    }
+
+    /// Writes a minimal `.git/config` naming `origin`, the shape `git clone`
+    /// leaves behind. `None` writes a config with no remote at all.
+    pub fn write_clone_config(dir: &Path, origin: Option<&str>) {
+        let git = dir.join(".git");
+        std::fs::create_dir_all(&git).expect("create .git dir");
+        let body = match origin {
+            Some(url) => format!(
+                "[core]\n\trepositoryformatversion = 0\n[remote \"origin\"]\n\turl = {url}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+            ),
+            None => "[core]\n\trepositoryformatversion = 0\n".to_string(),
+        };
+        std::fs::write(git.join("config"), body).expect("write git config");
+    }
+
+    /// Seeds `<fake home>/<tool dotdir>/skills-managed` as a clone of `origin`
+    /// carrying one context pack, so clone selection has something to choose
+    /// between. `origin: None` models a clone whose remote can't be read.
+    pub fn seed_managed_clone(&mut self, tool: SkillTool, origin: Option<&str>, context: &str) {
+        let home = self.ensure_fake_home();
+        let repo = managed_repo_dir(&home, tool);
+        let dir = repo.join("context").join(context);
+        std::fs::create_dir_all(&dir).expect("create clone context dir");
+        std::fs::write(dir.join("positioning.md"), format!("content of {context}"))
+            .expect("write clone context file");
+        Self::write_clone_config(&repo, origin);
+    }
+
+    /// Runs two closures through `gate` concurrently and records whether they
+    /// were ever inside it at the same time.
+    pub async fn run_two_through_gate(&mut self) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let gate = Arc::new(SyncGate::default());
+        let inside = Arc::new(AtomicUsize::new(0));
+        let overlapped = Arc::new(AtomicUsize::new(0));
+
+        let one = {
+            let (gate, inside, overlapped) = (gate.clone(), inside.clone(), overlapped.clone());
+            tokio::spawn(async move {
+                gate.run(|| async {
+                    if inside.fetch_add(1, Ordering::SeqCst) != 0 {
+                        overlapped.fetch_add(1, Ordering::SeqCst);
+                    }
+                    tokio::task::yield_now().await;
+                    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                    inside.fetch_sub(1, Ordering::SeqCst);
+                })
+                .await;
+            })
+        };
+        let two = {
+            let (gate, inside, overlapped) = (gate.clone(), inside.clone(), overlapped.clone());
+            tokio::spawn(async move {
+                gate.run(|| async {
+                    if inside.fetch_add(1, Ordering::SeqCst) != 0 {
+                        overlapped.fetch_add(1, Ordering::SeqCst);
+                    }
+                    tokio::task::yield_now().await;
+                    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                    inside.fetch_sub(1, Ordering::SeqCst);
+                })
+                .await;
+            })
+        };
+        one.await.expect("first gated sync");
+        two.await.expect("second gated sync");
+        self.syncs_overlapped = Some(overlapped.load(Ordering::SeqCst) > 0);
     }
 }
 

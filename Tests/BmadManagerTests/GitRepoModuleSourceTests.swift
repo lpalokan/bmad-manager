@@ -184,6 +184,82 @@ final class GitRepoModuleSourceTests: XCTestCase {
         XCTAssertEqual(result, "https://github.com/o/r")
     }
 
+    // MARK: - Resolution: does the install record a real version?
+    //
+    // `bmad-method` records whatever ref it is handed as the module version.
+    // A bare URL or a branch ref makes it stamp `main`, which can never
+    // compare as current against a real semver — the project is flagged
+    // forever and re-running Update rewrites the same value. Resolution has
+    // to say so instead of letting it happen silently.
+
+    func testResolutionPinsTheLatestTagAndRecordsAVersion() {
+        let resolved = GitRepoModuleSource.describeInstallerSource(
+            url: "https://github.com/o/r", ref: "", tagsOutput: lsRemote(["v1.0.0", "v2.5.0"]))
+        XCTAssertEqual(resolved.arg, "https://github.com/o/r@v2.5.0")
+        XCTAssertEqual(resolved.pinnedRef, "v2.5.0")
+        XCTAssertTrue(resolved.note.contains("latest tag v2.5.0"))
+    }
+
+    func testResolutionPinsAnExplicitVersionTagFromSettings() {
+        let resolved = GitRepoModuleSource.describeInstallerSource(
+            url: "https://github.com/o/r", ref: "v2.4.0", tagsOutput: lsRemote(["v2.5.0"]))
+        XCTAssertEqual(resolved.arg, "https://github.com/o/r@v2.4.0")
+        XCTAssertEqual(resolved.pinnedRef, "v2.4.0")
+        XCTAssertTrue(resolved.note.contains("from Settings"))
+    }
+
+    func testResolutionWarnsThatABranchRefRecordsNoVersion() {
+        let resolved = GitRepoModuleSource.describeInstallerSource(
+            url: "https://github.com/o/r", ref: "main", tagsOutput: lsRemote(["v2.5.0"]))
+        XCTAssertEqual(resolved.arg, "https://github.com/o/r@main")
+        XCTAssertNil(resolved.pinnedRef)
+        XCTAssertTrue(resolved.note.contains("not a version tag"))
+        XCTAssertTrue(resolved.note.contains("keep showing an update"))
+    }
+
+    func testResolutionWarnsWhenTheTagListingCannotBeRead() {
+        let resolved = GitRepoModuleSource.describeInstallerSource(
+            url: "https://github.com/o/r", ref: "", tagsOutput: nil)
+        XCTAssertEqual(resolved.arg, "https://github.com/o/r")
+        XCTAssertNil(resolved.pinnedRef)
+        XCTAssertTrue(resolved.note.contains("could not list the version tags"))
+        XCTAssertTrue(resolved.note.contains("keep showing an update"))
+    }
+
+    func testResolutionWarnsWhenTheRepoPublishesNoVersionTags() {
+        let resolved = GitRepoModuleSource.describeInstallerSource(
+            url: "https://github.com/o/r", ref: "", tagsOutput: lsRemote(["latest", "nightly"]))
+        XCTAssertEqual(resolved.arg, "https://github.com/o/r")
+        XCTAssertNil(resolved.pinnedRef)
+        XCTAssertTrue(resolved.note.contains("no version tags"))
+    }
+
+    /// The module read locally and the module the installer records have to be
+    /// the same version: a repo whose default branch runs ahead of its newest
+    /// tag otherwise reports a version nothing will ever install.
+    func testWithModuleRootClonesTheTagItWillPin() async throws {
+        let repoURL = try buildLocalRepo(name: "tagged")
+        let repoDir = workDir.appendingPathComponent("tagged", isDirectory: true)
+        try runGit(["tag", "v1.1.0"], cwd: repoDir)
+        try "moved on".write(
+            to: repoDir.appendingPathComponent("manifest.yaml"), atomically: true, encoding: .utf8)
+        try runGit(["add", "."], cwd: repoDir)
+        try runGit(["commit", "--quiet", "-m", "after the tag"], cwd: repoDir)
+
+        var captured: String?
+        try await GitRepoModuleSource(
+            url: repoURL, ref: "", lsRemoteTags: { _ in self.lsRemote(["v1.1.0"]) }
+        )
+        .withModuleRoot { root, _ in
+            captured = try? String(
+                contentsOf: root.appendingPathComponent("manifest.yaml"), encoding: .utf8)
+        }
+
+        XCTAssertNotEqual(
+            captured, "moved on",
+            "the clone must be the tag that will be installed, not the default branch")
+    }
+
     func testWithModuleRootYieldsResolvedInstallerSourceNotClonePath() async throws {
         let repoURL = try buildLocalRepo()
         let output = lsRemote(["v0.9.0", "v1.1.0"])

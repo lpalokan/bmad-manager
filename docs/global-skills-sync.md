@@ -239,6 +239,18 @@ that tool, and any contexts in the repo's `context/` folder appear in the
 new-project **Context** picker (badged 🐙). Re-run any time to pick up the latest
 changes.
 
+**Changing the repo URL.** Each clone remembers the repo it came from. When you
+change the Skills repo URL in Settings, the next sync repoints the existing
+clone at the new repo before pulling — the output panel logs the change. Until
+that sync finishes, contexts from a clone still pointing at the old repo are not
+offered in the **Context** picker: a clone of another repo is skipped rather
+than served, so the picker never shows another repository's context packs.
+
+**One sync at a time.** Startup auto-sync and **Refresh** run the same sync, and
+two at once would fight over the same skill links. A Refresh pressed while a
+sync is running now just re-lists projects and contexts instead of starting a
+second sync.
+
 ---
 
 ## Troubleshooting
