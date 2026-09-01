@@ -262,6 +262,11 @@ final class GitRepoModuleSourceTests: XCTestCase {
 
     func testWithModuleRootYieldsResolvedInstallerSourceNotClonePath() async throws {
         let repoURL = try buildLocalRepo()
+        // The resolved tag is also the ref that gets cloned, so it has to
+        // exist on the fixture repo — a tag listing and the repo it came from
+        // always agree in the real world.
+        try runGit(["tag", "v0.9.0"], cwd: workDir.appendingPathComponent("fixture"))
+        try runGit(["tag", "v1.1.0"], cwd: workDir.appendingPathComponent("fixture"))
         let output = lsRemote(["v0.9.0", "v1.1.0"])
         var captured: (root: URL, installer: String)?
 

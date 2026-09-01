@@ -213,8 +213,10 @@ pub fn clones_for_repo(home: &Path, configured_url: &str) -> Vec<PathBuf> {
     for tool in [SkillTool::ClaudeCode, SkillTool::Codex] {
         let repo = managed_repo_dir(home, tool);
         // A tool that has never synced has no clone to read — offering its
-        // path would just be a phantom candidate.
-        if !repo.join(".git").is_dir() {
+        // path would just be a phantom candidate. Existence is the whole test:
+        // a directory whose `.git` is missing or unreadable simply reports no
+        // origin, and is then treated as an unknown one.
+        if !repo.is_dir() {
             continue;
         }
         match clone_origin_url(&repo) {

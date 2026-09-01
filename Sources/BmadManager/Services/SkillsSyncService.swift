@@ -170,9 +170,10 @@ enum SkillsSyncService {
         for tool in SkillTool.allCases {
             let repo = managedRepoDir(for: tool, home: home)
             // A tool that has never synced has no clone to read — offering its
-            // path would just be a phantom candidate.
-            guard isDirectory(repo.appendingPathComponent(".git"), fileManager: .default)
-            else { continue }
+            // path would just be a phantom candidate. Existence is the whole
+            // test: a directory whose `.git` is missing or unreadable simply
+            // reports no origin, and is then treated as an unknown one.
+            guard isDirectory(repo, fileManager: .default) else { continue }
             guard !configured.isEmpty else {
                 matching.append(repo)
                 continue
