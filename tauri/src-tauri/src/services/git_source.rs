@@ -76,6 +76,103 @@ pub fn clone(git_exe: &Path, url: &str, git_ref: &str, dest: &Path) -> Result<()
     Ok(())
 }
 
+/// What the installer will be told to install, and whether that will make it
+/// record a real version.
+///
+/// `bmad-method` records whatever ref it is handed as the module's version in
+/// the project manifest. A bare URL or a branch ref makes it stamp `main`,
+/// which the staleness check can never compare against a real semver — so the
+/// project is flagged as needing an update forever and re-running Update
+/// rewrites the same `main`. `pinned_ref` is `None` for exactly those cases,
+/// and `note` says so in the output panel instead of letting it happen
+/// silently.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallerSource {
+    /// The `--custom-source` value.
+    pub arg: String,
+    /// The ref the install will record as the module version, or `None` when
+    /// it will not record a usable one.
+    pub pinned_ref: Option<String>,
+    /// User-facing diagnostic for the output panel.
+    pub note: String,
+}
+
+/// Resolves what to install from the configured URL and ref, given the repo's
+/// `git ls-remote --tags --refs` output (`None` when it could not be read).
+/// Pure — the network call lives in [`resolve_installer_source`].
+pub fn describe_installer_source(
+    url: &str,
+    git_ref: &str,
+    ls_remote_output: Option<&str>,
+) -> InstallerSource {
+    let base = base_url(url).to_string();
+    let trimmed_ref = git_ref.trim();
+
+    // An explicit ref is always honoured — it is a deliberate choice in
+    // Settings — but a branch name is still reported, because that is what it
+    // will land in the manifest as.
+    if !trimmed_ref.is_empty() {
+        let arg = pinned_url(&base, trimmed_ref);
+        if is_semver_shaped(trimmed_ref) {
+            return InstallerSource {
+                arg,
+                pinned_ref: Some(trimmed_ref.to_string()),
+                note: format!("module source: {base} pinned to {trimmed_ref} (from Settings)"),
+            };
+        }
+        return InstallerSource {
+            arg,
+            pinned_ref: None,
+            note: format!(
+                "module source: {base} pinned to {trimmed_ref} (from Settings), which is \
+                 not a version tag — the install records it as the module version, so this \
+                 project will keep showing an update. Clear the module repo ref in Settings \
+                 to install the latest tag instead."
+            ),
+        };
+    }
+
+    let Some(output) = ls_remote_output else {
+        return InstallerSource {
+            arg: base.clone(),
+            pinned_ref: None,
+            note: format!(
+                "module source: could not list the version tags of {base} (offline, git \
+                 missing, or no stored credentials for a private repo) — installing from the \
+                 default branch, which the install records as version 'main', so the project \
+                 will keep showing an update."
+            ),
+        };
+    };
+
+    match latest_semver_tag(output) {
+        Some(tag) => InstallerSource {
+            arg: pinned_url(&base, &tag),
+            pinned_ref: Some(tag.clone()),
+            note: format!("module source: {base} pinned to latest tag {tag}"),
+        },
+        None => InstallerSource {
+            arg: base.clone(),
+            pinned_ref: None,
+            note: format!(
+                "module source: {base} publishes no version tags — installing from the \
+                 default branch, which the install records as version 'main', so the project \
+                 will keep showing an update."
+            ),
+        },
+    }
+}
+
+/// [`describe_installer_source`] with the tag listing actually fetched.
+pub fn resolve_installer_source(git_exe: &Path, url: &str, git_ref: &str) -> InstallerSource {
+    let tags = if git_ref.trim().is_empty() {
+        ls_remote_tags(git_exe, url)
+    } else {
+        None
+    };
+    describe_installer_source(url, git_ref, tags.as_deref())
+}
+
 /// The value to hand `bmad-method --custom-source` for a GitHub-repo source.
 ///
 /// With an explicit `git_ref` it is `<url>@<ref>` (the installer pins that
@@ -87,16 +184,7 @@ pub fn clone(git_exe: &Path, url: &str, git_ref: &str, dest: &Path) -> Result<()
 ///
 /// Mirrors the Swift `GitRepoModuleSource.installerSource`.
 pub fn git_installer_source(git_exe: &Path, url: &str, git_ref: &str) -> String {
-    let trimmed_ref = git_ref.trim();
-    if !trimmed_ref.is_empty() {
-        return pinned_url(url, trimmed_ref);
-    }
-    if let Some(output) = ls_remote_tags(git_exe, url) {
-        if let Some(tag) = latest_semver_tag(&output) {
-            return pinned_url(url, &tag);
-        }
-    }
-    base_url(url).to_string()
+    resolve_installer_source(git_exe, url, git_ref).arg
 }
 
 /// `<url>@<ref>` with any trailing slash on the URL stripped first. The

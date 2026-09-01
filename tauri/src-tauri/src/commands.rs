@@ -28,6 +28,10 @@ pub struct AppState {
     /// Serialises project-creation runs so two simultaneous "create"
     /// clicks don't race on the same projects-root and tempdir.
     pub create_lock: Mutex<()>,
+    /// Serialises skill syncs so the startup auto-sync and the ⟳ button can't
+    /// reconcile the same links at once (one run removing the links the other
+    /// just created, and the loser failing on a name that already exists).
+    pub skills_sync_gate: skills_sync::SyncGate,
 }
 
 impl AppState {
@@ -35,6 +39,7 @@ impl AppState {
         Self {
             settings_path: platform::settings_dir().join("settings.json"),
             create_lock: Mutex::new(()),
+            skills_sync_gate: skills_sync::SyncGate::default(),
         }
     }
 }
@@ -138,7 +143,7 @@ pub async fn update_project(
         let _ = app.emit("project-create-output", event);
     };
     let project = ProjectItem::new(PathBuf::from(path), None);
-    let sources = github_contexts_from_repo();
+    let sources = github_contexts_from_repo(&settings.skills_repo_url);
     project_updater::update(&project, &settings, &sources, emit)
         .await
         .map_err(|e| IpcError(e.to_string()))
@@ -162,7 +167,7 @@ pub async fn check_for_updates(
         let _ = app.emit("project-create-output", event);
     };
     let repo_module = project_updater::read_latest_repo_module_logged(&settings, &mut emit);
-    let sources = github_contexts_from_repo();
+    let sources = github_contexts_from_repo(&settings.skills_repo_url);
     let root = expand_tilde(&settings.projects_root);
     let mut stale = Vec::new();
     for project in project_service::list_projects(&root, settings.project_sort_order) {
@@ -183,20 +188,22 @@ pub fn list_company_contexts(state: State<'_, AppState>) -> CmdResult<Vec<Compan
     let settings = settings_store::load_or_init(&state.settings_path)?;
     let root = expand_tilde(&settings.projects_root);
     let projects = project_service::list_projects(&root, settings.project_sort_order);
-    let mut contexts = github_contexts_from_repo();
+    let mut contexts = github_contexts_from_repo(&settings.skills_repo_url);
     contexts.extend(company_context::contexts_in(&projects));
     Ok(contexts)
 }
 
 /// Reads contexts from the skills repo clone (`context/` folder alongside
-/// `skills/`). Both tools clone the same repo into their own hidden dir, so
-/// we use whichever clone is present.
-fn github_contexts_from_repo() -> Vec<CompanyContext> {
+/// `skills/`). Both tools clone the same repo into their own hidden dir, so we
+/// use whichever clone belongs to the *configured* repo — a clone still
+/// pointing at a previously-configured repo is skipped rather than served, so
+/// changing the URL in Settings can no longer leave the picker offering
+/// another repo's context packs.
+fn github_contexts_from_repo(configured_url: &str) -> Vec<CompanyContext> {
     let Some(home) = dirs::home_dir() else {
         return Vec::new();
     };
-    for tool in [SkillTool::ClaudeCode, SkillTool::Codex] {
-        let repo = skills_sync::managed_repo_dir(&home, tool);
+    for repo in skills_sync::clones_for_repo(&home, configured_url) {
         let contexts = company_context::github_contexts_in(&repo);
         if !contexts.is_empty() {
             return contexts;
@@ -295,14 +302,20 @@ pub fn has_github_token(state: State<'_, AppState>) -> bool {
 #[tauri::command]
 pub async fn sync_skills_claude(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     let (settings, token) = load_skills_inputs(&state)?;
-    run_skills_sync(app, settings, token, SkillTool::ClaudeCode).await
+    state
+        .skills_sync_gate
+        .run(|| run_skills_sync(app, settings, token, SkillTool::ClaudeCode))
+        .await
 }
 
 /// Sync the configured skills repo into `~/.codex/skills/managed`.
 #[tauri::command]
 pub async fn sync_skills_codex(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     let (settings, token) = load_skills_inputs(&state)?;
-    run_skills_sync(app, settings, token, SkillTool::Codex).await
+    state
+        .skills_sync_gate
+        .run(|| run_skills_sync(app, settings, token, SkillTool::Codex))
+        .await
 }
 
 /// Auto-syncs the shared skills repo into every tool's skills folder, then
@@ -319,14 +332,22 @@ pub async fn sync_skills_repo(app: AppHandle, state: State<'_, AppState>) -> Cmd
     let Some(token) = token_store::load(&settings_dir(&state))? else {
         return Ok(());
     };
-    run_skills_sync(
-        app.clone(),
-        settings.clone(),
-        token.clone(),
-        SkillTool::ClaudeCode,
-    )
-    .await?;
-    run_skills_sync(app, settings, token, SkillTool::Codex).await?;
+    // Both tools run under one hold: they share the clone's git config and
+    // each other's link namespace, so interleaving them with another sync is
+    // the same race as interleaving one.
+    state
+        .skills_sync_gate
+        .run(|| async {
+            run_skills_sync(
+                app.clone(),
+                settings.clone(),
+                token.clone(),
+                SkillTool::ClaudeCode,
+            )
+            .await?;
+            run_skills_sync(app, settings, token, SkillTool::Codex).await
+        })
+        .await?;
     Ok(())
 }
 

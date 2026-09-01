@@ -87,7 +87,8 @@ struct ContentView: View {
                         await coordinator.deleteProject(
                             project,
                             root: settings.settings.projectsRoot,
-                            sortOrder: settings.settings.projectSortOrder
+                            sortOrder: settings.settings.projectSortOrder,
+                            skillsRepoURL: settings.settings.skillsRepoURL
                         )
                     }
                 }
@@ -111,7 +112,8 @@ struct ContentView: View {
     private func refreshProjects() {
         coordinator.refresh(
             root: settings.settings.projectsRoot,
-            sortOrder: settings.settings.projectSortOrder
+            sortOrder: settings.settings.projectSortOrder,
+            skillsRepoURL: settings.settings.skillsRepoURL
         )
     }
 
@@ -129,6 +131,14 @@ struct ContentView: View {
     }
 
     private func autoSyncRepo() async {
+        // Guarded like the manual sync buttons: this runs at startup *and* on
+        // the ⟳ button, and two syncs over the same skill links race — one
+        // removes the links the other has just created, and the loser fails on
+        // a name that already exists. (The coordinator guards too; this keeps
+        // the button's disabled state honest.)
+        guard !isSyncingSkills, !coordinator.isSyncingSkills else { return }
+        isSyncingSkills = true
+        defer { isSyncingSkills = false }
         await coordinator.syncSkillsRepo(
             settings: settings.settings,
             token: tokenStore.loadToken(),

@@ -24,12 +24,52 @@ enum GitError: LocalizedError {
 /// **URL** (not the temp path) so the installer records `repoUrl` + `sha` +
 /// a real version rather than a throwaway local path with version `"main"`.
 struct GitRepoModuleSource: ModuleSource {
+    /// What the installer will be told to install, and whether that will make
+    /// it record a real version.
+    ///
+    /// `bmad-method` records whatever ref it is handed as the module's version
+    /// in the project manifest. A bare URL or a branch ref makes it stamp
+    /// `main`, which the staleness check can never compare against a real
+    /// semver — so the project is flagged as needing an update forever and
+    /// re-running Update rewrites the same `main`. `pinnedRef` is nil for
+    /// exactly those cases, and `note` says so in the output panel instead of
+    /// letting it happen silently.
+    struct InstallerSource: Equatable {
+        /// The `--custom-source` value.
+        let arg: String
+        /// The ref the install will record as the module version, or nil when
+        /// it will not record a usable one.
+        let pinnedRef: String?
+        /// User-facing diagnostic for the output panel.
+        let note: String
+    }
+
+    /// Holds the resolution so reading `resolutionNote` and materialising the
+    /// module don't each pay for their own `ls-remote`.
+    final class ResolutionCache {
+        var value: InstallerSource?
+        init() {}
+    }
+
     let url: String
     let ref: String
     /// Runs `git ls-remote --tags --refs <url>` and returns stdout, or nil on
     /// any failure (offline, git missing). Injectable so tests resolve the
     /// installer source without touching the network.
     var lsRemoteTags: (String) -> String? = GitRepoModuleSource.realLsRemoteTags
+    let cache = ResolutionCache()
+
+    /// What this source will install, resolved once per instance.
+    var resolution: InstallerSource {
+        if let cached = cache.value { return cached }
+        let trimmedRef = ref.trimmingCharacters(in: .whitespaces)
+        let tags = trimmedRef.isEmpty ? lsRemoteTags(url) : nil
+        let resolved = Self.describeInstallerSource(url: url, ref: ref, tagsOutput: tags)
+        cache.value = resolved
+        return resolved
+    }
+
+    var resolutionNote: String? { resolution.note }
 
     func withModuleRoot<T>(
         _ body: (_ moduleRoot: URL, _ installerSource: String) async throws -> T
@@ -39,14 +79,17 @@ struct GitRepoModuleSource: ModuleSource {
             throw GitError.noRepoURLConfigured
         }
 
+        let resolved = resolution
         let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("bmad-manager-\(UUID().uuidString)", isDirectory: true)
-        try GitRepoModuleSource.clone(url: trimmedURL, ref: ref, into: tmpDir)
+        // Clone the ref the install will pin, so the module read here and the
+        // version the installer records are the same one. Cloning the default
+        // branch instead reports a version nothing will ever install as soon as
+        // the repo's `main` runs ahead of its newest tag.
+        try GitRepoModuleSource.clone(url: trimmedURL, ref: resolved.pinnedRef ?? ref, into: tmpDir)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let installerSource = GitRepoModuleSource.installerSource(
-            url: trimmedURL, ref: ref, lsRemoteTags: lsRemoteTags)
-        return try await body(tmpDir, installerSource)
+        return try await body(tmpDir, resolved.arg)
     }
 
     // MARK: - Installer source resolution
@@ -61,13 +104,67 @@ struct GitRepoModuleSource: ModuleSource {
         url: String, ref: String, lsRemoteTags: (String) -> String?
     ) -> String {
         let trimmedRef = ref.trimmingCharacters(in: .whitespaces)
+        let tags = trimmedRef.isEmpty ? lsRemoteTags(url) : nil
+        return describeInstallerSource(url: url, ref: ref, tagsOutput: tags).arg
+    }
+
+    /// Resolves what to install from the configured URL and ref, given the
+    /// repo's `git ls-remote --tags --refs` output (nil when it could not be
+    /// read). Pure — the network call lives in `resolution`.
+    static func describeInstallerSource(
+        url: String, ref: String, tagsOutput: String?
+    ) -> InstallerSource {
+        let base = baseURL(url)
+        let trimmedRef = ref.trimmingCharacters(in: .whitespaces)
+
+        // An explicit ref is always honoured — it is a deliberate choice in
+        // Settings — but a branch name is still reported, because that is what
+        // it will land in the manifest as.
         if !trimmedRef.isEmpty {
-            return pinnedURL(url, ref: trimmedRef)
+            let arg = pinnedURL(base, ref: trimmedRef)
+            if isSemverShaped(trimmedRef) {
+                return InstallerSource(
+                    arg: arg,
+                    pinnedRef: trimmedRef,
+                    note: "module source: \(base) pinned to \(trimmedRef) (from Settings)")
+            }
+            return InstallerSource(
+                arg: arg,
+                pinnedRef: nil,
+                note: """
+                    module source: \(base) pinned to \(trimmedRef) (from Settings), which is \
+                    not a version tag — the install records it as the module version, so this \
+                    project will keep showing an update. Clear the module repo ref in Settings \
+                    to install the latest tag instead.
+                    """)
         }
-        if let output = lsRemoteTags(url), let tag = latestSemverTag(inLsRemote: output) {
-            return pinnedURL(url, ref: tag)
+
+        guard let output = tagsOutput else {
+            return InstallerSource(
+                arg: base,
+                pinnedRef: nil,
+                note: """
+                    module source: could not list the version tags of \(base) (offline, git \
+                    missing, or no stored credentials for a private repo) — installing from \
+                    the default branch, which the install records as version 'main', so the \
+                    project will keep showing an update.
+                    """)
         }
-        return baseURL(url)
+
+        guard let tag = latestSemverTag(inLsRemote: output) else {
+            return InstallerSource(
+                arg: base,
+                pinnedRef: nil,
+                note: """
+                    module source: \(base) publishes no version tags — installing from the \
+                    default branch, which the install records as version 'main', so the \
+                    project will keep showing an update.
+                    """)
+        }
+        return InstallerSource(
+            arg: pinnedURL(base, ref: tag),
+            pinnedRef: tag,
+            note: "module source: \(base) pinned to latest tag \(tag)")
     }
 
     /// `<url>@<ref>` with any trailing slash on the URL stripped first.

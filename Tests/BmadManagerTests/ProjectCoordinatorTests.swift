@@ -461,6 +461,92 @@ final class ProjectCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.availableContexts.first?.source, .github)
     }
 
+    /// Startup auto-sync and the ⟳ button call the same sync. Two runs over
+    /// one link set race — one removes the links the other just created, and
+    /// the loser fails on a name that already exists.
+    func testSyncSkillsRepoIsSkippedWhileAnotherSyncIsRunning() async {
+        let home = makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        settings.settings.skillsRepoURL = "https://github.com/acme/skills"
+
+        var ran = false
+        let coordinator = makeCoordinator()
+        coordinator.isSyncingSkills = true
+        await coordinator.syncSkillsRepo(
+            settings: settings.settings,
+            token: "ghp_token",
+            home: home,
+            runCommand: { _, _ in ran = true; return 0 }
+        )
+
+        XCTAssertFalse(ran, "a sync already in flight must not be joined by a second one")
+    }
+
+    func testSyncSkillsRepoClearsTheInFlightFlagWhenItFinishes() async {
+        let home = makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        settings.settings.skillsRepoURL = "https://github.com/acme/skills"
+
+        let coordinator = makeCoordinator()
+        await coordinator.syncSkillsRepo(
+            settings: settings.settings,
+            token: "ghp_token",
+            home: home,
+            runCommand: { _, _ in 0 }
+        )
+
+        XCTAssertFalse(coordinator.isSyncingSkills)
+    }
+
+    /// A clone left pointing at a previously-configured repo must not be
+    /// served as the configured repo's contexts — that is what made the
+    /// context picker show another repo's packs after a URL change.
+    func testRefreshIgnoresGithubContextsFromACloneOfAnotherRepo() throws {
+        let home = makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try seedManagedRepo(home: home, context: "old-repo-pack", files: ["icp.md"])
+        let claude = SkillsSyncService.managedRepoDir(for: .claudeCode, home: home)
+        try seedOrigin(at: claude, url: "https://github.com/acme/old-skills")
+
+        let coordinator = makeCoordinator()
+        coordinator.refresh(
+            root: projectsRoot.path,
+            sortOrder: .nameAscending,
+            home: home,
+            skillsRepoURL: "https://github.com/acme/new-skills")
+
+        XCTAssertTrue(
+            coordinator.availableContexts.filter { $0.source == .github }.isEmpty,
+            "contexts from a clone of another repo must not be offered")
+    }
+
+    func testRefreshUsesGithubContextsFromTheCloneOfTheConfiguredRepo() throws {
+        let home = makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try seedManagedRepo(home: home, context: "current-pack", files: ["icp.md"])
+        let claude = SkillsSyncService.managedRepoDir(for: .claudeCode, home: home)
+        try seedOrigin(at: claude, url: "https://github.com/acme/new-skills")
+
+        let coordinator = makeCoordinator()
+        coordinator.refresh(
+            root: projectsRoot.path,
+            sortOrder: .nameAscending,
+            home: home,
+            skillsRepoURL: "https://github.com/acme/new-skills")
+
+        XCTAssertEqual(
+            coordinator.availableContexts.filter { $0.source == .github }.map(\.projectName),
+            ["current-pack"])
+    }
+
+    /// Writes the `.git/config` a clone of `url` would carry.
+    private func seedOrigin(at clone: URL, url: String) throws {
+        let git = clone.appendingPathComponent(".git", isDirectory: true)
+        try FileManager.default.createDirectory(at: git, withIntermediateDirectories: true)
+        let body = "[remote \"origin\"]\n\turl = \(url)\n"
+        try body.write(to: git.appendingPathComponent("config"), atomically: true, encoding: .utf8)
+    }
+
     func testSyncSkillsRepoSurfacesGitFailure() async {
         let home = makeHome()
         defer { try? FileManager.default.removeItem(at: home) }

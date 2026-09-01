@@ -18,6 +18,16 @@ protocol ModuleSource {
     func withModuleRoot<T>(
         _ body: (_ moduleRoot: URL, _ installerSource: String) async throws -> T
     ) async throws -> T
+
+    /// One line for the output panel about what will be installed — notably
+    /// whether the install will record a real module version, or leave the
+    /// project permanently showing an update. Nil for sources with nothing to
+    /// resolve (a local zip).
+    var resolutionNote: String? { get }
+}
+
+extension ModuleSource {
+    var resolutionNote: String? { nil }
 }
 
 /// Maps an `AppSettings` to the concrete `ModuleSource` adapter for the

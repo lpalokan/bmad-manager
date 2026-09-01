@@ -225,7 +225,7 @@ dependencies = [
 
 [[package]]
 name = "bmad-manager"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "cucumber",
  "dirs 5.0.1",

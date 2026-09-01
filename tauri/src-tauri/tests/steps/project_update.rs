@@ -4,7 +4,7 @@ use cucumber::{given, then, when};
 
 use bmad_manager_lib::models::{AppSettings, ModuleSourceKind, ProjectItem};
 use bmad_manager_lib::services::module_manifest::{self, RepoModule};
-use bmad_manager_lib::services::{agents_file, project_service, project_updater};
+use bmad_manager_lib::services::{agents_file, git_source, project_service, project_updater};
 
 use crate::support::TauriWorld;
 
@@ -306,4 +306,89 @@ async fn project_folder_exists(world: &mut TauriWorld) {
 fn read_agents(world: &TauriWorld) -> String {
     let project = world.update_target.as_ref().expect("project seeded");
     std::fs::read_to_string(project.join("AGENTS.md")).expect("AGENTS.md written")
+}
+
+// --- What the installer is told to install ------------------------------
+
+/// Builds the `git ls-remote --tags --refs` output for a comma-separated tag
+/// list, so resolution is exercised without touching the network.
+fn ls_remote_output(tags: &str) -> String {
+    tags.split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("{}\trefs/tags/{t}", "a".repeat(40)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[when(
+    regex = r#"^I describe the installer source for "([^"]+)" with ref "([^"]*)" and tags "([^"]*)"$"#
+)]
+async fn describe_source_with_tags(
+    world: &mut TauriWorld,
+    url: String,
+    git_ref: String,
+    tags: String,
+) {
+    let output = ls_remote_output(&tags);
+    world.installer_source = Some(git_source::describe_installer_source(
+        &url,
+        &git_ref,
+        Some(&output),
+    ));
+}
+
+#[when(
+    regex = r#"^I describe the installer source for "([^"]+)" with ref "([^"]*)" and no tag listing$"#
+)]
+async fn describe_source_without_tags(world: &mut TauriWorld, url: String, git_ref: String) {
+    world.installer_source = Some(git_source::describe_installer_source(&url, &git_ref, None));
+}
+
+#[then(regex = r#"^the installer source argument is "([^"]+)"$"#)]
+async fn installer_source_arg_is(world: &mut TauriWorld, expected: String) {
+    let source = world.installer_source.as_ref().expect("source described");
+    assert_eq!(source.arg, expected);
+}
+
+#[then("the installer source records a version")]
+async fn installer_source_records_version(world: &mut TauriWorld) {
+    let source = world.installer_source.as_ref().expect("source described");
+    assert!(
+        source.pinned_ref.is_some(),
+        "expected a pinned ref, got {source:?}"
+    );
+}
+
+#[then("the installer source does not record a version")]
+async fn installer_source_records_no_version(world: &mut TauriWorld) {
+    let source = world.installer_source.as_ref().expect("source described");
+    assert!(
+        source.pinned_ref.is_none(),
+        "expected no pinned ref, got {source:?}"
+    );
+}
+
+#[then(regex = r#"^the installer source note contains "([^"]+)"$"#)]
+async fn installer_source_note_contains(world: &mut TauriWorld, fragment: String) {
+    let source = world.installer_source.as_ref().expect("source described");
+    assert!(
+        source.note.contains(&fragment),
+        "expected note {:?} to contain {fragment:?}",
+        source.note
+    );
+}
+
+#[given(
+    regex = r#"^a marketing-growth git source tagged "([^"]+)" whose default branch is version "([^"]+)"$"#
+)]
+async fn tagged_git_source(world: &mut TauriWorld, tag: String, branch_version: String) {
+    let url = world.build_marketing_growth_git_repo_tagged(&tag, &branch_version);
+    let root = world.ensure_projects_root();
+    let mut settings = AppSettings::defaults();
+    settings.projects_root = root.to_string_lossy().into_owned();
+    settings.module_source_kind = ModuleSourceKind::GitRepo;
+    settings.module_repo_url = url;
+    settings.module_repo_ref = String::new();
+    world.settings = Some(settings);
 }

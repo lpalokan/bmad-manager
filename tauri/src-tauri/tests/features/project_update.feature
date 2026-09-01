@@ -199,3 +199,60 @@ Feature: Update existing projects from the bmad-repo
     When I update the project
     Then the update succeeds
     And project "proj" context file "positioning.md" is dated "2026-07-03"
+
+  # --- What the installer is told to install (issue: the Update button that
+  #     never clears) ---
+  #
+  # `bmad-method` records whatever ref it was given as the module version. A
+  # bare URL or a branch ref makes it stamp `main`, which `is_project_stale`
+  # can never compare against a real semver — so the project is flagged
+  # forever and re-running Update rewrites the same `main`. Resolution must
+  # say, in the output panel, when the install will not record a version.
+
+  Scenario: an unset ref pins the repo's latest version tag
+    When I describe the installer source for "https://github.com/acme/mod" with ref "" and tags "v1.0.0, v2.5.0"
+    Then the installer source argument is "https://github.com/acme/mod@v2.5.0"
+    And the installer source records a version
+    And the installer source note contains "latest tag v2.5.0"
+
+  Scenario: an explicit version tag is pinned as configured
+    When I describe the installer source for "https://github.com/acme/mod" with ref "v2.4.0" and tags "v2.5.0"
+    Then the installer source argument is "https://github.com/acme/mod@v2.4.0"
+    And the installer source records a version
+    And the installer source note contains "from Settings"
+
+  Scenario: a branch ref warns that the install will record no version
+    When I describe the installer source for "https://github.com/acme/mod" with ref "main" and tags "v2.5.0"
+    Then the installer source argument is "https://github.com/acme/mod@main"
+    And the installer source does not record a version
+    And the installer source note contains "not a version tag"
+    And the installer source note contains "keep showing an update"
+
+  Scenario: an unreadable tag list warns instead of silently installing the default branch
+    When I describe the installer source for "https://github.com/acme/mod" with ref "" and no tag listing
+    Then the installer source argument is "https://github.com/acme/mod"
+    And the installer source does not record a version
+    And the installer source note contains "could not list the version tags"
+    And the installer source note contains "keep showing an update"
+
+  Scenario: a repo without version tags warns as well
+    When I describe the installer source for "https://github.com/acme/mod" with ref "" and tags "latest, nightly"
+    Then the installer source argument is "https://github.com/acme/mod"
+    And the installer source does not record a version
+    And the installer source note contains "no version tags"
+
+  # The version check must read the module version from the same ref the
+  # install pins, or a repo whose default branch runs ahead of its newest tag
+  # flags every project forever.
+  Scenario: the version check reads the version from the tag that would be installed
+    Given a project "tagged" with installed module version "2.0.2"
+    And a marketing-growth git source tagged "v2.0.2" whose default branch is version "3.0.0"
+    When I run the version check
+    Then the version check reports no projects need an update
+
+  # The line is the only place the user can see why the button stays lit.
+  Scenario: the check line explains an installed version that is not a version number
+    Given a project "branchy" with installed module version "main"
+    When I run the combined update check against repo module version "2.5.0"
+    Then the project reports an update is available
+    And the update check line contains "installed version is not a version number"

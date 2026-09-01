@@ -137,6 +137,99 @@ pub fn reset_args() -> Vec<String> {
     vec!["reset".into(), "--hard".into(), "FETCH_HEAD".into()]
 }
 
+/// git args (run with cwd = clone dir) to repoint `origin` at `url`.
+///
+/// The clone is made once and every later sync is a `fetch origin`, so the
+/// configured URL only ever reaches an existing clone through this. Without
+/// it, changing the skills repo in Settings kept syncing the old one while
+/// reporting success (the clone's `origin` was never compared with the
+/// configured URL).
+pub fn set_remote_url_args(url: &str) -> Vec<String> {
+    vec![
+        "remote".into(),
+        "set-url".into(),
+        "origin".into(),
+        url.trim().into(),
+    ]
+}
+
+/// The `origin` URL recorded in a clone's `.git/config`, or `None` when the
+/// clone, the config, or the remote is missing/unreadable. Read from the file
+/// rather than `git remote get-url` so selecting a clone (which happens on
+/// every context listing) costs no subprocess. Pure.
+pub fn clone_origin_url(repo: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(repo.join(".git").join("config")).ok()?;
+    parse_origin_url(&text)
+}
+
+/// Extracts `[remote "origin"] url = …` from git config text. Only the
+/// `origin` section counts, so an added upstream can't be mistaken for it.
+fn parse_origin_url(config: &str) -> Option<String> {
+    let mut in_origin = false;
+    for raw in config.lines() {
+        let line = raw.trim();
+        if line.starts_with('[') {
+            in_origin = line
+                .replace(char::is_whitespace, "")
+                .eq_ignore_ascii_case("[remote\"origin\"]");
+            continue;
+        }
+        if !in_origin {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("url") {
+            let value = rest.trim_start().strip_prefix('=')?.trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Whether two remote URLs name the same repository, ignoring the
+/// differences git itself ignores: surrounding space, a trailing slash, a
+/// `.git` suffix, and case (GitHub owners/repos are case-insensitive). Pure.
+pub fn same_remote(left: &str, right: &str) -> bool {
+    normalize_remote(left) == normalize_remote(right)
+}
+
+fn normalize_remote(url: &str) -> String {
+    let trimmed = url.trim().trim_end_matches('/');
+    let stripped = trimmed.strip_suffix(".git").unwrap_or(trimmed);
+    stripped.trim_end_matches('/').to_lowercase()
+}
+
+/// The managed clones that may be read as `configured_url`'s content, best
+/// first: clones whose `origin` matches, then clones whose origin can't be
+/// read (made before this check existed). A clone pointing at a *different*
+/// repo is left out entirely — serving its skills and context packs is the
+/// bug this ordering exists to prevent. With no repo configured there is
+/// nothing to match against, so every clone is offered.
+pub fn clones_for_repo(home: &Path, configured_url: &str) -> Vec<PathBuf> {
+    let configured = configured_url.trim();
+    let mut matching = Vec::new();
+    let mut unknown = Vec::new();
+    for tool in [SkillTool::ClaudeCode, SkillTool::Codex] {
+        let repo = managed_repo_dir(home, tool);
+        // A tool that has never synced has no clone to read — offering its
+        // path would just be a phantom candidate. Existence is the whole test:
+        // a directory whose `.git` is missing or unreadable simply reports no
+        // origin, and is then treated as an unknown one.
+        if !repo.is_dir() {
+            continue;
+        }
+        match clone_origin_url(&repo) {
+            _ if configured.is_empty() => matching.push(repo),
+            Some(origin) if same_remote(&origin, configured) => matching.push(repo),
+            Some(_) => {}
+            None => unknown.push(repo),
+        }
+    }
+    matching.extend(unknown);
+    matching
+}
+
 /// A redacted, user-facing description of the git step — never the token.
 pub fn redacted_summary(repo_url: &str, branch: &str, updating: bool) -> String {
     if updating {
@@ -327,6 +420,32 @@ pub fn reconcile_links(
     })
 }
 
+// --- Serialising overlapping syncs -----------------------------------------
+
+/// Serialises skill syncs so two never reconcile the same links at once.
+///
+/// Startup auto-sync and the ⟳ button call the same sync, and two runs over
+/// one link set race: the second removes links the first has just created,
+/// and whichever loses fails with "a link of that name already exists". The
+/// gate makes the second run wait instead.
+#[derive(Debug, Default)]
+pub struct SyncGate {
+    lock: tokio::sync::Mutex<()>,
+}
+
+impl SyncGate {
+    /// Runs `body` with the gate held, releasing it when `body` returns —
+    /// including on error, so a failed sync never wedges the next one.
+    pub async fn run<F, Fut, T>(&self, body: F) -> T
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = T>,
+    {
+        let _guard = self.lock.lock().await;
+        body().await
+    }
+}
+
 // --- Orchestration ---------------------------------------------------------
 
 /// Clone or hard-update the skills repo for one tool, then link its skills into
@@ -373,6 +492,37 @@ where
 
     // 1. Clone or hard-update the hidden repo.
     let code = if is_repo {
+        // The clone was made against whatever URL was configured back then, and
+        // every sync since has fetched `origin`. Repoint it first so a URL
+        // changed in Settings actually takes effect; otherwise this reports a
+        // clean sync while serving the previous repo's skills and contexts.
+        let previous = clone_origin_url(&managed_repo);
+        let repointing = match previous.as_deref() {
+            Some(old) => !same_remote(old, repo_url),
+            // An unreadable origin is repointed too — silently, since there is
+            // no previous URL to report a change from.
+            None => false,
+        };
+        if repointing {
+            on_event(OutputEvent::Stderr {
+                line: format!(
+                    "[bmad] repointing {} from {} to {repo_url}",
+                    managed_repo.display(),
+                    previous.as_deref().unwrap_or("an unknown remote"),
+                ),
+            });
+        }
+        let repoint = command_runner::run_program(
+            git_exe,
+            &set_remote_url_args(repo_url),
+            &managed_repo,
+            &mut on_event,
+        )
+        .await;
+        if repoint != 0 {
+            on_event(OutputEvent::Exit { code: repoint });
+            return Err(SkillsSyncError::GitFailed(repoint));
+        }
         let fetch = command_runner::run_program(
             git_exe,
             &fetch_args(branch, &header),

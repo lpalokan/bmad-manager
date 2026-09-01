@@ -134,6 +134,13 @@ enum ModuleManifest {
             .map { Int($0.trimmingCharacters(in: .whitespaces)) ?? 0 }
     }
 
+    /// Whether a recorded version can take part in a version comparison at
+    /// all. `main`, `unknown` and `""` cannot, which is why a project carrying
+    /// one can never be shown as current (see `isProjectStale`).
+    static func isComparable(_ version: String) -> Bool {
+        return hasNumericComponent(version)
+    }
+
     private static func hasNumericComponent(_ version: String) -> Bool {
         return strippedVersion(version)
             .split(separator: ".")

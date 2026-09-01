@@ -162,6 +162,13 @@ fn numeric_components(version: &str) -> Vec<u64> {
         .collect()
 }
 
+/// Whether a recorded version can take part in a version comparison at all.
+/// `main`, `unknown` and `""` cannot, which is why a project carrying one can
+/// never be shown as current (see [`is_project_stale`]).
+pub fn is_comparable(version: &str) -> bool {
+    has_numeric_component(version)
+}
+
 fn has_numeric_component(version: &str) -> bool {
     stripped(version)
         .split('.')

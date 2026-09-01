@@ -81,7 +81,15 @@ where
         ),
     );
 
-    let module_dir = materialise_module(settings, &mut on_event).await?;
+    // Resolve what the installer will be told to install *once*: the same
+    // answer decides which ref is cloned and what `{MODULE_SOURCE}` carries,
+    // so the module read locally and the module the installer records can
+    // never be two different versions.
+    let resolved = resolve_module_source(settings);
+    if let Some(source) = &resolved {
+        emit_diag(&mut on_event, source.note.clone());
+    }
+    let module_dir = materialise_module(settings, resolved.as_ref(), &mut on_event).await?;
     let module_root_path = zip_source::module_root(&module_dir);
     emit_diag(
         &mut on_event,
@@ -104,7 +112,7 @@ where
     // records `repoUrl` + a real version) — NOT run through the Windows
     // relative-path conversion, which is meaningless for a URL. For a zip it's
     // the local module path, same as `{MODULE_PATH}`.
-    let module_source = module_source_arg(settings, &module_arg);
+    let module_source = module_source_arg(resolved.as_ref(), &module_arg);
     // New projects install with `--output-folder output` so core and every
     // module share one folder (issue #99). Appended here, at command-build
     // time, and nowhere else: the stored `init_command` setting keeps its own
@@ -184,19 +192,48 @@ where
 /// for a git source so the installer records `repoUrl` + a real version, or the
 /// already-computed local module path for a zip source. Shared by the create
 /// and update flows. Mirrors the Swift `ModuleSource.installerSource` seam.
-pub(crate) fn module_source_arg(settings: &AppSettings, module_arg: &str) -> String {
+pub(crate) fn module_source_arg(
+    resolved: Option<&git_source::InstallerSource>,
+    module_arg: &str,
+) -> String {
+    match resolved {
+        Some(source) => source.arg.clone(),
+        // A local zip has no upstream ref to pin; the installer records the
+        // local module path, correctly, as a local source.
+        None => module_arg.to_string(),
+    }
+}
+
+/// What the installer will be told to install for a git-repo source — the ref
+/// it will pin, and whether that ref will land in the manifest as a real
+/// version. `None` for a local zip, which has no ref to resolve.
+pub(crate) fn resolve_module_source(settings: &AppSettings) -> Option<git_source::InstallerSource> {
     match settings.module_source_kind {
-        ModuleSourceKind::GitRepo => git_source::git_installer_source(
+        ModuleSourceKind::GitRepo => Some(git_source::resolve_installer_source(
             &platform::resolve_git_path(),
             &settings.module_repo_url,
             &settings.module_repo_ref,
-        ),
-        ModuleSourceKind::LocalZip => module_arg.to_string(),
+        )),
+        ModuleSourceKind::LocalZip => None,
     }
+}
+
+/// The ref to clone locally: the one the install will pin, so the module tree
+/// read here (AGENTS.md templates, `module.yaml`) is the same version the
+/// installer writes into the project. Falls back to the configured ref, then
+/// to the repo's default branch.
+pub(crate) fn clone_ref_for<'a>(
+    settings: &'a AppSettings,
+    resolved: Option<&'a git_source::InstallerSource>,
+) -> &'a str {
+    resolved
+        .and_then(|source| source.pinned_ref.as_deref())
+        .unwrap_or(&settings.module_repo_ref)
 }
 
 async fn materialise_module<F>(
     settings: &AppSettings,
+    resolved: Option<&git_source::InstallerSource>,
     on_event: &mut F,
 ) -> Result<PathBuf, ProjectCreationError>
 where
@@ -206,23 +243,19 @@ where
         ModuleSourceKind::GitRepo => {
             let dest = git_source::fresh_tempdir();
             let git_exe = platform::resolve_git_path();
+            let git_ref = clone_ref_for(settings, resolved);
             emit_diag(
                 on_event,
                 format!(
                     "git clone {url:?} ref={r:?} via {git} (exists={ok}) into {dest}",
                     url = settings.module_repo_url,
-                    r = settings.module_repo_ref,
+                    r = git_ref,
                     git = git_exe.display(),
                     ok = git_exe.exists(),
                     dest = dest.display(),
                 ),
             );
-            git_source::clone(
-                &git_exe,
-                &settings.module_repo_url,
-                &settings.module_repo_ref,
-                &dest,
-            )?;
+            git_source::clone(&git_exe, &settings.module_repo_url, git_ref, &dest)?;
             emit_diag(
                 on_event,
                 format!(
