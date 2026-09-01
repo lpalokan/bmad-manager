@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.19](https://github.com/lpalokan/bmad-manager/compare/v0.1.18...v0.1.19) (2026-09-01)
+
+
+### Bug Fixes
+
+* honour a changed skills repo URL, serialise syncs, and pin the ref an install records ([b66873d](https://github.com/lpalokan/bmad-manager/commit/b66873d9be9c2629895f07fd689a58439ce20fed))
+* honour a changed skills repo URL, serialise syncs, and pin the ref an install records ([36f8dc8](https://github.com/lpalokan/bmad-manager/commit/36f8dc8fe001f5488c69fd920e233982f2cf652a))
+* offer a managed clone by its directory, and tag the git fixture it clones ([e06ba06](https://github.com/lpalokan/bmad-manager/commit/e06ba061922b877ee2d1f29e5d301397287f8533))
+
 ## [0.1.18](https://github.com/lpalokan/bmad-manager/compare/v0.1.17...v0.1.18) (2026-08-17)
 
 
